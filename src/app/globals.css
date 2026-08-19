@@ -1,0 +1,184 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  /* Finance state tokens (docs/design/design.md §3.2, §22) — communicate
+     meaning, never used decoratively. positive/negative alias success/
+     destructive so both docs' vocabularies (design.md's success/warning/
+     info and screen-contracts.md's positive/negative/warning/info) resolve
+     to one pair of underlying colors, not two independently-tuned ones. */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  /* Account-category identity (docs/design/design.md §23) — lives in the
+     token layer so no component hardcodes a category color. Subtle by
+     design: reused Flexoki accent hues, not saturated brand colors. */
+  --color-category-asset: var(--category-asset);
+  --color-category-liability: var(--category-liability);
+  --color-category-income: var(--category-income);
+  --color-category-expense: var(--category-expense);
+  --color-category-balancing: var(--category-balancing);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Flexoki-inspired palette (https://stephango.com/flexoki) — warm paper in
+   light mode, warm near-black in dark mode, low-saturation accents. Values
+   below are Flexoki's published hex stops, referenced directly (not
+   reverse-engineered from oklch) so the mapping stays legible/auditable. */
+:root {
+  --background: #fffcf0; /* paper */
+  --foreground: #100f0f; /* black */
+  --card: #fffcf0;
+  --card-foreground: #100f0f;
+  --popover: #fffcf0;
+  --popover-foreground: #100f0f;
+  --primary: #100f0f;
+  --primary-foreground: #fffcf0;
+  --secondary: #f2f0e5; /* paper-2 */
+  --secondary-foreground: #100f0f;
+  --muted: #f2f0e5;
+  --muted-foreground: #6d6c67; /* tx-2, darkened slightly for WCAG AA text contrast (product-polish pass) */
+  --accent: #f2f0e5;
+  --accent-foreground: #100f0f;
+  --destructive: #af3029; /* red-600 */
+  --destructive-foreground: #fffcf0;
+  --border: #e6e4d9; /* ui */
+  --input: #e6e4d9;
+  --ring: #205ea6; /* blue-600 */
+  --success: #647e0b; /* green-600, darkened slightly for WCAG AA text contrast (product-polish pass) */
+  --success-foreground: #fffcf0;
+  --warning: #ad8301; /* yellow-600 */
+  --warning-foreground: #100f0f;
+  --info: #205ea6; /* blue-600 */
+  --info-foreground: #fffcf0;
+  --positive: var(--success);
+  --negative: var(--destructive);
+  --category-asset: #205ea6; /* blue-600 */
+  --category-liability: var(--warning); /* amber, per required semantic mapping */
+  --category-income: #66800b; /* green-600 */
+  --category-expense: var(--destructive); /* red, per required semantic mapping */
+  --category-balancing: #5e409d; /* purple-600 */
+  --chart-1: #205ea6;
+  --chart-2: #66800b;
+  --chart-3: #ad8301;
+  --chart-4: #bc5215;
+  --chart-5: #5e409d;
+  --radius: 0.625rem;
+  --sidebar: #f2f0e5;
+  --sidebar-foreground: #100f0f;
+  --sidebar-primary: #100f0f;
+  --sidebar-primary-foreground: #fffcf0;
+  --sidebar-accent: #e6e4d9;
+  --sidebar-accent-foreground: #100f0f;
+  --sidebar-border: #e6e4d9;
+  --sidebar-ring: #205ea6;
+}
+
+.dark {
+  --background: #100f0f; /* black */
+  --foreground: #cecdc3; /* tx */
+  --card: #1c1b1a; /* bg-2 */
+  --card-foreground: #cecdc3;
+  --popover: #1c1b1a;
+  --popover-foreground: #cecdc3;
+  --primary: #cecdc3;
+  --primary-foreground: #100f0f;
+  --secondary: #282726; /* ui */
+  --secondary-foreground: #cecdc3;
+  --muted: #282726;
+  --muted-foreground: #878580; /* tx-2 */
+  --accent: #282726;
+  --accent-foreground: #cecdc3;
+  --destructive: #d14d41; /* red-400 */
+  --destructive-foreground: #100f0f;
+  --border: #343331; /* ui-2 */
+  --input: #343331;
+  --ring: #4385be; /* blue-400 */
+  --success: #879a39; /* green-400 */
+  --success-foreground: #100f0f;
+  --warning: #d0a215; /* yellow-400 */
+  --warning-foreground: #100f0f;
+  --info: #4385be; /* blue-400 */
+  --info-foreground: #100f0f;
+  --positive: var(--success);
+  --negative: var(--destructive);
+  --category-asset: #4385be; /* blue-400 */
+  --category-liability: var(--warning); /* amber, per required semantic mapping */
+  --category-income: #879a39; /* green-400 */
+  --category-expense: var(--destructive); /* red, per required semantic mapping */
+  --category-balancing: #8b7ec8; /* purple-400 */
+  --chart-1: #4385be;
+  --chart-2: #879a39;
+  --chart-3: #d0a215;
+  --chart-4: #da702c;
+  --chart-5: #8b7ec8;
+  --sidebar: #1c1b1a;
+  --sidebar-foreground: #cecdc3;
+  --sidebar-primary: #cecdc3;
+  --sidebar-primary-foreground: #100f0f;
+  --sidebar-accent: #282726;
+  --sidebar-accent-foreground: #cecdc3;
+  --sidebar-border: #343331;
+  --sidebar-ring: #4385be;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}

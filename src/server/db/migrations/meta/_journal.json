@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1786796974138,
+      "tag": "0000_keen_butterfly",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786799292332,
+      "tag": "0001_sudden_victor_mancha",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786885646791,
+      "tag": "0002_ordinary_scourge",
+      "breakpoints": true
+    }
+  ]
+}

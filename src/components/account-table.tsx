@@ -1,0 +1,218 @@
+"use client";
+
+import Link from "next/link";
+import { Pencil } from "lucide-react";
+import type { AccountWithBalance } from "@/server/use-cases/accounts";
+import {
+  buildAccountSortHref,
+  nextAccountSortState,
+  type AccountSortField,
+  type AccountSortState,
+} from "@/lib/account-sort";
+import { cn, formatMoney, humanizeEnum } from "@/lib/utils";
+import { useAccountWorkspace } from "@/components/account-workspace";
+import { SortableColumnHeader } from "@/components/sortable-column-header";
+import { AccountIcon } from "@/components/account-icon";
+import { AccountFormSheet } from "@/components/account-form-sheet";
+import { ArchiveAccountButton } from "@/components/archive-account-button";
+import { TagChips } from "@/components/tag-chips";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
+// Accounts list table — same visual/interaction language as
+// transaction-table.tsx (sortable headers, hover-reveal row controls,
+// checkbox selection + Bulk Actions), scaled down to Accounts' much
+// simpler shape: every row is exactly one physical `<tr>` (no split/merge
+// multi-row rendering, no expand/collapse), so hover-reveal is pure CSS
+// `group-hover` with no `hoveredRowId` JS state, and there's no roving-
+// tabindex keyboard grid — native Tab order through the checkbox/name
+// link/edit button/archive button already works.
+function SelectAllCheckbox({ ids }: { ids: string[] }) {
+  const { selectedIds, selectAll, clearSelection } = useAccountWorkspace();
+  const allSelected = ids.length > 0 && ids.every((id) => selectedIds.has(id));
+  const someSelected = !allSelected && ids.some((id) => selectedIds.has(id));
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Checkbox
+            aria-label="Select all accounts"
+            checked={allSelected}
+            indeterminate={someSelected}
+            onCheckedChange={(checked) => (checked ? selectAll(ids) : clearSelection())}
+          />
+        }
+      />
+      <TooltipContent>Select all</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function SelectRowCheckbox({ id }: { id: string }) {
+  const { selectedIds, toggleSelected } = useAccountWorkspace();
+  const checked = selectedIds.has(id);
+  return (
+    <Checkbox
+      aria-label="Select account"
+      checked={checked}
+      onCheckedChange={() => toggleSelected(id)}
+      className={cn(
+        "opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100",
+        checked && "opacity-100",
+      )}
+    />
+  );
+}
+
+export function AccountTable({
+  accounts,
+  familyId,
+  memberId,
+  currencyCode,
+  currencySymbol,
+  currencyScale,
+  existingTags,
+  sortState,
+  sortBaseHref,
+  sortPreserve,
+}: {
+  accounts: AccountWithBalance[];
+  familyId: string;
+  memberId: string;
+  currencyCode: string;
+  currencySymbol: string;
+  currencyScale: number;
+  existingTags: string[];
+  sortState: AccountSortState | null;
+  sortBaseHref: string;
+  sortPreserve: Record<string, string>;
+}) {
+  const ids = accounts.map((a) => a.id);
+
+  const sortableHeader = (label: string, field: AccountSortField, align?: "end") => {
+    const isActive = sortState?.field === field;
+    return (
+      <SortableColumnHeader
+        label={label}
+        href={buildAccountSortHref(sortBaseHref, sortPreserve, nextAccountSortState(sortState, field))}
+        isActive={isActive}
+        direction={isActive ? sortState.direction : undefined}
+        align={align}
+      />
+    );
+  };
+
+  return (
+    <div className="overflow-x-auto">
+      <Table role="grid">
+        <TableHeader>
+          <TableRow role="row">
+            <TableHead role="columnheader">
+              <SelectAllCheckbox ids={ids} />
+            </TableHead>
+            <TableHead role="columnheader" className="text-xs font-semibold text-foreground/90">
+              {sortableHeader("Name", "name")}
+            </TableHead>
+            <TableHead role="columnheader" className="text-xs font-semibold text-foreground/90">
+              {sortableHeader("Classification", "classification")}
+            </TableHead>
+            <TableHead role="columnheader" className="text-xs font-semibold text-foreground/90">
+              {sortableHeader("Instrument", "instrumentType")}
+            </TableHead>
+            <TableHead role="columnheader" className="text-right text-xs font-semibold text-foreground/90">
+              {sortableHeader("Balance", "balance", "end")}
+            </TableHead>
+            <TableHead role="columnheader" className="text-xs font-semibold text-foreground/90">
+              {sortableHeader("Tags", "tags")}
+            </TableHead>
+            <TableHead role="columnheader">
+              <span className="sr-only">Actions</span>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {accounts.map((account) => (
+            <TableRow key={account.id} role="row" className="group/row">
+              <TableCell role="gridcell" className="py-2.5">
+                <SelectRowCheckbox id={account.id} />
+              </TableCell>
+              <TableCell role="gridcell" className="py-2.5">
+                <Link
+                  href={`/f/${familyId}/m/${memberId}/accounts/${account.id}`}
+                  className="flex items-center gap-2 text-primary hover:underline"
+                >
+                  <AccountIcon classification={account.classification} icon={account.icon} />
+                  <span className="font-medium">{account.name}</span>
+                </Link>
+                {account.isArchived && (
+                  <Badge variant="outline" className="ml-2">
+                    Archived
+                  </Badge>
+                )}
+              </TableCell>
+              <TableCell role="gridcell" className="py-2.5">
+                {humanizeEnum(account.classification)}
+              </TableCell>
+              <TableCell role="gridcell" className="py-2.5">
+                {humanizeEnum(account.instrumentType)}
+              </TableCell>
+              <TableCell role="gridcell" className="py-2.5 text-right">
+                <span className="whitespace-nowrap font-mono tabular-nums">
+                  {formatMoney(account.balance, currencySymbol, currencyScale)}
+                </span>
+              </TableCell>
+              <TableCell role="gridcell" className="py-2.5">
+                <TagChips tags={account.tags} />
+              </TableCell>
+              <TableCell role="gridcell" className="py-2.5">
+                <div className="flex justify-end gap-1.5">
+                  <AccountFormSheet
+                    mode="edit"
+                    familyId={familyId}
+                    memberId={memberId}
+                    currencies={[]}
+                    existingTags={existingTags}
+                    account={{
+                      id: account.id,
+                      currencyId: account.currencyId,
+                      currencyCode,
+                      name: account.name,
+                      classification: account.classification,
+                      instrumentType: account.instrumentType,
+                      tags: account.tags,
+                      icon: account.icon,
+                    }}
+                    trigger={
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Edit account"
+                        className="opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100"
+                      >
+                        <Pencil aria-hidden="true" />
+                      </Button>
+                    }
+                  />
+                  {!account.isArchived && (
+                    <div className="opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100">
+                      <ArchiveAccountButton
+                        familyId={familyId}
+                        memberId={memberId}
+                        accountId={account.id}
+                        variant="ghost"
+                      />
+                    </div>
+                  )}
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}

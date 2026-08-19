@@ -1,0 +1,512 @@
+// Native demo content (docs/onboarding.md §4) — pure data construction, no
+// DB access. Names/categories are inspired by docs/demo-data/accounts.json
+// (a FinBodhi export the user confirmed is "inspiration only," not a
+// literal import source — its schema is foreign and includes modules with
+// no Ledger equivalent). Investment-type accounts (stocks/mutual funds/
+// metals) from that reference are deliberately dropped: docs/05-mvp-scope.md
+// excludes Investments/Stock/Metal accounts, and AGENTS.md rule #11 freezes
+// instrument types to the seven used below — this dataset stays entirely
+// inside that frozen set (resolved conflict, see the approved plan).
+import { toMinorUnits, validateTransaction, type AccountRef, type Classification, type InstrumentType } from "@/domain";
+import type { MemberRow } from "../repositories/members";
+import type { CurrencyRow } from "../repositories/currencies";
+import type { AccountRow } from "../repositories/accounts";
+import type { TransactionRow, PostingRow } from "../repositories/transactions";
+
+const SCALE = 2; // INR minor units — matches createInrCurrencyAction.
+
+export interface DemoDataset {
+  members: MemberRow[];
+  currencies: CurrencyRow[];
+  accounts: AccountRow[];
+  transactions: TransactionRow[];
+  postings: PostingRow[];
+  primaryMemberId: string;
+}
+
+// Deterministic PRNG (mulberry32) — reproducible amount/category jitter
+// across runs and in tests, no new dependency, nothing security-sensitive.
+function mulberry32(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state |= 0;
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function money(rupees: number): number {
+  return toMinorUnits(rupees, SCALE);
+}
+
+function isoDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+interface AccountSpec {
+  key: string;
+  name: string;
+  classification: Classification;
+  instrumentType: InstrumentType;
+}
+
+const PRIMARY_ACCOUNT_SPECS: AccountSpec[] = [
+  { key: "bank1", name: "HDFC Bank", classification: "ASSET", instrumentType: "BANK" },
+  { key: "bank2", name: "SBI Bank", classification: "ASSET", instrumentType: "BANK" },
+  { key: "epf", name: "EPF", classification: "ASSET", instrumentType: "CASH" },
+  { key: "fd", name: "Fixed Deposit", classification: "ASSET", instrumentType: "CASH" },
+  { key: "homeLoan", name: "Home Loan", classification: "LIABILITY", instrumentType: "LOAN" },
+  { key: "creditCard", name: "Credit Card", classification: "LIABILITY", instrumentType: "CREDIT_CARD" },
+  { key: "salary", name: "Salary", classification: "INCOME", instrumentType: "INCOME" },
+  { key: "freelance", name: "Freelance Income", classification: "INCOME", instrumentType: "INCOME" },
+  { key: "interest", name: "Interest Income", classification: "INCOME", instrumentType: "INCOME" },
+  { key: "food", name: "Food", classification: "EXPENSE", instrumentType: "EXPENSE" },
+  { key: "rent", name: "Rent", classification: "EXPENSE", instrumentType: "EXPENSE" },
+  { key: "utilities", name: "Utilities", classification: "EXPENSE", instrumentType: "EXPENSE" },
+  { key: "shopping", name: "Shopping", classification: "EXPENSE", instrumentType: "EXPENSE" },
+  { key: "restaurants", name: "Restaurants", classification: "EXPENSE", instrumentType: "EXPENSE" },
+  { key: "transport", name: "Transport", classification: "EXPENSE", instrumentType: "EXPENSE" },
+  { key: "healthcare", name: "Healthcare", classification: "EXPENSE", instrumentType: "EXPENSE" },
+  { key: "entertainment", name: "Entertainment", classification: "EXPENSE", instrumentType: "EXPENSE" },
+  { key: "homeLoanInterest", name: "Home Loan Interest", classification: "EXPENSE", instrumentType: "EXPENSE" },
+  { key: "balancing", name: "Opening Balance", classification: "BALANCING", instrumentType: "BALANCING" },
+];
+
+const SECONDARY_ACCOUNT_SPECS: AccountSpec[] = [
+  { key: "bank", name: "ICICI Bank", classification: "ASSET", instrumentType: "BANK" },
+  { key: "salary", name: "Salary", classification: "INCOME", instrumentType: "INCOME" },
+  { key: "food", name: "Food", classification: "EXPENSE", instrumentType: "EXPENSE" },
+  { key: "shopping", name: "Shopping", classification: "EXPENSE", instrumentType: "EXPENSE" },
+  { key: "transport", name: "Transport", classification: "EXPENSE", instrumentType: "EXPENSE" },
+  { key: "balancing", name: "Opening Balance", classification: "BALANCING", instrumentType: "BALANCING" },
+];
+
+const CC_CATEGORIES = [
+  "food",
+  "shopping",
+  "restaurants",
+  "utilities",
+  "transport",
+  "healthcare",
+  "entertainment",
+] as const;
+const CC_AMOUNT_RANGE: Record<(typeof CC_CATEGORIES)[number], [number, number]> = {
+  food: [100, 400],
+  shopping: [200, 2000],
+  restaurants: [300, 1200],
+  utilities: [600, 1800],
+  transport: [40, 300],
+  healthcare: [150, 1400],
+  entertainment: [150, 1000],
+};
+
+const SECONDARY_CATEGORIES = ["food", "shopping", "transport"] as const;
+const SECONDARY_AMOUNT_RANGE: Record<(typeof SECONDARY_CATEGORIES)[number], [number, number]> = {
+  food: [100, 450],
+  shopping: [200, 2000],
+  transport: [40, 300],
+};
+
+function randomInRange(rand: () => number, [min, max]: [number, number]): number {
+  return Math.round(min + rand() * (max - min));
+}
+
+class DatasetBuilder {
+  transactions: TransactionRow[] = [];
+  postings: PostingRow[] = [];
+
+  constructor(private readonly now: string) {}
+
+  private buildRow(
+    memberId: string,
+    date: string,
+    description: string,
+    legs: { accountId: string; debit: number; credit: number }[],
+    tags: string[] | null,
+  ): void {
+    const transactionId = crypto.randomUUID();
+    for (const leg of legs) {
+      this.postings.push({
+        id: crypto.randomUUID(),
+        transactionId,
+        accountId: leg.accountId,
+        debit: leg.debit,
+        credit: leg.credit,
+        createdAt: this.now,
+        updatedAt: this.now,
+      });
+    }
+    this.transactions.push({
+      id: transactionId,
+      memberId,
+      date,
+      description,
+      tags,
+      createdAt: this.now,
+      updatedAt: this.now,
+    });
+  }
+
+  // From is credited the full amount, To is debited the full amount — same
+  // convention as TransactionForm's Simple mode (src/components/
+  // transaction-form.tsx): expense = From an Asset/Liability, To an
+  // Expense; income = From an Income account, To an Asset.
+  simple(
+    memberId: string,
+    date: string,
+    description: string,
+    fromAccountId: string,
+    toAccountId: string,
+    amountMinor: number,
+    tags: string[] | null = null,
+  ): void {
+    this.buildRow(
+      memberId,
+      date,
+      description,
+      [
+        { accountId: fromAccountId, debit: 0, credit: amountMinor },
+        { accountId: toAccountId, debit: amountMinor, credit: 0 },
+      ],
+      tags,
+    );
+  }
+
+  // Same From-credited convention, N debited destinations — Split mode's
+  // shape (e.g. an EMI: principal to the Loan account, interest to an
+  // Expense account, both from the same Bank payment).
+  split(
+    memberId: string,
+    date: string,
+    description: string,
+    fromAccountId: string,
+    toLines: { accountId: string; amountMinor: number }[],
+    tags: string[] | null = null,
+  ): void {
+    const total = toLines.reduce((sum, line) => sum + line.amountMinor, 0);
+    this.buildRow(
+      memberId,
+      date,
+      description,
+      [
+        { accountId: fromAccountId, debit: 0, credit: total },
+        ...toLines.map((line) => ({ accountId: line.accountId, debit: line.amountMinor, credit: 0 })),
+      ],
+      tags,
+    );
+  }
+}
+
+function buildMember(name: string, isPrimary: boolean, now: string): MemberRow {
+  return { id: crypto.randomUUID(), name, isPrimary, createdAt: now, updatedAt: now };
+}
+
+function buildCurrency(memberId: string, now: string): CurrencyRow {
+  return {
+    id: crypto.randomUUID(),
+    memberId,
+    code: "INR",
+    name: "Indian Rupee",
+    symbol: "₹",
+    minorUnitScale: SCALE,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function buildAccounts(
+  memberId: string,
+  currencyId: string,
+  specs: AccountSpec[],
+  now: string,
+): { accounts: AccountRow[]; byKey: Map<string, AccountRow> } {
+  const accounts = specs.map(
+    (spec): AccountRow => ({
+      id: crypto.randomUUID(),
+      memberId,
+      currencyId,
+      name: spec.name,
+      classification: spec.classification,
+      instrumentType: spec.instrumentType,
+      instrumentId: null,
+      instrumentLabel: null,
+      tags: null,
+      icon: null,
+      isArchived: false,
+      metadata: null,
+      createdAt: now,
+      updatedAt: now,
+    }),
+  );
+  return { accounts, byKey: new Map(specs.map((spec, i) => [spec.key, accounts[i]])) };
+}
+
+// Builds a full demo Family dataset: 2 Members, 1 INR Currency each,
+// realistic Accounts within the frozen classification/instrument-type set,
+// and ~1 year of transactions covering income, expenses, transfers, credit
+// card spend + payment, loan EMIs (as split transactions), interest, tags,
+// and activity across both Members (docs/onboarding.md §4.1's representative
+// list, minus the explicitly-dropped investment types).
+//
+// `now`/`seed` are overridable for reproducible tests; production callers
+// use the defaults (real current date, fixed seed — only dates are
+// naturally different per call since they're anchored to real "now").
+export function buildDemoDataset(now: Date = new Date(), seed = 42): DemoDataset {
+  const rand = mulberry32(seed);
+  const nowIso = now.toISOString();
+
+  const primaryMember = buildMember("Aditya", true, nowIso);
+  const secondaryMember = buildMember("Priya", false, nowIso);
+
+  const primaryCurrency = buildCurrency(primaryMember.id, nowIso);
+  const secondaryCurrency = buildCurrency(secondaryMember.id, nowIso);
+
+  const { accounts: primaryAccounts, byKey: primary } = buildAccounts(
+    primaryMember.id,
+    primaryCurrency.id,
+    PRIMARY_ACCOUNT_SPECS,
+    nowIso,
+  );
+  const { accounts: secondaryAccounts, byKey: secondary } = buildAccounts(
+    secondaryMember.id,
+    secondaryCurrency.id,
+    SECONDARY_ACCOUNT_SPECS,
+    nowIso,
+  );
+
+  const builder = new DatasetBuilder(nowIso);
+
+  // --- Opening balances (mirrors createAccount's own opening-balance
+  // convention: post to the new account's normal-balance side, opposite
+  // side to Balancing) ---
+  builder.split(primaryMember.id, isoDate(new Date(now.getTime() - 365 * 86400000)), "Opening balance", primary.get("balancing")!.id, [
+    { accountId: primary.get("bank1")!.id, amountMinor: money(90000) },
+    { accountId: primary.get("bank2")!.id, amountMinor: money(20000) },
+    { accountId: primary.get("epf")!.id, amountMinor: money(150000) },
+    { accountId: primary.get("fd")!.id, amountMinor: money(200000) },
+  ]);
+  // Home Loan is a liability — its normal balance side is credit, so the
+  // opening entry credits it directly and debits Balancing (rule #12: LOAN
+  // is a plain liability ledger account only, matches this exactly).
+  builder.simple(
+    primaryMember.id,
+    isoDate(new Date(now.getTime() - 365 * 86400000)),
+    "Opening balance",
+    primary.get("balancing")!.id,
+    primary.get("homeLoan")!.id,
+    money(2500000),
+  );
+  builder.simple(
+    secondaryMember.id,
+    isoDate(new Date(now.getTime() - 365 * 86400000)),
+    "Opening balance",
+    secondary.get("balancing")!.id,
+    secondary.get("bank")!.id,
+    money(15000),
+  );
+
+  // --- Daily activity across the ~1 year window ---
+  const DAYS = 365;
+  let monthlyCardSpend = 0;
+
+  for (let dayOffset = DAYS; dayOffset >= 0; dayOffset--) {
+    const date = new Date(now.getTime() - dayOffset * 86400000);
+    const dateStr = isoDate(date);
+    const dayOfMonth = date.getDate();
+    const isMonthStart = dayOfMonth === 1;
+
+    // Primary Member: 2 credit-card spends/day across rotating categories.
+    for (let i = 0; i < 2; i++) {
+      const category = CC_CATEGORIES[(dayOffset * 2 + i) % CC_CATEGORIES.length];
+      const [min, max] = CC_AMOUNT_RANGE[category];
+      const amount = money(randomInRange(rand, [min, max]));
+      monthlyCardSpend += amount;
+      const tags =
+        category === "food"
+          ? [rand() > 0.5 ? "groceries" : "dining"]
+          : category === "shopping" && rand() > 0.6
+            ? ["electronics"]
+            : null;
+      builder.simple(
+        primaryMember.id,
+        dateStr,
+        `${primary.get(category)!.name} purchase`,
+        primary.get("creditCard")!.id,
+        primary.get(category)!.id,
+        amount,
+        tags,
+      );
+    }
+
+    // Secondary Member: 1 spend/day across a smaller rotating set, paid
+    // straight from their Bank (no credit card for this Member — keeps the
+    // dataset from just duplicating the primary Member's shape).
+    const secondaryCategory = SECONDARY_CATEGORIES[dayOffset % SECONDARY_CATEGORIES.length];
+    const [sMin, sMax] = SECONDARY_AMOUNT_RANGE[secondaryCategory];
+    builder.simple(
+      secondaryMember.id,
+      dateStr,
+      `${secondary.get(secondaryCategory)!.name} purchase`,
+      secondary.get("bank")!.id,
+      secondary.get(secondaryCategory)!.id,
+      money(randomInRange(rand, [sMin, sMax])),
+    );
+
+    // Monthly recurring items, anchored to the 1st of each month.
+    if (isMonthStart) {
+      builder.simple(
+        primaryMember.id,
+        dateStr,
+        "Salary",
+        primary.get("salary")!.id,
+        primary.get("bank1")!.id,
+        money(95000),
+      );
+      if (rand() > 0.5) {
+        builder.simple(
+          primaryMember.id,
+          dateStr,
+          "Freelance payment",
+          primary.get("freelance")!.id,
+          primary.get("bank1")!.id,
+          money(randomInRange(rand, [5000, 20000])),
+        );
+      }
+      builder.simple(
+        primaryMember.id,
+        dateStr,
+        "Rent",
+        primary.get("bank1")!.id,
+        primary.get("rent")!.id,
+        money(25000),
+      );
+      builder.split(
+        primaryMember.id,
+        dateStr,
+        "Home Loan EMI",
+        primary.get("bank1")!.id,
+        [
+          { accountId: primary.get("homeLoan")!.id, amountMinor: money(15000) },
+          { accountId: primary.get("homeLoanInterest")!.id, amountMinor: money(7200) },
+        ],
+      );
+      builder.simple(
+        primaryMember.id,
+        dateStr,
+        "EPF contribution",
+        primary.get("bank1")!.id,
+        primary.get("epf")!.id,
+        money(6000),
+      );
+      if (monthlyCardSpend > 0) {
+        builder.simple(
+          primaryMember.id,
+          dateStr,
+          "Credit Card payment",
+          primary.get("bank1")!.id,
+          primary.get("creditCard")!.id,
+          monthlyCardSpend,
+        );
+      }
+      monthlyCardSpend = 0;
+
+      builder.simple(
+        secondaryMember.id,
+        dateStr,
+        "Salary",
+        secondary.get("salary")!.id,
+        secondary.get("bank")!.id,
+        money(45000),
+      );
+
+      // Occasional inter-bank transfer, alternating direction.
+      const monthIndex = date.getMonth() + date.getFullYear() * 12;
+      if (monthIndex % 2 === 0) {
+        builder.simple(
+          primaryMember.id,
+          dateStr,
+          "Transfer to SBI Bank",
+          primary.get("bank1")!.id,
+          primary.get("bank2")!.id,
+          money(randomInRange(rand, [2000, 10000])),
+        );
+      } else {
+        builder.simple(
+          primaryMember.id,
+          dateStr,
+          "Transfer to HDFC Bank",
+          primary.get("bank2")!.id,
+          primary.get("bank1")!.id,
+          money(randomInRange(rand, [2000, 10000])),
+        );
+      }
+    }
+
+    // Quarterly interest — FD and EPF, from Interest Income.
+    if (isMonthStart && (date.getMonth() + 1) % 3 === 0) {
+      builder.simple(
+        primaryMember.id,
+        dateStr,
+        "FD interest",
+        primary.get("interest")!.id,
+        primary.get("fd")!.id,
+        money(randomInRange(rand, [3000, 5000])),
+      );
+      builder.simple(
+        primaryMember.id,
+        dateStr,
+        "EPF interest",
+        primary.get("interest")!.id,
+        primary.get("epf")!.id,
+        money(randomInRange(rand, [1500, 2500])),
+      );
+    }
+  }
+
+  return {
+    members: [primaryMember, secondaryMember],
+    currencies: [primaryCurrency, secondaryCurrency],
+    accounts: [...primaryAccounts, ...secondaryAccounts],
+    transactions: builder.transactions,
+    postings: builder.postings,
+    primaryMemberId: primaryMember.id,
+  };
+}
+
+// Every generated transaction must satisfy the same balance/ownership
+// invariant as a real one (rule #3 has no demo exception). Used by the
+// use-case layer as a belt-and-suspenders check before insert, and by unit
+// tests to assert zero violations across the whole generated set.
+export function validateDataset(dataset: DemoDataset): void {
+  const accountRefs = new Map<string, AccountRef>(
+    dataset.accounts.map((account) => {
+      const currency = dataset.currencies.find((c) => c.id === account.currencyId)!;
+      return [account.id, { id: account.id, memberId: account.memberId, currencyCode: currency.code }];
+    }),
+  );
+
+  const postingsByTransaction = new Map<string, PostingRow[]>();
+  for (const posting of dataset.postings) {
+    const list = postingsByTransaction.get(posting.transactionId) ?? [];
+    list.push(posting);
+    postingsByTransaction.set(posting.transactionId, list);
+  }
+
+  for (const transaction of dataset.transactions) {
+    const postings = postingsByTransaction.get(transaction.id) ?? [];
+    const violations = validateTransaction(
+      {
+        memberId: transaction.memberId,
+        postings: postings.map((p) => ({ accountId: p.accountId, debit: p.debit, credit: p.credit })),
+      },
+      accountRefs,
+    );
+    if (violations.length > 0) {
+      throw new Error(
+        `Demo transaction ${transaction.id} (${transaction.description}) failed validation: ${JSON.stringify(violations)}`,
+      );
+    }
+  }
+}

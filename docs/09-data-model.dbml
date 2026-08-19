@@ -1,0 +1,75 @@
+// Conceptual MVP schema.
+// Final Drizzle implementation may evolve while preserving domain rules.
+// Money values are integer minor units.
+
+Table members {
+  id text [pk]
+  name text [not null]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+Table currencies {
+  id text [pk]
+  member_id text [not null]
+  code text [not null]
+  name text [not null]
+  symbol text [not null]
+  minor_unit_scale integer [not null]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+Table accounts {
+  id text [pk]
+  member_id text [not null]
+  currency_id text [not null]
+  name text [not null]
+  classification text [not null, note: 'ASSET | LIABILITY | INCOME | EXPENSE | BALANCING']
+  instrument_type text [not null, note: 'BANK | CASH | CREDIT_CARD | LOAN | EXPENSE | INCOME | BALANCING']
+  instrument_id text
+  instrument_label text
+  tags text [note: 'JSON array: string[]']
+  icon text
+  is_archived boolean [not null, default: false]
+  metadata text
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+Table transactions {
+  id text [pk]
+  member_id text [not null]
+  date datetime [not null]
+  description text [not null]
+  tags text [note: 'JSON array: string[]']
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+Table postings {
+  id text [pk]
+  transaction_id text [not null]
+  account_id text [not null]
+  debit integer [not null, default: 0]
+  credit integer [not null, default: 0]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+Ref: currencies.member_id > members.id
+Ref: accounts.member_id > members.id
+Ref: accounts.currency_id > currencies.id
+Ref: transactions.member_id > members.id
+Ref: postings.transaction_id > transactions.id
+Ref: postings.account_id > accounts.id
+
+// Domain constraints not fully expressible in this conceptual DBML:
+//
+// 1. Transaction must have >= 2 postings.
+// 2. Posting must have exactly one positive side.
+// 3. debit and credit must be non-negative.
+// 4. SUM(debit) == SUM(credit) per transaction.
+// 5. posting.account.member_id == transaction.member_id.
+// 6. MVP account currency is INR.
+// 7. Hard delete transaction aggregate atomically.
