@@ -2,7 +2,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { getFamilyDb } from "../db/family-client";
+import { requireFamilyDb } from "../authz";
 import { ACTIVE_MEMBER_COOKIE } from "../activeMember";
 import { createDemoFamilyData } from "../use-cases/demo-data";
 
@@ -12,7 +12,7 @@ import { createDemoFamilyData } from "../use-cases/demo-data";
 // this action is just the activation/redirect wrapper, mirroring
 // createFamilyAndActivateAction/createMemberAndActivateAction one level up.
 export async function createDemoFamilyAndActivateAction(familyId: string): Promise<void> {
-  const primaryMember = createDemoFamilyData(getFamilyDb(familyId));
+  const primaryMember = createDemoFamilyData(await requireFamilyDb(familyId));
 
   const cookieStore = await cookies();
   cookieStore.set(ACTIVE_MEMBER_COOKIE, primaryMember.id, {

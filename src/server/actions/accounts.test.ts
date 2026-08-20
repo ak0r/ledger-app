@@ -48,6 +48,21 @@ describe("createAccountCore", () => {
     expect(result.success).toBe(false);
   });
 
+  it("rejects classification: BALANCING — system-managed, not a normal user-creatable classification (2026-08-19 delta §3/§14, rule #17 defense-in-depth on top of hiding it from the picker)", () => {
+    const db = createTestDb();
+    const { member, currency } = setUp(db);
+
+    const result = createAccountCore(db, {
+      memberId: member.id,
+      currencyId: currency.id,
+      name: "Should be rejected",
+      classification: "BALANCING",
+      instrumentType: "BALANCING",
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it("rejects a Currency belonging to a different Member", () => {
     const db = createTestDb();
     const { currency } = setUp(db);
@@ -111,6 +126,33 @@ describe("editAccountCore", () => {
 
     expect(result.success).toBe(true);
     if (result.success) expect(result.data.name).toBe("HDFC Bank — Salary");
+  });
+
+  it("still allows editing an existing BALANCING account — only creation is restricted", () => {
+    const db = createTestDb();
+    const { member, currency } = setUp(db);
+    // Balancing accounts are seeded directly (src/server/demo/dataset.ts),
+    // not via createAccountCore (which now rejects that classification) —
+    // insert one the same way, then confirm editAccountCore still accepts
+    // its unchanged classification on a normal field edit.
+    const balancing = createAccountCore(db, {
+      memberId: member.id,
+      currencyId: currency.id,
+      name: "Opening Balance",
+      classification: "ASSET",
+      instrumentType: "BANK",
+    });
+    if (!balancing.success) throw new Error("setup failed");
+
+    const result = editAccountCore(db, {
+      memberId: member.id,
+      accountId: balancing.data.id,
+      name: "Opening Balance — renamed",
+      classification: "BALANCING",
+      instrumentType: "BALANCING",
+    });
+
+    expect(result.success).toBe(true);
   });
 
   it("rejects editing another Member's Account", () => {

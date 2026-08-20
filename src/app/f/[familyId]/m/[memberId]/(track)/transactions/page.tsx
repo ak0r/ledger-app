@@ -15,6 +15,8 @@ import { TransactionFilterDrawer } from "@/components/transaction-filter-drawer"
 import { TransactionQuickSearch } from "@/components/transaction-quick-search";
 import { TransactionPaginationControls } from "@/components/transaction-pagination";
 import { TransactionEditDrawer } from "@/components/transaction-edit-drawer";
+import { TransactionCreateDrawer } from "@/components/transaction-create-drawer";
+import { TransactionCreateTrigger } from "@/components/transaction-create-trigger";
 import { StickyToolbar } from "@/components/sticky-toolbar";
 import { TransactionWorkspaceProvider } from "@/components/transaction-workspace";
 
@@ -114,103 +116,113 @@ export default async function TransactionsPage(props: PageProps<"/f/[familyId]/m
   })();
 
   return (
-    <div className="flex flex-col gap-4">
-      <StickyToolbar className="flex flex-wrap items-center justify-between gap-3 py-1">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold">Transactions</h1>
-          {canCreateTransaction ? (
-            <Link href={`/f/${familyId}/m/${memberId}/transactions/new`} className={buttonVariants()}>
-              New Transaction
-            </Link>
-          ) : (
-            <Link
-              href={`/f/${familyId}/m/${memberId}/accounts/new`}
-              className={buttonVariants({ variant: "outline" })}
-            >
-              Add an Account
-            </Link>
-          )}
-        </div>
+    <TransactionWorkspaceProvider key={rows.map((row) => row.id).join(",")}>
+      <div className="flex flex-col gap-4">
+        <StickyToolbar className="flex flex-wrap items-center justify-between gap-3 py-1">
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-semibold">Transactions</h1>
+            {canCreateTransaction ? (
+              <TransactionCreateTrigger />
+            ) : (
+              <Link
+                href={`/f/${familyId}/m/${memberId}/accounts/new`}
+                className={buttonVariants({ variant: "outline" })}
+              >
+                Add an Account
+              </Link>
+            )}
+          </div>
 
-        <div className="flex items-center gap-2">
-          <TransactionFilterDrawer
-            key={`filter-${JSON.stringify(filterState)}`}
-            baseHref={baseHref}
-            accounts={accounts}
-            currency={currency}
-            initialState={filterState}
-            sortState={sortState}
-          />
-          <TransactionQuickSearch
-            key={`search-${JSON.stringify(filterState)}`}
-            baseHref={baseHref}
-            filterState={filterState}
-            sortState={sortState}
-          />
-          {hasActiveFilters && (
-            <Link href={clearFiltersHref} className={buttonVariants({ variant: "ghost", size: "sm" })}>
-              Clear filters
-            </Link>
-          )}
-        </div>
-      </StickyToolbar>
+          <div className="flex items-center gap-2">
+            <TransactionFilterDrawer
+              key={`filter-${JSON.stringify(filterState)}`}
+              baseHref={baseHref}
+              accounts={accounts}
+              currency={currency}
+              initialState={filterState}
+              sortState={sortState}
+            />
+            <TransactionQuickSearch
+              key={`search-${JSON.stringify(filterState)}`}
+              baseHref={baseHref}
+              filterState={filterState}
+              sortState={sortState}
+            />
+            {hasActiveFilters && (
+              <Link href={clearFiltersHref} className={buttonVariants({ variant: "ghost", size: "sm" })}>
+                Clear filters
+              </Link>
+            )}
+          </div>
+        </StickyToolbar>
 
-      {!canCreateTransaction && (
-        <p className="text-sm text-muted-foreground">
-          A Transaction needs at least two Accounts (money moves from one to another) — add one
-          more Account to get started.
-        </p>
-      )}
+        {!canCreateTransaction && (
+          <p className="text-sm text-muted-foreground">
+            A Transaction needs at least two Accounts (money moves from one to another) — add one
+            more Account to get started.
+          </p>
+        )}
 
-      {total > 0 && (
-        <p className="-mt-2 text-sm text-muted-foreground">
-          {total} transaction{total === 1 ? "" : "s"}
-        </p>
-      )}
+        {total > 0 && (
+          <p className="-mt-2 text-sm text-muted-foreground">
+            {total} transaction{total === 1 ? "" : "s"}
+          </p>
+        )}
 
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          {hasActiveFilters ? "No transactions match these filters." : "No transactions yet."}
-        </p>
-      ) : (
-        <TransactionWorkspaceProvider key={rows.map((row) => row.id).join(",")}>
-          <TransactionTable
-            rows={rows}
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {hasActiveFilters ? "No transactions match these filters." : "No transactions yet."}
+          </p>
+        ) : (
+          <>
+            <TransactionTable
+              rows={rows}
+              familyId={familyId}
+              memberId={memberId}
+              accounts={accountOptions}
+              currencySymbol={currency.symbol}
+              currencyScale={currency.minorUnitScale}
+              existingTags={existingTags}
+              sortState={sortState}
+              sortBaseHref={baseHref}
+              sortPreserve={{ filter: hasActiveFilters ? asParam(searchParams.filter) : undefined, pageSize: pageSize !== DEFAULT_PAGE_SIZE ? String(pageSize) : undefined }}
+              stickyHeader
+              footer={
+                <TransactionPaginationControls
+                  key="pagination-footer"
+                  pageSize={pageSize}
+                  pageSizeHrefs={Object.fromEntries(PAGE_SIZES.map((size) => [size, pageHref(1, size)]))}
+                  page={page}
+                  totalPages={totalPages}
+                  first={pageHref(1)}
+                  prev={page > 1 ? pageHref(page - 1) : null}
+                  next={page < totalPages ? pageHref(page + 1) : null}
+                  last={pageHref(totalPages)}
+                />
+              }
+            />
+            <TransactionEditDrawer
+              rows={rows}
+              familyId={familyId}
+              memberId={memberId}
+              accounts={accountOptions}
+              currencySymbol={currency.symbol}
+              currencyScale={currency.minorUnitScale}
+              existingTags={existingTags}
+            />
+          </>
+        )}
+        {canCreateTransaction && (
+          <TransactionCreateDrawer
             familyId={familyId}
             memberId={memberId}
             accounts={accountOptions}
             currencySymbol={currency.symbol}
             currencyScale={currency.minorUnitScale}
             existingTags={existingTags}
-            sortState={sortState}
-            sortBaseHref={baseHref}
-            sortPreserve={{ filter: hasActiveFilters ? asParam(searchParams.filter) : undefined, pageSize: pageSize !== DEFAULT_PAGE_SIZE ? String(pageSize) : undefined }}
-            stickyHeader
-            footer={
-              <TransactionPaginationControls
-                key="pagination-footer"
-                pageSize={pageSize}
-                pageSizeHrefs={Object.fromEntries(PAGE_SIZES.map((size) => [size, pageHref(1, size)]))}
-                page={page}
-                totalPages={totalPages}
-                first={pageHref(1)}
-                prev={page > 1 ? pageHref(page - 1) : null}
-                next={page < totalPages ? pageHref(page + 1) : null}
-                last={pageHref(totalPages)}
-              />
-            }
           />
-          <TransactionEditDrawer
-            rows={rows}
-            familyId={familyId}
-            memberId={memberId}
-            accounts={accountOptions}
-            currencySymbol={currency.symbol}
-            currencyScale={currency.minorUnitScale}
-            existingTags={existingTags}
-          />
-        </TransactionWorkspaceProvider>
-      )}
-    </div>
+        )}
+      </div>
+    </TransactionWorkspaceProvider>
   );
 }

@@ -5,7 +5,10 @@ import {
   finalizePrimaryMemberAction,
   finalizePrimaryMemberFromFormAction,
 } from "@/server/actions/activeMember";
+import { createDefaultMemberAction } from "@/server/actions/members";
+import { DEFAULT_MEMBER_NAME } from "@/server/use-cases/members";
 import { MemberForm } from "@/components/member-form";
+import { MemberCreateDialog } from "@/components/member-create-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -46,14 +49,10 @@ export default async function MembersPage(props: PageProps<"/f/[familyId]/member
           ))}
         </ul>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Add another Member</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <MemberForm familyId={familyId} submitLabel="Add Member" />
-          </CardContent>
-        </Card>
+        <MemberCreateDialog
+          familyId={familyId}
+          trigger={<Button variant="outline">Add another Member</Button>}
+        />
       </main>
     );
   }
@@ -92,8 +91,13 @@ export default async function MembersPage(props: PageProps<"/f/[familyId]/member
         <CardHeader>
           <CardTitle>{isFirstMember ? "Create your first Member" : "Add another Member"}</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-3">
           <MemberForm familyId={familyId} submitLabel="Add Member" mode="add" />
+          <form action={createDefaultMemberAction.bind(null, familyId)}>
+            <Button type="submit" variant="secondary" className="w-full">
+              Use a default name ({DEFAULT_MEMBER_NAME})
+            </Button>
+          </form>
         </CardContent>
       </Card>
 

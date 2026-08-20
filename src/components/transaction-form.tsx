@@ -85,6 +85,10 @@ interface TransactionFormProps {
   // just refresh the underlying page's data and close.
   onCancel?: () => void;
   onSuccess?: () => void;
+  // Sheet-usage-only (edit-visual-behaviour delta §12) — see AccountForm's
+  // own doc comment on the identical prop for why the confirmation UI
+  // lives in the wrapping Sheet, not duplicated per form.
+  onDirtyChange?: (dirty: boolean) => void;
   transaction?: {
     id: string;
     date: string;
@@ -109,11 +113,16 @@ export function TransactionForm({
   initialSplit,
   onCancel,
   onSuccess,
+  onDirtyChange,
   transaction,
 }: TransactionFormProps) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
   const [tags, setTags] = useState<string[]>(transaction?.tags ?? []);
+  // Stable initial value — see AccountForm's identical comment on why
+  // `tags` (plain useState, outside react-hook-form) needs its own
+  // dirty-check rather than relying on `formState.isDirty` alone.
+  const initialTags = useRef(transaction?.tags ?? []).current;
   const schema = useMemo(() => buildTransactionFormSchema(currencyScale), [currencyScale]);
 
   const {
@@ -122,9 +131,20 @@ export function TransactionForm({
     handleSubmit,
     watch,
     setValue,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty: fieldsAreDirty },
   } = useForm<TransactionFormValues>({
     resolver: zodResolver(schema),
+    // Every registered field path must appear here, even for create mode's
+    // "nothing yet" state (`date`/`description` as `""`, `amount` as `NaN`
+    // — an empty number input reads back as `NaN` via `valueAsNumber`, not
+    // `undefined`). A key missing from defaultValues but present on the
+    // rendered form makes react-hook-form's `formState.isDirty` true from
+    // the very first render, before any user interaction: it diffs the
+    // full current-values shape against defaultValues, and an absent key
+    // is itself a diff, independent of any single field's own dirty state
+    // (`dirtyFields` stays empty even while `isDirty` is true) — invisible
+    // until something actually reads `isDirty` (edit-visual-behaviour
+    // delta §12's unsaved-changes guard is the first thing that does).
     defaultValues: transaction
       ? {
           date: transaction.date,
@@ -134,7 +154,10 @@ export function TransactionForm({
           toLines: transaction.toLines,
         }
       : {
+          date: "",
+          description: "",
           fromAccountId: defaultFromAccountId ?? "",
+          amount: Number.NaN,
           toLines: [{ accountId: "", amount: 0 }],
         },
   });
@@ -144,6 +167,13 @@ export function TransactionForm({
   const amount = watch("amount");
   const toLines = watch("toLines");
   const isSplit = fields.length > 1;
+
+  const tagsChanged =
+    tags.length !== initialTags.length || tags.some((tag, index) => tag !== initialTags[index]);
+  const isDirty = fieldsAreDirty || tagsChanged;
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
 
   // `initialSplit` (Split Transaction row action, product-polish delta plan
   // #5, decision #3): pre-add a blank destination line once on mount, read
@@ -159,8 +189,14 @@ export function TransactionForm({
 
   // Simple mode: the single destination line always mirrors the top-level
   // Amount field, so there's nothing extra for the user to keep in sync.
+  // `amount` is `NaN` (not `undefined`) on a blank create-mode mount — the
+  // Amount input's empty string runs through `valueAsNumber` before ever
+  // being typed into — so this must guard against NaN too, or it fires a
+  // spurious `setValue` on mount that marks the untouched form dirty
+  // (surfaced by the unsaved-changes guard's `isDirty`, edit-visual-
+  // behaviour delta §12).
   useEffect(() => {
-    if (!isSplit && amount !== undefined) {
+    if (!isSplit && amount !== undefined && !Number.isNaN(amount)) {
       setValue("toLines.0.amount", amount, { shouldValidate: false });
     }
   }, [isSplit, amount, setValue]);

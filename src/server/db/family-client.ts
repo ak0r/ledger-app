@@ -31,7 +31,7 @@ export class FamilyDatasetNotFoundError extends Error {
 }
 
 export function familyDbPath(familyId: string): string {
-  return path.join(FAMILIES_DIR, `${familyId}.db`);
+  return path.join(FAMILIES_DIR, familyId, "ledger.db");
 }
 
 // Every Family database provisioned before this fix was created by the old
@@ -127,20 +127,22 @@ export function getFamilyDb(familyId: string): Db {
 // Creation path — called once, at Family creation (contract §9): ensures
 // the isolated dataset exists and is migrated, then opens/caches it.
 export function provisionFamilyDb(familyId: string): Db {
-  if (!existsSync(FAMILIES_DIR)) mkdirSync(FAMILIES_DIR, { recursive: true });
+  const filePath = familyDbPath(familyId);
+  if (!existsSync(path.dirname(filePath))) mkdirSync(path.dirname(filePath), { recursive: true });
 
-  const db = openConnection(familyDbPath(familyId));
+  const db = openConnection(filePath);
   cache.set(familyId, db);
   return db;
 }
 
 // Deletion path (Family deletion, product-polish pass) — closes the
 // underlying better-sqlite3 connection (via Drizzle's own `$client`
-// accessor) if it's cached, evicts the cache entry, then removes the
-// dataset file and its WAL/SHM sidecars (journal_mode = WAL is set on
-// every connection, so both can exist alongside the main file). Hard
-// delete, consistent with rule #9 — no soft-delete, no "hide the file"
-// half-measure (contract §15's condition for allowing deletion at all).
+// accessor) if it's cached, evicts the cache entry, then removes the whole
+// per-family directory (ledger.db plus its WAL/SHM sidecars — journal_mode
+// = WAL is set on every connection, so both can exist alongside the main
+// file). Hard delete, consistent with rule #9 — no soft-delete, no "hide
+// the file" half-measure (contract §15's condition for allowing deletion
+// at all).
 export function evictFamilyDb(familyId: string): void {
   const cached = cache.get(familyId);
   if (cached) {
@@ -148,8 +150,5 @@ export function evictFamilyDb(familyId: string): void {
     cache.delete(familyId);
   }
 
-  const filePath = familyDbPath(familyId);
-  for (const suffix of ["", "-wal", "-shm"]) {
-    rmSync(`${filePath}${suffix}`, { force: true });
-  }
+  rmSync(path.dirname(familyDbPath(familyId)), { recursive: true, force: true });
 }

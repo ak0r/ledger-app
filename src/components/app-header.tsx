@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/menu";
 import { activateFamilyAction } from "@/server/actions/activeFamily";
 import { activateMemberAction } from "@/server/actions/activeMember";
+import { logoutAction } from "@/server/actions/auth";
 
 interface Entry {
   id: string;
@@ -90,6 +91,12 @@ function MemberItems({
       >
         Manage members
       </MenuItem>
+      <MenuSeparator />
+      <form action={logoutAction}>
+        <MenuItem nativeButton render={<button type="submit" className="w-full text-left" />}>
+          Log out
+        </MenuItem>
+      </form>
     </MenuGroup>
   );
 }

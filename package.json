@@ -15,8 +15,8 @@
     "format:check": "prettier --check .",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:registry:generate": "drizzle-kit generate --config drizzle.registry.config.ts",
-    "db:registry:migrate": "drizzle-kit migrate --config drizzle.registry.config.ts"
+    "db:app:generate": "drizzle-kit generate --config drizzle.app.config.ts",
+    "db:app:migrate": "drizzle-kit migrate --config drizzle.app.config.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

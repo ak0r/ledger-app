@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { registryDb } from "@/server/db/registry-client";
+import { appDb } from "@/server/db/app-client";
 import { listFamilies } from "@/server/use-cases/families";
 import { activateFamilyAction } from "@/server/actions/activeFamily";
 import { readActiveFamilyIdCookie } from "@/server/activeFamily";
+import { getCurrentAppUser } from "@/server/session";
 import { FamilyForm } from "@/components/family-form";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,9 +17,15 @@ export const dynamic = "force-dynamic";
 
 // Application-level, above any Family's isolated dataset (docs/v9-delta/
 // family-concept-contract.md §8.1) — always shows the full picker, never
-// auto-redirects, mirroring /f/[familyId]/members's Member picker.
+// auto-redirects, mirroring /f/[familyId]/members's Member picker. Excluded
+// from proxy.ts's own matcher scope? No — /families/:path* IS covered by
+// proxy, but proxy is convenience/UX-layer only (see proxy.ts's own doc
+// comment), so this page still re-derives the session itself.
 export default async function FamiliesPage() {
-  const families = listFamilies(registryDb);
+  const appUser = await getCurrentAppUser();
+  if (!appUser) redirect("/login");
+
+  const families = listFamilies(appDb, appUser.id);
   const isFirstFamily = families.length === 0;
   const activeFamilyId = await readActiveFamilyIdCookie();
   // Only a real destination when the cookie actually resolves to a Family

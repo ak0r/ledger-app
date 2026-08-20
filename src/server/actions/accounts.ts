@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getFamilyDb } from "../db/family-client";
+import { requireFamilyDb } from "../authz";
 import type { AccountRow } from "../repositories/accounts";
 import {
   archiveAccountCore,
@@ -16,14 +16,14 @@ export async function createAccountAction(
   familyId: string,
   input: unknown,
 ): Promise<ActionResult<AccountRow>> {
-  return createAccountCore(getFamilyDb(familyId), input);
+  return createAccountCore(await requireFamilyDb(familyId), input);
 }
 
 export async function editAccountAction(
   familyId: string,
   input: unknown,
 ): Promise<ActionResult<AccountRow>> {
-  return editAccountCore(getFamilyDb(familyId), input);
+  return editAccountCore(await requireFamilyDb(familyId), input);
 }
 
 // Zero-JS: bind(null, familyId, memberId, accountId) from a plain <form>
@@ -36,7 +36,7 @@ export async function archiveAccountAction(
   memberId: string,
   accountId: string,
 ): Promise<void> {
-  const result = archiveAccountCore(getFamilyDb(familyId), { memberId, accountId });
+  const result = archiveAccountCore(await requireFamilyDb(familyId), { memberId, accountId });
   if (!result.success) throw new Error(result.error);
   revalidatePath(`/f/${familyId}/m/${memberId}/accounts`);
 }
@@ -49,12 +49,12 @@ export async function bulkArchiveAccountsAction(
   familyId: string,
   input: unknown,
 ): Promise<ActionResult<null>> {
-  return bulkArchiveAccountsCore(getFamilyDb(familyId), input);
+  return bulkArchiveAccountsCore(await requireFamilyDb(familyId), input);
 }
 
 export async function bulkUpdateAccountTagsAction(
   familyId: string,
   input: unknown,
 ): Promise<ActionResult<null>> {
-  return bulkUpdateAccountTagsCore(getFamilyDb(familyId), input);
+  return bulkUpdateAccountTagsCore(await requireFamilyDb(familyId), input);
 }

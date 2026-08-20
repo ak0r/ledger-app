@@ -1,25 +1,43 @@
-import { eq } from "drizzle-orm";
-import type { RegistryDbOrTx } from "../db/registry-client";
-import { families } from "../db/registry-schema";
+import { and, eq } from "drizzle-orm";
+import type { AppDbOrTx } from "../db/app-client";
+import { families } from "../db/app-schema";
 
 export type FamilyRow = typeof families.$inferSelect;
 
-export function insertFamily(db: RegistryDbOrTx, row: FamilyRow): void {
+export function insertFamily(db: AppDbOrTx, row: FamilyRow): void {
   db.insert(families).values(row).run();
 }
 
-export function findFamilyById(db: RegistryDbOrTx, id: string): FamilyRow | undefined {
-  return db.select().from(families).where(eq(families.id, id)).get();
+// Every query is scoped by appUserId (mirrors rule #6's memberId
+// discipline, one level up) — a family that exists but belongs to someone
+// else is indistinguishable from a family that doesn't exist at all, which
+// is exactly the point: never leak existence across AppUsers.
+export function findFamilyById(db: AppDbOrTx, id: string, appUserId: string): FamilyRow | undefined {
+  return db
+    .select()
+    .from(families)
+    .where(and(eq(families.id, id), eq(families.appUserId, appUserId)))
+    .get();
 }
 
-export function findAllFamilies(db: RegistryDbOrTx): FamilyRow[] {
-  return db.select().from(families).all();
+export function findAllFamilies(db: AppDbOrTx, appUserId: string): FamilyRow[] {
+  return db.select().from(families).where(eq(families.appUserId, appUserId)).all();
 }
 
-export function updateFamilyName(db: RegistryDbOrTx, id: string, name: string, updatedAt: string): void {
-  db.update(families).set({ name, updatedAt }).where(eq(families.id, id)).run();
+export function updateFamilyName(
+  db: AppDbOrTx,
+  id: string,
+  appUserId: string,
+  name: string,
+  updatedAt: string,
+): void {
+  db
+    .update(families)
+    .set({ name, updatedAt })
+    .where(and(eq(families.id, id), eq(families.appUserId, appUserId)))
+    .run();
 }
 
-export function deleteFamilyRow(db: RegistryDbOrTx, id: string): void {
-  db.delete(families).where(eq(families.id, id)).run();
+export function deleteFamilyRow(db: AppDbOrTx, id: string, appUserId: string): void {
+  db.delete(families).where(and(eq(families.id, id), eq(families.appUserId, appUserId))).run();
 }

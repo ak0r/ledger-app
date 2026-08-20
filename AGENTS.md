@@ -10,8 +10,8 @@
 8. Money is integer minor units.
 9. Transactions are hard-deleted.
 10. No persisted transaction draft/status.
-11. MVP instrument types are frozen:
-   BANK, CASH, CREDIT_CARD, LOAN, EXPENSE, INCOME, BALANCING.
+11. MVP instrument types are frozen (2026-08-19 account-model delta):
+   BANK, CASH, CREDIT_CARD, LOAN, EXPENSE, INCOME, BALANCING, MUTUAL_FUND, STOCK, COMMODITY.
 12. LOAN is a plain liability ledger account only.
 13. Tags are inline `Record<string,string>`.
 14. No global Tag entity.
@@ -21,6 +21,11 @@
 18. Do not implement deferred modules without an explicit architecture decision.
 19. Prefer small, testable changes.
 20. If a requirement conflicts with docs, stop and report the conflict before coding.
+21. Account Type exists only where it changes real behaviour — currently only Asset
+    and Liability have one. Income and Expense have no Account Type; account names
+    (e.g. "Salary", "Rent") are user categorisation, never architectural types.
+22. BALANCING is a system-managed classification (the opening-balance mechanism) —
+    not offered as a normal user-creatable classification in the Account form.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

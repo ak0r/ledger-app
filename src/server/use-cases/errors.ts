@@ -31,3 +31,20 @@ export class MergeIneligibleError extends Error {
     this.name = "MergeIneligibleError";
   }
 }
+
+// Deliberately generic — covers both "no AppUser with this email" and
+// "wrong password" with the same message, so a login failure never reveals
+// whether an email is registered.
+export class InvalidCredentialsError extends Error {
+  constructor() {
+    super("Invalid email or password");
+    this.name = "InvalidCredentialsError";
+  }
+}
+
+export class EmailAlreadyRegisteredError extends Error {
+  constructor(email: string) {
+    super(`An account already exists for ${email}`);
+    this.name = "EmailAlreadyRegisteredError";
+  }
+}

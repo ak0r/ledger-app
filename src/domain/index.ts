@@ -1,6 +1,6 @@
 export { MVP_CURRENCY_CODE, isSupportedCurrencyCode } from "./currency";
 
-export { CLASSIFICATIONS, INSTRUMENT_TYPES } from "./account";
+export { CLASSIFICATIONS, CREATABLE_CLASSIFICATIONS, INSTRUMENT_TYPES, TYPES_BY_CLASSIFICATION } from "./account";
 export type { Classification, InstrumentType } from "./account";
 
 export { accountBalance, isDebitNormal } from "./balance";

@@ -4,10 +4,10 @@
 // the domain layer (rule #17) — this file only pins their TS shape via
 // `.$type<...>()`; SQLite stores them as plain text.
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
-import { CLASSIFICATIONS, INSTRUMENT_TYPES } from "@/domain";
+import { CLASSIFICATIONS, CREATABLE_CLASSIFICATIONS, INSTRUMENT_TYPES } from "@/domain";
 import type { Classification, InstrumentType } from "@/domain";
 
-export { CLASSIFICATIONS, INSTRUMENT_TYPES };
+export { CLASSIFICATIONS, CREATABLE_CLASSIFICATIONS, INSTRUMENT_TYPES };
 export type { Classification, InstrumentType };
 
 const id = () =>

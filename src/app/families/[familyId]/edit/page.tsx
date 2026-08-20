@@ -1,8 +1,6 @@
-import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { registryDb } from "@/server/db/registry-client";
-import { getFamily } from "@/server/use-cases/families";
+import { requireFamilyOwner } from "@/server/authz";
 import { FamilyForm } from "@/components/family-form";
 import { CleanUpContentButton } from "@/components/clean-up-content-button";
 import { DeleteFamilyButton } from "@/components/delete-family-button";
@@ -21,10 +19,15 @@ export const dynamic = "force-dynamic";
 // implemented at all. Clean Up Content (docs/onboarding.md §11) stays a
 // distinct, separately-confirmed action that wipes financial content but
 // keeps the Family/Members — deletion here removes everything.
+//
+// This route is a sibling top-level route, not nested under
+// /f/[familyId]/layout.tsx, so it needs its own ownership check —
+// requireFamilyOwner redirects to /families for a missing-or-not-yours
+// familyId (unified with every other ownership bounce in the app, in place
+// of the previous notFound()).
 export default async function EditFamilyPage(props: PageProps<"/families/[familyId]/edit">) {
   const { familyId } = await props.params;
-  const family = getFamily(registryDb, familyId);
-  if (!family) notFound();
+  const { family } = await requireFamilyOwner(familyId);
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 p-4">

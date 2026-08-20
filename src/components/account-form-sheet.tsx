@@ -4,6 +4,8 @@ import { useState } from "react";
 import type { Classification, InstrumentType } from "@/domain";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { AccountForm } from "@/components/account-form";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes-guard";
 
 // New Account and Edit Account as one Sheet overlay, not two full-page
 // routes — same "Full Edit as a Sheet, not a route" pattern as
@@ -45,27 +47,50 @@ export function AccountFormSheet({
   };
 }) {
   const [open, setOpen] = useState(false);
+  const guard = useUnsavedChangesGuard(() => setOpen(false));
 
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger render={trigger} />
-      <SheetContent className="max-w-md gap-4 overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>{mode === "create" ? "New Account" : "Edit Account"}</SheetTitle>
-        </SheetHeader>
-        {open && (
-          <AccountForm
-            familyId={familyId}
-            memberId={memberId}
-            currencies={currencies}
-            mode={mode}
-            existingTags={existingTags}
-            account={account}
-            onSuccess={() => setOpen(false)}
-            onCancel={() => setOpen(false)}
-          />
-        )}
-      </SheetContent>
-    </Sheet>
+    <>
+      <Sheet
+        open={open}
+        onOpenChange={(next) => {
+          if (next) {
+            setOpen(true);
+          } else {
+            guard.requestClose();
+          }
+        }}
+      >
+        <SheetTrigger render={trigger} />
+        <SheetContent className="md:max-w-md gap-4 overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>{mode === "create" ? "New Account" : "Edit Account"}</SheetTitle>
+          </SheetHeader>
+          {open && (
+            <AccountForm
+              familyId={familyId}
+              memberId={memberId}
+              currencies={currencies}
+              mode={mode}
+              existingTags={existingTags}
+              account={account}
+              onSuccess={() => setOpen(false)}
+              onCancel={() => guard.requestClose()}
+              onDirtyChange={guard.setIsDirty}
+            />
+          )}
+        </SheetContent>
+      </Sheet>
+      <ConfirmDialog
+        open={guard.confirmOpen}
+        onOpenChange={guard.setConfirmOpen}
+        title="Discard changes?"
+        description="Your changes have not been saved."
+        confirmLabel="Discard"
+        cancelLabel="Keep Editing"
+        destructive
+        onConfirm={async () => guard.confirmDiscard()}
+      />
+    </>
   );
 }

@@ -5,7 +5,7 @@
 // the DB and can only happen in the domain/use-case layer (Phase 3/4),
 // which every action still runs after this parse succeeds (rule #17).
 import { z } from "zod";
-import { CLASSIFICATIONS, INSTRUMENT_TYPES } from "../db/schema";
+import { CLASSIFICATIONS, CREATABLE_CLASSIFICATIONS, INSTRUMENT_TYPES } from "../db/schema";
 
 export const createMemberSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
@@ -13,6 +13,16 @@ export const createMemberSchema = z.object({
 
 export const createFamilySchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
+});
+
+export const registerAppUserSchema = z.object({
+  email: z.string().trim().toLowerCase().email("Enter a valid email"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+});
+
+export const loginAppUserSchema = z.object({
+  email: z.string().trim().toLowerCase().email("Enter a valid email"),
+  password: z.string().min(1, "Password is required"),
 });
 
 export const renameFamilySchema = z.object({
@@ -33,11 +43,17 @@ export const createCurrencySchema = z.object({
 // rejected here.
 const tagsSchema = z.array(z.string().trim().min(1)).optional();
 
+// Balancing is system-managed, not a normal user-creatable classification
+// (2026-08-19 delta §3/§14; domain's own CREATABLE_CLASSIFICATIONS doc
+// comment has the full reasoning) — restricted here, not just hidden from
+// the picker, per rule #17. `editAccountSchema` below deliberately keeps
+// the full `CLASSIFICATIONS` set: existing Balancing accounts must remain
+// editable for their other fields.
 export const createAccountSchema = z.object({
   memberId: z.string().min(1),
   currencyId: z.string().min(1),
   name: z.string().trim().min(1),
-  classification: z.enum(CLASSIFICATIONS),
+  classification: z.enum(CREATABLE_CLASSIFICATIONS),
   instrumentType: z.enum(INSTRUMENT_TYPES),
   instrumentId: z.string().trim().min(1).optional(),
   instrumentLabel: z.string().trim().min(1).optional(),

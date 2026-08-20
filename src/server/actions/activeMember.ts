@@ -2,7 +2,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { getFamilyDb } from "../db/family-client";
+import { requireFamilyDb, requireFamilyOwner } from "../authz";
 import { ACTIVE_MEMBER_COOKIE } from "../activeMember";
 import type { MemberRow } from "../repositories/members";
 import { setPrimaryMember } from "../use-cases/members";
@@ -27,7 +27,7 @@ export async function createMemberAndActivateAction(
   familyId: string,
   input: unknown,
 ): Promise<ActionResult<MemberRow>> {
-  const result = createMemberCore(getFamilyDb(familyId), input);
+  const result = createMemberCore(await requireFamilyDb(familyId), input);
   if (result.success) {
     await setActiveMemberCookie(result.data.id);
     redirect(`/f/${familyId}/m/${result.data.id}`);
@@ -36,10 +36,12 @@ export async function createMemberAndActivateAction(
 }
 
 // Zero-JS member switcher: bind(null, familyId, memberId) from a plain
-// <form> in the member picker. Existence is re-checked by
+// <form> in the member picker. Family ownership is re-checked here
+// (requireFamilyOwner); Member existence is re-checked by
 // /f/[familyId]/m/layout.tsx on the next request, so a bogus id just
 // bounces back to the Member picker — no need to duplicate that check here.
 export async function activateMemberAction(familyId: string, memberId: string): Promise<void> {
+  await requireFamilyOwner(familyId);
   await setActiveMemberCookie(memberId);
   redirect(`/f/${familyId}/m/${memberId}`);
 }
@@ -52,7 +54,7 @@ export async function activateMemberAction(familyId: string, memberId: string): 
 // itself (throws NotFoundError for a bogus id, same as every other
 // Member-scoped use-case).
 async function finalizePrimaryMember(familyId: string, memberId: string): Promise<void> {
-  setPrimaryMember(getFamilyDb(familyId), memberId);
+  setPrimaryMember(await requireFamilyDb(familyId), memberId);
   await setActiveMemberCookie(memberId);
   redirect(`/f/${familyId}/m/${memberId}`);
 }

@@ -20,6 +20,12 @@ interface TransactionWorkspaceContextValue {
   editingInitialSplit: boolean;
   openEditTransaction: (transactionId: string, options?: { initialSplit?: boolean }) => void;
   closeEditTransaction: () => void;
+  // Transaction Create as a Sheet (edit-visual-behaviour delta §1) — same
+  // shape as editingTransactionId/openEditTransaction/closeEditTransaction
+  // above, just no row id to carry since there's nothing to look up yet.
+  creatingTransaction: boolean;
+  openCreateTransaction: () => void;
+  closeCreateTransaction: () => void;
   openDialog: "view" | "merge" | null;
   setOpenDialog: (dialog: "view" | "merge" | null) => void;
   // Roving-tabindex focus target for desktop keyboard navigation
@@ -49,6 +55,7 @@ export function TransactionWorkspaceProvider({ children }: { children: React.Rea
   const [quickEditRowId, setQuickEditRowId] = useState<string | null>(null);
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
   const [editingInitialSplit, setEditingInitialSplit] = useState(false);
+  const [creatingTransaction, setCreatingTransaction] = useState(false);
   const [openDialog, setOpenDialog] = useState<"view" | "merge" | null>(null);
   const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
 
@@ -63,6 +70,9 @@ export function TransactionWorkspaceProvider({ children }: { children: React.Rea
     setEditingTransactionId(null);
     setEditingInitialSplit(false);
   }, []);
+
+  const openCreateTransaction = useCallback(() => setCreatingTransaction(true), []);
+  const closeCreateTransaction = useCallback(() => setCreatingTransaction(false), []);
 
   const toggleSelected = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -88,6 +98,9 @@ export function TransactionWorkspaceProvider({ children }: { children: React.Rea
       editingInitialSplit,
       openEditTransaction,
       closeEditTransaction,
+      creatingTransaction,
+      openCreateTransaction,
+      closeCreateTransaction,
       openDialog,
       setOpenDialog,
       focusedRowId,
@@ -103,6 +116,9 @@ export function TransactionWorkspaceProvider({ children }: { children: React.Rea
       editingInitialSplit,
       openEditTransaction,
       closeEditTransaction,
+      creatingTransaction,
+      openCreateTransaction,
+      closeCreateTransaction,
       openDialog,
       focusedRowId,
     ],

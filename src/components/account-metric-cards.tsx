@@ -8,9 +8,11 @@ import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 // limited to what's actually computable from postings alone. Two real
 // domain constraints keep this list short (AGENTS.md rule #20 — flagged,
 // not silently worked around):
-// - Mutual Fund/Stock/ETF/Equity account types don't exist (rule #11's
-//   frozen instrument taxonomy: BANK/CASH/CREDIT_CARD/LOAN/EXPENSE/
-//   INCOME/BALANCING only) — no Units/Latest Price/Gain/XIRR cards.
+// - Mutual Fund/Stock/Commodity (added by the 2026-08-19 account-model
+//   delta) get the same Balance + Inflow/Outflow treatment as Bank/Cash —
+//   quantity/price/valuation/gain/XIRR are explicitly future capability
+//   work (delta §12/§18), not yet computable from postings alone, so no
+//   Units/Latest Price/Gain/XIRR cards until that lands.
 // - LOAN is "a plain liability ledger account only" (rule #12) — no
 //   principal/interest split or APR field exists, so no such cards for
 //   Loan. "This Month" (payment made) *is* shown — that's just this
@@ -58,6 +60,9 @@ export function AccountMetricCards({
   switch (instrumentType) {
     case "BANK":
     case "CASH":
+    case "MUTUAL_FUND":
+    case "STOCK":
+    case "COMMODITY":
       return (
         <div className="flex flex-wrap gap-3">
           <MetricCard label="Inflow (this month)" value={money(period.thisMonthInflow)} />

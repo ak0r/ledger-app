@@ -185,7 +185,7 @@ export function TransactionFilterDrawer({
           </Button>
         }
       />
-      <SheetContent className="max-w-md gap-3 overflow-y-auto">
+      <SheetContent className="md:max-w-md gap-3 overflow-y-auto">
         <SheetHeader>
           <SheetTitle>Filter Transactions</SheetTitle>
         </SheetHeader>

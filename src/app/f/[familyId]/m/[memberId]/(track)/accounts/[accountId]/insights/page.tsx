@@ -30,13 +30,14 @@ export const dynamic = "force-dynamic";
 // complementary to the header's point-in-time Balance/Outstanding/Total
 // card, not a restatement of it.
 //
-// Investment account types (Mutual Fund/Stock/ETF) and Loan's principal/
-// interest split stay out of scope for the same reason they did in the
-// account header metric cards — AGENTS.md rule #11's frozen instrument
-// taxonomy has no such types, and no principal/interest/APR field exists
-// on Loan (rule #12: "a plain liability ledger account only"). Every
-// instrument type below gets exactly what's computable from postings
-// alone, nothing implied beyond that.
+// Mutual Fund/Stock/Commodity (2026-08-19 account-model delta) get the
+// same Bank/Cash treatment below — quantity/price/valuation/gain/XIRR are
+// explicit future capability work (delta §12/§18), not yet computable from
+// postings alone. Loan's principal/interest split stays out of scope for a
+// different reason: no principal/interest/APR field exists at all (rule
+// #12: "a plain liability ledger account only"). Every instrument type
+// below gets exactly what's computable from postings alone, nothing
+// implied beyond that.
 export default async function AccountInsightsPage(
   props: PageProps<"/f/[familyId]/m/[memberId]/accounts/[accountId]/insights">,
 ) {
@@ -88,7 +89,10 @@ export default async function AccountInsightsPage(
 
   switch (account.instrumentType) {
     case "BANK":
-    case "CASH": {
+    case "CASH":
+    case "MUTUAL_FUND":
+    case "STOCK":
+    case "COMMODITY": {
       content = (
         <>
           <div className="grid gap-4 md:grid-cols-2">

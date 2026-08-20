@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -30,10 +30,20 @@ export function MemberForm({
   familyId,
   submitLabel,
   mode = "activate",
+  onSuccess,
+  onCancel,
+  onDirtyChange,
 }: {
   familyId: string;
   submitLabel: string;
   mode?: "activate" | "add";
+  // Modal usage (MemberCreateDialog, "activate" mode only) passes these to
+  // close itself instead of relying on createMemberAndActivateAction's own
+  // navigation — same optional-override posture as AccountForm/
+  // TransactionForm's onCancel/onSuccess/onDirtyChange.
+  onSuccess?: () => void;
+  onCancel?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
@@ -41,8 +51,17 @@ export function MemberForm({
     register,
     handleSubmit,
     reset,
-    formState: { errors, isSubmitting },
-  } = useForm<MemberFormValues>({ resolver: zodResolver(memberFormSchema) });
+    formState: { errors, isSubmitting, isDirty },
+    // `defaultValues` must include every registered field path or
+    // `formState.isDirty` reads true from the first render, before any
+    // user interaction (see TransactionForm's identical fix/comment for
+    // the full mechanism) — matters here now that MemberCreateDialog's
+    // unsaved-changes guard actually reads `isDirty`.
+  } = useForm<MemberFormValues>({ resolver: zodResolver(memberFormSchema), defaultValues: { name: "" } });
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
 
   const onSubmit = async (values: MemberFormValues) => {
     setServerError(null);
@@ -58,6 +77,7 @@ export function MemberForm({
       reset();
       router.refresh();
     }
+    onSuccess?.();
   };
 
   return (
@@ -68,9 +88,16 @@ export function MemberForm({
         {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
       </div>
       {serverError && <p className="text-sm text-destructive">{serverError}</p>}
-      <Button type="submit" disabled={isSubmitting}>
-        {isSubmitting ? "Creating…" : submitLabel}
-      </Button>
+      <div className="flex gap-2">
+        {onCancel && (
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
+        <Button type="submit" disabled={isSubmitting} className="flex-1">
+          {isSubmitting ? "Creating…" : submitLabel}
+        </Button>
+      </div>
     </form>
   );
 }

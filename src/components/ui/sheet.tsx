@@ -10,9 +10,12 @@ import { XIcon } from "lucide-react"
 // A side drawer, built on the same Dialog primitive as ui/dialog.tsx — no
 // new overlay primitive needed, just drawer positioning/animation instead
 // of centered-dialog positioning (this is how shadcn's own Sheet is built
-// too). Desktop and mobile both get a right-side sheet here; the content
-// inside stays simple enough (a single search field) that a bottom sheet
-// isn't needed for this first version.
+// too). Full-screen below `md:` (edit-visual-behaviour delta §9: "drawers
+// should become full-screen or near-full-screen sheets" on mobile — a
+// capped `max-w-sm` side panel doesn't qualify at phone widths, it just
+// happens to hit the cap and look full-width by coincidence, with no
+// deliberate full-*screen* i.e. full-height-and-width treatment); a
+// right-anchored capped panel at `md:` and up, same as before.
 function Sheet({ ...props }: DialogPrimitive.Root.Props) {
   return <DialogPrimitive.Root data-slot="sheet" {...props} />
 }
@@ -54,7 +57,7 @@ function SheetContent({
       <DialogPrimitive.Popup
         data-slot="sheet-content"
         className={cn(
-          "fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-sm flex-col gap-4 bg-popover p-4 text-sm text-popover-foreground shadow-lg outline-none duration-150 data-open:animate-in data-open:slide-in-from-right data-closed:animate-out data-closed:slide-out-to-right",
+          "fixed inset-y-0 right-0 left-0 z-50 flex h-full w-full flex-col gap-4 bg-popover p-4 text-sm text-popover-foreground shadow-lg outline-none duration-150 data-open:animate-in data-open:slide-in-from-right data-closed:animate-out data-closed:slide-out-to-right md:left-auto md:max-w-sm",
           className,
         )}
         {...props}

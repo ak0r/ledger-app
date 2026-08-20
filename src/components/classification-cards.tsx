@@ -14,14 +14,19 @@ export function ClassificationCards({
   name,
   value,
   onChange,
+  classifications = CLASSIFICATIONS,
 }: {
   name: string;
   value: Classification;
   onChange: (value: Classification) => void;
+  // Defaults to the full set so any other caller is unaffected — Account
+  // Form passes `CREATABLE_CLASSIFICATIONS` (excludes Balancing, the
+  // system-managed opening-balance mechanism — 2026-08-19 delta §3/§14).
+  classifications?: readonly Classification[];
 }) {
   return (
     <div role="radiogroup" className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-      {CLASSIFICATIONS.map((classification) => {
+      {classifications.map((classification) => {
         const selected = classification === value;
         return (
           <label

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getFamilyDb } from "@/server/db/family-client";
-import { registryDb } from "@/server/db/registry-client";
+import { appDb } from "@/server/db/app-client";
+import { getCurrentAppUser } from "@/server/session";
 import { getMember, listMembers } from "@/server/use-cases/members";
 import { getFamily, listFamilies } from "@/server/use-cases/families";
 import { SidebarNav } from "@/components/sidebar-nav";
@@ -15,7 +16,10 @@ export const dynamic = "force-dynamic";
 // decisions #3) — every route under here re-derives the Member from the URL,
 // never from hidden session state, and re-validates it exists on every
 // request (rule #6). The parent /f/[familyId]/layout.tsx has already
-// validated the Family exists; this only re-validates the Member within it.
+// validated the Family exists and belongs to the current AppUser (via
+// requireFamilyOwner) on every request under this tree — no duplicate
+// ownership check needed here, just the appUser.id for the read-only
+// listFamilies/getFamily calls below.
 export default async function MemberLayout({
   params,
   children,
@@ -24,12 +28,15 @@ export default async function MemberLayout({
   children: React.ReactNode;
 }) {
   const { familyId, memberId } = await params;
+  const appUser = await getCurrentAppUser();
+  if (!appUser) redirect("/login");
+
   const db = getFamilyDb(familyId);
   const member = getMember(db, memberId);
   if (!member) redirect(`/f/${familyId}/members`);
 
-  const family = getFamily(registryDb, familyId);
-  const families = listFamilies(registryDb);
+  const family = getFamily(appDb, appUser.id, familyId);
+  const families = listFamilies(appDb, appUser.id);
   const members = listMembers(db);
 
   return (

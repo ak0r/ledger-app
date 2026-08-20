@@ -1,5 +1,7 @@
 import type { ZodError } from "zod";
 import {
+  EmailAlreadyRegisteredError,
+  InvalidCredentialsError,
   MergeIneligibleError,
   NotFoundError,
   TransactionValidationError,
@@ -25,7 +27,9 @@ export function fromThrown(error: unknown): ActionResult<never> {
     error instanceof TransactionValidationError ||
     error instanceof NotFoundError ||
     error instanceof UnsupportedCurrencyError ||
-    error instanceof MergeIneligibleError
+    error instanceof MergeIneligibleError ||
+    error instanceof InvalidCredentialsError ||
+    error instanceof EmailAlreadyRegisteredError
   ) {
     return { success: false, error: error.message };
   }

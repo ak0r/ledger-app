@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getFamilyDb } from "../db/family-client";
+import { requireFamilyDb } from "../authz";
 import type { CurrencyRow } from "../repositories/currencies";
 import { createCurrencyCore } from "./currencies.core";
 import type { ActionResult } from "./result";
@@ -10,7 +10,7 @@ export async function createCurrencyAction(
   familyId: string,
   input: unknown,
 ): Promise<ActionResult<CurrencyRow>> {
-  return createCurrencyCore(getFamilyDb(familyId), input);
+  return createCurrencyCore(await requireFamilyDb(familyId), input);
 }
 
 // Zero-JS: bind(null, familyId, memberId) from a plain <form>. MVP is
@@ -19,7 +19,7 @@ export async function createCurrencyAction(
 // separate step from Member creation (resolved 2026-08-15, HANDOFF.md open
 // decisions #1).
 export async function createInrCurrencyAction(familyId: string, memberId: string): Promise<void> {
-  const result = createCurrencyCore(getFamilyDb(familyId), {
+  const result = createCurrencyCore(await requireFamilyDb(familyId), {
     memberId,
     code: "INR",
     name: "Indian Rupee",

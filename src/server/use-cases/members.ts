@@ -13,6 +13,11 @@ export interface CreateMemberInput {
   name: string;
 }
 
+// One-click quick-start default (2026-08-19 Family/Application
+// Architecture delta §9) — lives here, not in actions/members.ts, since
+// "use server" files may only export async functions.
+export const DEFAULT_MEMBER_NAME = "John Doe";
+
 export function createMember(db: Db, input: CreateMemberInput): MemberRow {
   const now = new Date().toISOString();
   const member: MemberRow = {

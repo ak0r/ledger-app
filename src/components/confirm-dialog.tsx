@@ -34,6 +34,7 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel,
+  cancelLabel = "Cancel",
   destructive = false,
   onConfirm,
 }: {
@@ -43,6 +44,11 @@ export function ConfirmDialog({
   title: string;
   description: string;
   confirmLabel: string;
+  // Overridable for non-destructive confirmations with a more specific
+  // dismiss action (e.g. "Keep Editing" for the unsaved-changes discard
+  // prompt, edit-visual-behaviour delta §12) — defaults to "Cancel" so
+  // every existing call site is unaffected.
+  cancelLabel?: string;
   destructive?: boolean;
   onConfirm: () => Promise<{ success: boolean; error?: string } | void>;
 }) {
@@ -74,7 +80,7 @@ export function ConfirmDialog({
         </DialogHeader>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <DialogFooter>
-          <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+          <DialogClose render={<Button variant="outline" />}>{cancelLabel}</DialogClose>
           <Button
             type="button"
             variant={destructive ? "destructive" : "default"}
