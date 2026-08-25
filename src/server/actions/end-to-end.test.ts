@@ -1,24 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "../testing/createTestDb";
-import { createMemberCore } from "./members.core";
+import { createProfileCore } from "./profiles.core";
 import { createCurrencyCore } from "./currencies.core";
 import { createAccountCore } from "./accounts.core";
 import { createTransactionCore } from "./transactions.core";
 
-// Phase 5 exit criteria (docs/11-implementation-plan.md): a Member, its
+// Phase 5 exit criteria (docs/11-implementation-plan.md): a Profile, its
 // Accounts, and a Transaction can be created end-to-end through the API
 // layer alone — nothing here reaches past the action layer into
 // repositories/use-cases directly.
 describe("Phase 5 exit criteria: end-to-end through the action layer", () => {
-  it("creates a Member, Currency, two Accounts, and a balanced Transaction", () => {
+  it("creates a Profile, Currency, two Accounts, and a balanced Transaction", () => {
     const db = createTestDb();
 
-    const member = createMemberCore(db, { name: "Amit" });
-    expect(member.success).toBe(true);
-    if (!member.success) return;
+    const profile = createProfileCore(db, { name: "Amit" });
+    expect(profile.success).toBe(true);
+    if (!profile.success) return;
 
     const currency = createCurrencyCore(db, {
-      memberId: member.data.id,
+      profileId: profile.data.id,
       code: "INR",
       name: "Indian Rupee",
       symbol: "₹",
@@ -28,14 +28,14 @@ describe("Phase 5 exit criteria: end-to-end through the action layer", () => {
     if (!currency.success) return;
 
     const bank = createAccountCore(db, {
-      memberId: member.data.id,
+      profileId: profile.data.id,
       currencyId: currency.data.id,
       name: "HDFC Bank",
       classification: "ASSET",
       instrumentType: "BANK",
     });
     const food = createAccountCore(db, {
-      memberId: member.data.id,
+      profileId: profile.data.id,
       currencyId: currency.data.id,
       name: "Food Expense",
       classification: "EXPENSE",
@@ -46,7 +46,7 @@ describe("Phase 5 exit criteria: end-to-end through the action layer", () => {
     if (!bank.success || !food.success) return;
 
     const transaction = createTransactionCore(db, {
-      memberId: member.data.id,
+      profileId: profile.data.id,
       date: "2026-08-15",
       description: "Groceries",
       postings: [

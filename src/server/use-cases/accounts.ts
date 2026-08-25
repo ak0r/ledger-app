@@ -1,10 +1,10 @@
 import { accountBalance } from "@/domain";
-import type { Db } from "../db/family-client";
+import type { Db } from "../db/client";
 import { findCurrencyById } from "../repositories/currencies";
 import {
   findAccountById,
-  findAccountsByMember,
-  findPostingTotalsByMember,
+  findAccountsByProfile,
+  findPostingTotalsByProfile,
   insertAccount,
   setAccountArchived,
   updateAccountFields,
@@ -14,7 +14,7 @@ import type { Classification, InstrumentType } from "../db/schema";
 import { NotFoundError } from "./errors";
 
 export interface CreateAccountInput {
-  memberId: string;
+  profileId: string;
   currencyId: string;
   name: string;
   classification: Classification;
@@ -32,17 +32,17 @@ export interface CreateAccountInput {
 // same way any other entry is recorded (product-polish pass, superseding
 // the earlier V8-CHANGELOG #9/#10 special-cased opening-balance insert).
 export function createAccount(db: Db, input: CreateAccountInput): AccountRow {
-  const currency = findCurrencyById(db, input.currencyId, input.memberId);
+  const currency = findCurrencyById(db, input.currencyId, input.profileId);
   if (!currency) {
     throw new NotFoundError(
-      `Currency ${input.currencyId} not found for member ${input.memberId}`,
+      `Currency ${input.currencyId} not found for profile ${input.profileId}`,
     );
   }
 
   const now = new Date().toISOString();
   const account: AccountRow = {
     id: crypto.randomUUID(),
-    memberId: input.memberId,
+    profileId: input.profileId,
     currencyId: input.currencyId,
     name: input.name,
     classification: input.classification,
@@ -60,12 +60,12 @@ export function createAccount(db: Db, input: CreateAccountInput): AccountRow {
   return account;
 }
 
-export function listAccounts(db: Db, memberId: string): AccountRow[] {
-  return findAccountsByMember(db, memberId);
+export function listAccounts(db: Db, profileId: string): AccountRow[] {
+  return findAccountsByProfile(db, profileId);
 }
 
-export function getAccount(db: Db, accountId: string, memberId: string): AccountRow | undefined {
-  return findAccountById(db, accountId, memberId);
+export function getAccount(db: Db, accountId: string, profileId: string): AccountRow | undefined {
+  return findAccountById(db, accountId, profileId);
 }
 
 export interface AccountWithBalance extends AccountRow {
@@ -75,9 +75,9 @@ export interface AccountWithBalance extends AccountRow {
 // All-time balance per Account, in the account's own normal-balance sense
 // (docs/03-accounting-principles.md) — Accounts with no postings default to
 // zero rather than being dropped.
-export function getAccountBalances(db: Db, memberId: string): AccountWithBalance[] {
-  const accountRows = findAccountsByMember(db, memberId);
-  const totalsByAccountId = findPostingTotalsByMember(db, memberId);
+export function getAccountBalances(db: Db, profileId: string): AccountWithBalance[] {
+  const accountRows = findAccountsByProfile(db, profileId);
+  const totalsByAccountId = findPostingTotalsByProfile(db, profileId);
 
   return accountRows.map((account) => {
     const totals = totalsByAccountId.get(account.id) ?? { totalDebit: 0, totalCredit: 0 };
@@ -90,7 +90,7 @@ export function getAccountBalances(db: Db, memberId: string): AccountWithBalance
 
 export interface EditAccountInput {
   accountId: string;
-  memberId: string;
+  profileId: string;
   name: string;
   classification: Classification;
   instrumentType: InstrumentType;
@@ -102,10 +102,10 @@ export interface EditAccountInput {
 }
 
 export function editAccount(db: Db, input: EditAccountInput): AccountRow {
-  const existing = findAccountById(db, input.accountId, input.memberId);
+  const existing = findAccountById(db, input.accountId, input.profileId);
   if (!existing) {
     throw new NotFoundError(
-      `Account ${input.accountId} not found for member ${input.memberId}`,
+      `Account ${input.accountId} not found for profile ${input.profileId}`,
     );
   }
 
@@ -121,37 +121,37 @@ export function editAccount(db: Db, input: EditAccountInput): AccountRow {
     metadata: input.metadata ?? null,
     updatedAt: now,
   };
-  updateAccountFields(db, input.accountId, input.memberId, fields);
+  updateAccountFields(db, input.accountId, input.profileId, fields);
   return { ...existing, ...fields };
 }
 
 export interface ArchiveAccountInput {
   accountId: string;
-  memberId: string;
+  profileId: string;
 }
 
 export function archiveAccount(db: Db, input: ArchiveAccountInput): AccountRow {
-  const existing = findAccountById(db, input.accountId, input.memberId);
+  const existing = findAccountById(db, input.accountId, input.profileId);
   if (!existing) {
     throw new NotFoundError(
-      `Account ${input.accountId} not found for member ${input.memberId}`,
+      `Account ${input.accountId} not found for profile ${input.profileId}`,
     );
   }
 
   const now = new Date().toISOString();
-  setAccountArchived(db, input.accountId, input.memberId, true, now);
+  setAccountArchived(db, input.accountId, input.profileId, true, now);
   return { ...existing, isArchived: true, updatedAt: now };
 }
 
 export interface BulkArchiveAccountsInput {
-  memberId: string;
+  profileId: string;
   accountIds: string[];
 }
 
 // Accounts list's Bulk Actions "Archive" (product cleanup pass) — same
 // all-or-nothing verification-before-mutation posture as Transactions'
 // `bulkDeleteTransactions`: every target must exist (and belong to this
-// Member) before any archive runs, so a mismatched id in the selection
+// Profile) before any archive runs, so a mismatched id in the selection
 // rejects the whole batch rather than archiving some and silently skipping
 // others. Archive, not delete — Accounts don't have a delete operation
 // (unlike Transactions, rule #9's hard-delete only applies to
@@ -160,9 +160,9 @@ export interface BulkArchiveAccountsInput {
 // same batch is harmless.
 export function bulkArchiveAccounts(db: Db, input: BulkArchiveAccountsInput): void {
   const targets = input.accountIds.map((accountId) => {
-    const account = findAccountById(db, accountId, input.memberId);
+    const account = findAccountById(db, accountId, input.profileId);
     if (!account) {
-      throw new NotFoundError(`Account ${accountId} not found for member ${input.memberId}`);
+      throw new NotFoundError(`Account ${accountId} not found for profile ${input.profileId}`);
     }
     return account;
   });
@@ -170,13 +170,13 @@ export function bulkArchiveAccounts(db: Db, input: BulkArchiveAccountsInput): vo
   const now = new Date().toISOString();
   db.transaction((tx) => {
     for (const target of targets) {
-      setAccountArchived(tx, target.id, input.memberId, true, now);
+      setAccountArchived(tx, target.id, input.profileId, true, now);
     }
   });
 }
 
 export interface BulkUpdateAccountTagsInput {
-  memberId: string;
+  profileId: string;
   accountIds: string[];
   addTags: string[];
   removeTags: string[];
@@ -190,9 +190,9 @@ export interface BulkUpdateAccountTagsInput {
 // field is passed straight through unchanged per target.
 export function bulkUpdateAccountTags(db: Db, input: BulkUpdateAccountTagsInput): void {
   const targets = input.accountIds.map((accountId) => {
-    const account = findAccountById(db, accountId, input.memberId);
+    const account = findAccountById(db, accountId, input.profileId);
     if (!account) {
-      throw new NotFoundError(`Account ${accountId} not found for member ${input.memberId}`);
+      throw new NotFoundError(`Account ${accountId} not found for profile ${input.profileId}`);
     }
     return account;
   });
@@ -205,7 +205,7 @@ export function bulkUpdateAccountTags(db: Db, input: BulkUpdateAccountTagsInput)
       const merged = [...new Set([...(target.tags ?? []), ...input.addTags])].filter(
         (tag) => !removeSet.has(tag),
       );
-      updateAccountFields(tx, target.id, input.memberId, {
+      updateAccountFields(tx, target.id, input.profileId, {
         name: target.name,
         classification: target.classification,
         instrumentType: target.instrumentType,

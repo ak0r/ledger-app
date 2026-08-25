@@ -1,7 +1,7 @@
 import { isDebitNormal } from "@/domain";
-import type { Db } from "../db/family-client";
+import type { Db } from "../db/client";
 import { findAccountById } from "../repositories/accounts";
-import { findTransactionsByMember, findPostingsByTransactionIds } from "../repositories/transactions";
+import { findTransactionsByProfile, findPostingsByTransactionIds } from "../repositories/transactions";
 import { NotFoundError } from "./errors";
 
 export interface MonthlyCashflowPoint {
@@ -29,11 +29,11 @@ export interface DateRange {
 // no new persisted state. Unfiltered (no `range`) — callers slice by date
 // afterward so the *opening balance* calculation below can still see every
 // entry before the window starts.
-function accountPostingsChronological(db: Db, memberId: string, accountId: string) {
-  const account = findAccountById(db, accountId, memberId);
-  if (!account) throw new NotFoundError(`Account ${accountId} not found for member ${memberId}`);
+function accountPostingsChronological(db: Db, profileId: string, accountId: string) {
+  const account = findAccountById(db, accountId, profileId);
+  if (!account) throw new NotFoundError(`Account ${accountId} not found for profile ${profileId}`);
 
-  const transactions = findTransactionsByMember(db, memberId)
+  const transactions = findTransactionsByProfile(db, profileId)
     .slice()
     .sort((a, b) => a.date.localeCompare(b.date));
   const postings = findPostingsByTransactionIds(
@@ -77,11 +77,11 @@ function inRange(date: string, range?: DateRange): boolean {
 // balance.
 export function getBalanceTrend(
   db: Db,
-  memberId: string,
+  profileId: string,
   accountId: string,
   range?: DateRange,
 ): BalanceTrendPoint[] {
-  const entries = accountPostingsChronological(db, memberId, accountId);
+  const entries = accountPostingsChronological(db, profileId, accountId);
   const byDate = new Map<string, number>();
   for (const entry of entries) {
     byDate.set(entry.date, (byDate.get(entry.date) ?? 0) + entry.delta);
@@ -104,11 +104,11 @@ export function getBalanceTrend(
 
 export function getMonthlyCashflow(
   db: Db,
-  memberId: string,
+  profileId: string,
   accountId: string,
   range?: DateRange,
 ): MonthlyCashflowPoint[] {
-  const entries = accountPostingsChronological(db, memberId, accountId).filter((entry) =>
+  const entries = accountPostingsChronological(db, profileId, accountId).filter((entry) =>
     inRange(entry.date, range),
   );
   const byMonth = new Map<string, { inflow: number; outflow: number }>();
@@ -141,11 +141,11 @@ export interface AccountRangeSummary {
 // through the account's life.
 export function getAccountRangeSummary(
   db: Db,
-  memberId: string,
+  profileId: string,
   accountId: string,
   range?: DateRange,
 ): AccountRangeSummary {
-  const entries = accountPostingsChronological(db, memberId, accountId);
+  const entries = accountPostingsChronological(db, profileId, accountId);
   let openingBalance = 0;
   let totalInflow = 0;
   let totalOutflow = 0;

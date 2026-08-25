@@ -1,4 +1,4 @@
-import type { Db } from "../db/family-client";
+import type { Db } from "../db/client";
 import type { CurrencyRow } from "../repositories/currencies";
 import { createCurrency } from "../use-cases/currencies";
 import { createCurrencySchema } from "./schemas";

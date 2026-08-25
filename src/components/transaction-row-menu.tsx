@@ -40,8 +40,7 @@ import { cn } from "@/lib/utils";
 // fine — only Quick Edit is blocked for that case.
 export function TransactionRowMenu({
   row,
-  familyId,
-  memberId,
+  profileId,
   onQuickEdit,
   mergeCandidates = [],
   accountsById,
@@ -50,8 +49,7 @@ export function TransactionRowMenu({
   quickEditForceVisible = false,
 }: {
   row: TransactionTableRow;
-  familyId: string;
-  memberId: string;
+  profileId: string;
   // Desktop table only (transactionworkspacedelta.md §6/§16 — no Quick Edit
   // icon on mobile): when provided, the standalone Pencil button sets
   // quickEditRowId in the workspace instead of opening Full Edit. Omitted
@@ -193,8 +191,8 @@ export function TransactionRowMenu({
         confirmLabel="Delete"
         destructive
         onConfirm={async () => {
-          const result = await deleteTransactionAction(familyId, {
-            memberId,
+          const result = await deleteTransactionAction(profileId, {
+            profileId,
             transactionId: row.id,
           });
           if (result.success) router.refresh();
@@ -209,8 +207,7 @@ export function TransactionRowMenu({
           key={[row.id, ...mergeCandidates.map((candidate) => candidate.id)].join(",")}
           open={mergeOpen}
           onOpenChange={setMergeOpen}
-          familyId={familyId}
-          memberId={memberId}
+          profileId={profileId}
           rows={[row, ...mergeCandidates]}
           accountsById={accountsById}
           currencySymbol={currencySymbol}

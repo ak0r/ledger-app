@@ -1,26 +1,16 @@
 "use server";
 
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { requireFamilyDb } from "../authz";
-import { ACTIVE_MEMBER_COOKIE } from "../activeMember";
-import { createDemoFamilyData } from "../use-cases/demo-data";
+import { db } from "../db/client";
+import { requireProfileAccess } from "../authz";
+import { createDemoProfileData } from "../use-cases/demo-data";
 
 // Start with Demo Data (docs/onboarding.md §3/§4) — only reachable from
-// /f/[familyId]/setup, itself only reachable right before any Member
-// exists (see that page's guard). Atomicity is createDemoFamilyData's job;
-// this action is just the activation/redirect wrapper, mirroring
-// createFamilyAndActivateAction/createMemberAndActivateAction one level up.
-export async function createDemoFamilyAndActivateAction(familyId: string): Promise<void> {
-  const primaryMember = createDemoFamilyData(await requireFamilyDb(familyId));
-
-  const cookieStore = await cookies();
-  cookieStore.set(ACTIVE_MEMBER_COOKIE, primaryMember.id, {
-    path: "/",
-    maxAge: 60 * 60 * 24 * 365,
-    httpOnly: true,
-    sameSite: "lax",
-  });
-
-  redirect(`/f/${familyId}/m/${primaryMember.id}`);
+// /p/[profileId]/setup, itself only reachable right before the Profile has
+// any Accounts. Atomicity is createDemoProfileData's job; this action is
+// just the guard/redirect wrapper.
+export async function createDemoProfileDataAndActivateAction(profileId: string): Promise<void> {
+  await requireProfileAccess(profileId);
+  createDemoProfileData(db, profileId);
+  redirect(`/p/${profileId}`);
 }

@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireFamilyDb } from "../authz";
+import { db } from "../db/client";
+import { requireProfileAccess } from "../authz";
 import type { AccountRow } from "../repositories/accounts";
 import {
   archiveAccountCore,
@@ -13,48 +14,49 @@ import {
 import type { ActionResult } from "./result";
 
 export async function createAccountAction(
-  familyId: string,
+  profileId: string,
   input: unknown,
 ): Promise<ActionResult<AccountRow>> {
-  return createAccountCore(await requireFamilyDb(familyId), input);
+  await requireProfileAccess(profileId);
+  return createAccountCore(db, input);
 }
 
 export async function editAccountAction(
-  familyId: string,
+  profileId: string,
   input: unknown,
 ): Promise<ActionResult<AccountRow>> {
-  return editAccountCore(await requireFamilyDb(familyId), input);
+  await requireProfileAccess(profileId);
+  return editAccountCore(db, input);
 }
 
-// Zero-JS: bind(null, familyId, memberId, accountId) from a plain <form>
-// next to each row in the accounts list — no client-side state needed for a
+// Zero-JS: bind(null, profileId, accountId) from a plain <form> next to
+// each row in the accounts list — no client-side state needed for a
 // one-click action. Ownership is already re-checked inside
 // archiveAccountCore (rule #6); this only surfaces a truly unexpected
 // failure.
-export async function archiveAccountAction(
-  familyId: string,
-  memberId: string,
-  accountId: string,
-): Promise<void> {
-  const result = archiveAccountCore(await requireFamilyDb(familyId), { memberId, accountId });
+export async function archiveAccountAction(profileId: string, accountId: string): Promise<void> {
+  await requireProfileAccess(profileId);
+  const result = archiveAccountCore(db, { profileId, accountId });
   if (!result.success) throw new Error(result.error);
-  revalidatePath(`/f/${familyId}/m/${memberId}/accounts`);
+  revalidatePath(`/p/${profileId}/accounts`);
 }
 
-// Same two-arg (familyId, input) shape as the bulk Transaction actions —
+// Same two-arg (profileId, input) shape as the bulk Transaction actions —
 // called from a client component (AccountBulkActionBar) that does its own
 // `router.refresh()` on success, unlike the zero-JS single-row archive
 // action above.
 export async function bulkArchiveAccountsAction(
-  familyId: string,
+  profileId: string,
   input: unknown,
 ): Promise<ActionResult<null>> {
-  return bulkArchiveAccountsCore(await requireFamilyDb(familyId), input);
+  await requireProfileAccess(profileId);
+  return bulkArchiveAccountsCore(db, input);
 }
 
 export async function bulkUpdateAccountTagsAction(
-  familyId: string,
+  profileId: string,
   input: unknown,
 ): Promise<ActionResult<null>> {
-  return bulkUpdateAccountTagsCore(await requireFamilyDb(familyId), input);
+  await requireProfileAccess(profileId);
+  return bulkUpdateAccountTagsCore(db, input);
 }

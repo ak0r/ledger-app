@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
-import type { DbOrTx } from "../db/family-client";
+import type { DbOrTx } from "../db/client";
 import { postings, transactions } from "../db/schema";
 
 export type TransactionRow = typeof transactions.$inferSelect;
@@ -14,16 +14,16 @@ export function insertPostings(db: DbOrTx, rows: readonly PostingRow[]): void {
   db.insert(postings).values([...rows]).run();
 }
 
-// Member-scoped (rule #6).
+// Profile-scoped (rule #6).
 export function findTransactionById(
   db: DbOrTx,
   id: string,
-  memberId: string,
+  profileId: string,
 ): TransactionRow | undefined {
   return db
     .select()
     .from(transactions)
-    .where(and(eq(transactions.id, id), eq(transactions.memberId, memberId)))
+    .where(and(eq(transactions.id, id), eq(transactions.profileId, profileId)))
     .get();
 }
 
@@ -31,11 +31,11 @@ export function findPostingsByTransaction(db: DbOrTx, transactionId: string): Po
   return db.select().from(postings).where(eq(postings.transactionId, transactionId)).all();
 }
 
-export function findTransactionsByMember(db: DbOrTx, memberId: string): TransactionRow[] {
+export function findTransactionsByProfile(db: DbOrTx, profileId: string): TransactionRow[] {
   return db
     .select()
     .from(transactions)
-    .where(eq(transactions.memberId, memberId))
+    .where(eq(transactions.profileId, profileId))
     .orderBy(desc(transactions.date))
     .all();
 }
@@ -63,21 +63,22 @@ export function updateTransactionFields(
 // Postings cascade on delete at the schema level (onDelete: "cascade",
 // verified against a real SQLite file in Phase 2) — this removes the whole
 // aggregate atomically (rule #9, ADR-019) in one statement.
-export function deleteTransactionRow(db: DbOrTx, id: string, memberId: string): void {
+export function deleteTransactionRow(db: DbOrTx, id: string, profileId: string): void {
   db
     .delete(transactions)
-    .where(and(eq(transactions.id, id), eq(transactions.memberId, memberId)))
+    .where(and(eq(transactions.id, id), eq(transactions.profileId, profileId)))
     .run();
 }
 
-// Unscoped — every Transaction in this Family's database, across every
-// Member in it. Used only by Clean Up Content (docs/onboarding.md §11),
-// which intentionally wipes financial content for the whole Family, not
-// one Member. Safe without a memberId filter because physical per-Family
-// isolation already scopes the whole database to one Family (rule #6 is
-// about queries needing an explicit memberId when scoping to one Member —
-// this deliberately doesn't). Postings cascade at the schema level, same as
-// the single-row delete above.
-export function deleteAllTransactions(db: DbOrTx): void {
-  db.delete(transactions).run();
+// Profile-scoped (rule #6) — used by Clean Up Content, which wipes
+// financial content for exactly one Profile. This USED TO be unscoped when
+// physical per-Family DB isolation meant "the whole file" already meant
+// "one Family" (2026-08-19 delta and earlier) — that premise no longer
+// holds now that all Profiles share one database (2026-08-20 User
+// Simplification delta), so this must filter explicitly or Clean Up
+// Content for one Profile would wipe every Profile's Transactions
+// instance-wide. Postings cascade at the schema level, same as the
+// single-row delete above.
+export function deleteAllTransactions(db: DbOrTx, profileId: string): void {
+  db.delete(transactions).where(eq(transactions.profileId, profileId)).run();
 }

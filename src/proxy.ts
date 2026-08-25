@@ -10,17 +10,17 @@
 // matcher ("Always verify authentication and authorization inside each
 // Server Function rather than relying on Proxy alone") — this codebase's
 // rule #17 one layer up. Every protected action/layout independently
-// re-derives the current AppUser via getCurrentAppUser()/requireFamilyOwner,
+// re-derives the current AppUser via getCurrentAppUser()/requireProfileAccess,
 // never trusting that proxy already gated the request.
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { SESSION_COOKIE } from "@/server/session";
-import { appDb } from "@/server/db/app-client";
+import { db } from "@/server/db/client";
 import { findSessionById } from "@/server/repositories/sessions";
 
 export function proxy(request: NextRequest) {
   const sessionId = request.cookies.get(SESSION_COOKIE)?.value;
-  const session = sessionId ? findSessionById(appDb, sessionId) : undefined;
+  const session = sessionId ? findSessionById(db, sessionId) : undefined;
   const valid = session !== undefined && new Date(session.expiresAt).getTime() > Date.now();
 
   if (!valid) {
@@ -33,5 +33,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/families/:path*", "/f/:path*"],
+  matcher: ["/p/:path*", "/profiles/:path*"],
 };

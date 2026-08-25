@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "../testing/createTestDb";
-import { createMember } from "./members";
+import { createProfile } from "./profiles";
 import { createCurrency } from "./currencies";
 import { createAccount } from "./accounts";
 import { createTransaction } from "./transactions";
@@ -8,45 +8,45 @@ import { getAccountRangeSummary, getBalanceTrend, getMonthlyCashflow } from "./a
 import { NotFoundError } from "./errors";
 
 function setUp(db: ReturnType<typeof createTestDb>) {
-  const member = createMember(db, { name: "Amit" });
+  const profile = createProfile(db, { name: "Amit" });
   const currency = createCurrency(db, {
-    memberId: member.id,
+    profileId: profile.id,
     code: "INR",
     name: "Indian Rupee",
     symbol: "₹",
     minorUnitScale: 2,
   });
   const bank = createAccount(db, {
-    memberId: member.id,
+    profileId: profile.id,
     currencyId: currency.id,
     name: "Bank",
     classification: "ASSET",
     instrumentType: "BANK",
   });
   const salary = createAccount(db, {
-    memberId: member.id,
+    profileId: profile.id,
     currencyId: currency.id,
     name: "Salary",
     classification: "INCOME",
     instrumentType: "INCOME",
   });
   const food = createAccount(db, {
-    memberId: member.id,
+    profileId: profile.id,
     currencyId: currency.id,
     name: "Food",
     classification: "EXPENSE",
     instrumentType: "EXPENSE",
   });
-  return { member, bank, salary, food };
+  return { profile, bank, salary, food };
 }
 
 describe("getBalanceTrend", () => {
   it("accumulates a running balance in chronological order, in the account's own normal-balance direction", () => {
     const db = createTestDb();
-    const { member, bank, salary, food } = setUp(db);
+    const { profile, bank, salary, food } = setUp(db);
 
     createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-01-05",
       description: "Salary",
       postings: [
@@ -55,7 +55,7 @@ describe("getBalanceTrend", () => {
       ],
     });
     createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-01-10",
       description: "Groceries",
       postings: [
@@ -64,7 +64,7 @@ describe("getBalanceTrend", () => {
       ],
     });
 
-    expect(getBalanceTrend(db, member.id, bank.id)).toEqual([
+    expect(getBalanceTrend(db, profile.id, bank.id)).toEqual([
       { date: "2026-01-05", balance: 100000 },
       { date: "2026-01-10", balance: 98000 },
     ]);
@@ -72,10 +72,10 @@ describe("getBalanceTrend", () => {
 
   it("collapses same-day transactions into one point", () => {
     const db = createTestDb();
-    const { member, bank, salary } = setUp(db);
+    const { profile, bank, salary } = setUp(db);
 
     createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-01-05",
       description: "Salary",
       postings: [
@@ -84,7 +84,7 @@ describe("getBalanceTrend", () => {
       ],
     });
     createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-01-05",
       description: "Bonus",
       postings: [
@@ -93,23 +93,23 @@ describe("getBalanceTrend", () => {
       ],
     });
 
-    expect(getBalanceTrend(db, member.id, bank.id)).toEqual([{ date: "2026-01-05", balance: 60000 }]);
+    expect(getBalanceTrend(db, profile.id, bank.id)).toEqual([{ date: "2026-01-05", balance: 60000 }]);
   });
 
   it("throws NotFoundError for an unknown account", () => {
     const db = createTestDb();
-    const { member } = setUp(db);
-    expect(() => getBalanceTrend(db, member.id, "does-not-exist")).toThrow(NotFoundError);
+    const { profile } = setUp(db);
+    expect(() => getBalanceTrend(db, profile.id, "does-not-exist")).toThrow(NotFoundError);
   });
 });
 
 describe("getMonthlyCashflow", () => {
   it("groups inflow/outflow by month, relative to the account's own balance", () => {
     const db = createTestDb();
-    const { member, bank, salary, food } = setUp(db);
+    const { profile, bank, salary, food } = setUp(db);
 
     createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-01-05",
       description: "Salary",
       postings: [
@@ -118,7 +118,7 @@ describe("getMonthlyCashflow", () => {
       ],
     });
     createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-02-10",
       description: "Groceries",
       postings: [
@@ -127,7 +127,7 @@ describe("getMonthlyCashflow", () => {
       ],
     });
 
-    expect(getMonthlyCashflow(db, member.id, bank.id)).toEqual([
+    expect(getMonthlyCashflow(db, profile.id, bank.id)).toEqual([
       { month: "2026-01", inflow: 100000, outflow: 0 },
       { month: "2026-02", inflow: 0, outflow: 2000 },
     ]);
@@ -135,10 +135,10 @@ describe("getMonthlyCashflow", () => {
 
   it("restricts to a date range, dropping months outside it", () => {
     const db = createTestDb();
-    const { member, bank, salary, food } = setUp(db);
+    const { profile, bank, salary, food } = setUp(db);
 
     createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-01-05",
       description: "Salary",
       postings: [
@@ -147,7 +147,7 @@ describe("getMonthlyCashflow", () => {
       ],
     });
     createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-02-10",
       description: "Groceries",
       postings: [
@@ -156,7 +156,7 @@ describe("getMonthlyCashflow", () => {
       ],
     });
 
-    expect(getMonthlyCashflow(db, member.id, bank.id, { from: "2026-02-01" })).toEqual([
+    expect(getMonthlyCashflow(db, profile.id, bank.id, { from: "2026-02-01" })).toEqual([
       { month: "2026-02", inflow: 0, outflow: 2000 },
     ]);
   });
@@ -165,10 +165,10 @@ describe("getMonthlyCashflow", () => {
 describe("getBalanceTrend with a date range", () => {
   it("starts from the real opening balance as of range.from, not zero", () => {
     const db = createTestDb();
-    const { member, bank, salary, food } = setUp(db);
+    const { profile, bank, salary, food } = setUp(db);
 
     createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-01-05",
       description: "Salary",
       postings: [
@@ -177,7 +177,7 @@ describe("getBalanceTrend with a date range", () => {
       ],
     });
     createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-02-10",
       description: "Groceries",
       postings: [
@@ -188,17 +188,17 @@ describe("getBalanceTrend with a date range", () => {
 
     // The window opens after the January salary — the single visible point
     // must still reflect that 100000 already happened, not restart at 0.
-    expect(getBalanceTrend(db, member.id, bank.id, { from: "2026-02-01" })).toEqual([
+    expect(getBalanceTrend(db, profile.id, bank.id, { from: "2026-02-01" })).toEqual([
       { date: "2026-02-10", balance: 98000 },
     ]);
   });
 
   it("excludes points after range.to", () => {
     const db = createTestDb();
-    const { member, bank, salary } = setUp(db);
+    const { profile, bank, salary } = setUp(db);
 
     createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-01-05",
       description: "Salary",
       postings: [
@@ -207,7 +207,7 @@ describe("getBalanceTrend with a date range", () => {
       ],
     });
     createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-03-01",
       description: "Bonus",
       postings: [
@@ -216,7 +216,7 @@ describe("getBalanceTrend with a date range", () => {
       ],
     });
 
-    expect(getBalanceTrend(db, member.id, bank.id, { to: "2026-02-01" })).toEqual([
+    expect(getBalanceTrend(db, profile.id, bank.id, { to: "2026-02-01" })).toEqual([
       { date: "2026-01-05", balance: 50000 },
     ]);
   });
@@ -225,10 +225,10 @@ describe("getBalanceTrend with a date range", () => {
 describe("getAccountRangeSummary", () => {
   it("computes opening/closing balance and totals for the range, opening balance aware of prior history", () => {
     const db = createTestDb();
-    const { member, bank, salary, food } = setUp(db);
+    const { profile, bank, salary, food } = setUp(db);
 
     createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-01-05",
       description: "Salary (before window)",
       postings: [
@@ -237,7 +237,7 @@ describe("getAccountRangeSummary", () => {
       ],
     });
     createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-02-10",
       description: "Groceries (in window)",
       postings: [
@@ -246,7 +246,7 @@ describe("getAccountRangeSummary", () => {
       ],
     });
     createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-02-15",
       description: "Bonus (in window)",
       postings: [
@@ -255,7 +255,7 @@ describe("getAccountRangeSummary", () => {
       ],
     });
 
-    const summary = getAccountRangeSummary(db, member.id, bank.id, { from: "2026-02-01" });
+    const summary = getAccountRangeSummary(db, profile.id, bank.id, { from: "2026-02-01" });
     expect(summary).toEqual({
       openingBalance: 100000,
       closingBalance: 103000,
@@ -267,10 +267,10 @@ describe("getAccountRangeSummary", () => {
 
   it("with no range, opening balance is zero and closing balance is the all-time balance", () => {
     const db = createTestDb();
-    const { member, bank, salary } = setUp(db);
+    const { profile, bank, salary } = setUp(db);
 
     createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-01-05",
       description: "Salary",
       postings: [
@@ -279,7 +279,7 @@ describe("getAccountRangeSummary", () => {
       ],
     });
 
-    const summary = getAccountRangeSummary(db, member.id, bank.id);
+    const summary = getAccountRangeSummary(db, profile.id, bank.id);
     expect(summary.openingBalance).toBe(0);
     expect(summary.closingBalance).toBe(100000);
   });

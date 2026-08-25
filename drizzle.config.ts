@@ -5,6 +5,6 @@ export default defineConfig({
   out: "./src/server/db/migrations",
   dialect: "sqlite",
   dbCredentials: {
-    url: "./ledger.db",
+    url: "./data/ledger.db",
   },
 });

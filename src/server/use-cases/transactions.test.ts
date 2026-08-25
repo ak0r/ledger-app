@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { Db } from "../db/family-client";
+import type { Db } from "../db/client";
 import { postings, transactions } from "../db/schema";
 import { createTestDb } from "../testing/createTestDb";
 import { findPostingsByTransaction, findTransactionById } from "../repositories/transactions";
-import { createMember } from "./members";
+import { createProfile } from "./profiles";
 import { createCurrency } from "./currencies";
 import { createAccount } from "./accounts";
 import {
@@ -18,9 +18,9 @@ import {
 import { MergeIneligibleError, NotFoundError, TransactionValidationError } from "./errors";
 
 function setUpLedger(db: Db) {
-  const member = createMember(db, { name: "Amit" });
+  const profile = createProfile(db, { name: "Amit" });
   const currency = createCurrency(db, {
-    memberId: member.id,
+    profileId: profile.id,
     code: "INR",
     name: "Indian Rupee",
     symbol: "₹",
@@ -28,7 +28,7 @@ function setUpLedger(db: Db) {
   });
   const account = (name: string, classification: string, instrumentType: string) =>
     createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name,
       classification: classification as never,
@@ -36,7 +36,7 @@ function setUpLedger(db: Db) {
     });
 
   return {
-    member,
+    profile,
     bank: account("HDFC Bank", "ASSET", "BANK"),
     food: account("Food Expense", "EXPENSE", "EXPENSE"),
     creditCard: account("HDFC Credit Card", "LIABILITY", "CREDIT_CARD"),
@@ -47,10 +47,10 @@ function setUpLedger(db: Db) {
 describe("createTransaction", () => {
   it("persists a balanced expense transaction with its postings", () => {
     const db = createTestDb();
-    const { member, bank, food } = setUpLedger(db);
+    const { profile, bank, food } = setUpLedger(db);
 
     const transaction = createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Groceries",
       postings: [
@@ -60,17 +60,17 @@ describe("createTransaction", () => {
     });
 
     expect(transaction.postings).toHaveLength(2);
-    expect(findTransactionById(db, transaction.id, member.id)).toBeDefined();
+    expect(findTransactionById(db, transaction.id, profile.id)).toBeDefined();
     expect(findPostingsByTransaction(db, transaction.id)).toHaveLength(2);
   });
 
   it("rejects an unbalanced transaction and writes nothing (atomicity)", () => {
     const db = createTestDb();
-    const { member, bank, food } = setUpLedger(db);
+    const { profile, bank, food } = setUpLedger(db);
 
     expect(() =>
       createTransaction(db, {
-        memberId: member.id,
+        profileId: profile.id,
         date: "2026-08-15",
         description: "Broken",
         postings: [
@@ -87,16 +87,16 @@ describe("createTransaction", () => {
     expect(db.select().from(postings).all()).toEqual([]);
   });
 
-  it("rejects a posting against another Member's account (ownership invariant)", () => {
+  it("rejects a posting against another Profile's account (ownership invariant)", () => {
     const db = createTestDb();
-    const { member, food } = setUpLedger(db);
+    const { profile, food } = setUpLedger(db);
     const otherLedger = setUpLedger(db);
 
     expect(() =>
       createTransaction(db, {
-        memberId: member.id,
+        profileId: profile.id,
         date: "2026-08-15",
-        description: "Cross-member write attempt",
+        description: "Cross-profile write attempt",
         postings: [
           { accountId: food.id, debit: 1000, credit: 0 },
           { accountId: otherLedger.bank.id, debit: 0, credit: 1000 },
@@ -109,9 +109,9 @@ describe("createTransaction", () => {
 describe("editTransaction (full replace)", () => {
   it("atomically swaps postings under the same transaction id", () => {
     const db = createTestDb();
-    const { member, bank, food, creditCard } = setUpLedger(db);
+    const { profile, bank, food, creditCard } = setUpLedger(db);
     const original = createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Groceries",
       postings: [
@@ -122,7 +122,7 @@ describe("editTransaction (full replace)", () => {
 
     const edited = editTransaction(db, {
       transactionId: original.id,
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-16",
       description: "Groceries (corrected — paid by credit card)",
       postings: [
@@ -144,9 +144,9 @@ describe("editTransaction (full replace)", () => {
 
   it("rejects an unbalanced edit and leaves the original postings untouched", () => {
     const db = createTestDb();
-    const { member, bank, food } = setUpLedger(db);
+    const { profile, bank, food } = setUpLedger(db);
     const original = createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Groceries",
       postings: [
@@ -158,7 +158,7 @@ describe("editTransaction (full replace)", () => {
     expect(() =>
       editTransaction(db, {
         transactionId: original.id,
-        memberId: member.id,
+        profileId: profile.id,
         date: "2026-08-15",
         description: "Broken edit",
         postings: [
@@ -173,12 +173,12 @@ describe("editTransaction (full replace)", () => {
     expect(postings.find((p) => p.accountId === food.id)?.debit).toBe(2000);
   });
 
-  it("rejects editing another Member's transaction (rule #6)", () => {
+  it("rejects editing another Profile's transaction (rule #6)", () => {
     const db = createTestDb();
-    const { member, bank, food } = setUpLedger(db);
+    const { profile, bank, food } = setUpLedger(db);
     const otherLedger = setUpLedger(db);
     const original = createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Groceries",
       postings: [
@@ -190,7 +190,7 @@ describe("editTransaction (full replace)", () => {
     expect(() =>
       editTransaction(db, {
         transactionId: original.id,
-        memberId: otherLedger.member.id,
+        profileId: otherLedger.profile.id,
         date: "2026-08-15",
         description: "Should not apply",
         postings: [
@@ -205,9 +205,9 @@ describe("editTransaction (full replace)", () => {
 describe("deleteTransaction", () => {
   it("hard-deletes the transaction and cascades its postings (rule #9)", () => {
     const db = createTestDb();
-    const { member, bank, food } = setUpLedger(db);
+    const { profile, bank, food } = setUpLedger(db);
     const transaction = createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Groceries",
       postings: [
@@ -216,18 +216,18 @@ describe("deleteTransaction", () => {
       ],
     });
 
-    deleteTransaction(db, { transactionId: transaction.id, memberId: member.id });
+    deleteTransaction(db, { transactionId: transaction.id, profileId: profile.id });
 
-    expect(findTransactionById(db, transaction.id, member.id)).toBeUndefined();
+    expect(findTransactionById(db, transaction.id, profile.id)).toBeUndefined();
     expect(findPostingsByTransaction(db, transaction.id)).toEqual([]);
   });
 
-  it("rejects deleting another Member's transaction (rule #6) and does not corrupt it", () => {
+  it("rejects deleting another Profile's transaction (rule #6) and does not corrupt it", () => {
     const db = createTestDb();
-    const { member, bank, food } = setUpLedger(db);
+    const { profile, bank, food } = setUpLedger(db);
     const otherLedger = setUpLedger(db);
     const transaction = createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Groceries",
       postings: [
@@ -239,11 +239,11 @@ describe("deleteTransaction", () => {
     expect(() =>
       deleteTransaction(db, {
         transactionId: transaction.id,
-        memberId: otherLedger.member.id,
+        profileId: otherLedger.profile.id,
       }),
     ).toThrow(NotFoundError);
 
-    expect(findTransactionById(db, transaction.id, member.id)).toBeDefined();
+    expect(findTransactionById(db, transaction.id, profile.id)).toBeDefined();
     expect(findPostingsByTransaction(db, transaction.id)).toHaveLength(2);
   });
 });
@@ -251,9 +251,9 @@ describe("deleteTransaction", () => {
 describe("bulkDeleteTransactions", () => {
   it("hard-deletes every transaction in the selection", () => {
     const db = createTestDb();
-    const { member, bank, food, creditCard } = setUpLedger(db);
+    const { profile, bank, food, creditCard } = setUpLedger(db);
     const t1 = createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Groceries",
       postings: [
@@ -262,7 +262,7 @@ describe("bulkDeleteTransactions", () => {
       ],
     });
     const t2 = createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-16",
       description: "Snacks",
       postings: [
@@ -271,19 +271,19 @@ describe("bulkDeleteTransactions", () => {
       ],
     });
 
-    bulkDeleteTransactions(db, { memberId: member.id, transactionIds: [t1.id, t2.id] });
+    bulkDeleteTransactions(db, { profileId: profile.id, transactionIds: [t1.id, t2.id] });
 
-    expect(findTransactionById(db, t1.id, member.id)).toBeUndefined();
-    expect(findTransactionById(db, t2.id, member.id)).toBeUndefined();
-    expect(listTransactions(db, member.id)).toHaveLength(0);
+    expect(findTransactionById(db, t1.id, profile.id)).toBeUndefined();
+    expect(findTransactionById(db, t2.id, profile.id)).toBeUndefined();
+    expect(listTransactions(db, profile.id)).toHaveLength(0);
   });
 
-  it("rejects the whole batch when one id doesn't belong to this Member, deleting nothing (atomicity)", () => {
+  it("rejects the whole batch when one id doesn't belong to this Profile, deleting nothing (atomicity)", () => {
     const db = createTestDb();
-    const { member, bank, food } = setUpLedger(db);
+    const { profile, bank, food } = setUpLedger(db);
     const otherLedger = setUpLedger(db);
     const t1 = createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Groceries",
       postings: [
@@ -292,9 +292,9 @@ describe("bulkDeleteTransactions", () => {
       ],
     });
     const otherTransaction = createTransaction(db, {
-      memberId: otherLedger.member.id,
+      profileId: otherLedger.profile.id,
       date: "2026-08-15",
-      description: "Not this member's",
+      description: "Not this profile's",
       postings: [
         { accountId: otherLedger.food.id, debit: 500, credit: 0 },
         { accountId: otherLedger.bank.id, debit: 0, credit: 500 },
@@ -303,14 +303,14 @@ describe("bulkDeleteTransactions", () => {
 
     expect(() =>
       bulkDeleteTransactions(db, {
-        memberId: member.id,
+        profileId: profile.id,
         transactionIds: [t1.id, otherTransaction.id],
       }),
     ).toThrow(NotFoundError);
 
-    expect(findTransactionById(db, t1.id, member.id)).toBeDefined();
+    expect(findTransactionById(db, t1.id, profile.id)).toBeDefined();
     expect(
-      findTransactionById(db, otherTransaction.id, otherLedger.member.id),
+      findTransactionById(db, otherTransaction.id, otherLedger.profile.id),
     ).toBeDefined();
   });
 });
@@ -318,9 +318,9 @@ describe("bulkDeleteTransactions", () => {
 describe("bulkUpdateTags", () => {
   it("adds and removes tags across every transaction in the selection", () => {
     const db = createTestDb();
-    const { member, bank, food } = setUpLedger(db);
+    const { profile, bank, food } = setUpLedger(db);
     const t1 = createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Groceries",
       tags: ["Home"],
@@ -330,7 +330,7 @@ describe("bulkUpdateTags", () => {
       ],
     });
     const t2 = createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-16",
       description: "Snacks",
       tags: ["Japan2026", "Home"],
@@ -341,23 +341,23 @@ describe("bulkUpdateTags", () => {
     });
 
     bulkUpdateTags(db, {
-      memberId: member.id,
+      profileId: profile.id,
       transactionIds: [t1.id, t2.id],
       addTags: ["Japan2026"],
       removeTags: ["Home"],
     });
 
-    const updated1 = findTransactionById(db, t1.id, member.id);
-    const updated2 = findTransactionById(db, t2.id, member.id);
+    const updated1 = findTransactionById(db, t1.id, profile.id);
+    const updated2 = findTransactionById(db, t2.id, profile.id);
     expect(updated1?.tags).toEqual(["Japan2026"]);
     expect(updated2?.tags).toEqual(["Japan2026"]);
   });
 
   it("clears tags to null when every tag is removed and none added", () => {
     const db = createTestDb();
-    const { member, bank, food } = setUpLedger(db);
+    const { profile, bank, food } = setUpLedger(db);
     const t1 = createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Groceries",
       tags: ["Home"],
@@ -368,21 +368,21 @@ describe("bulkUpdateTags", () => {
     });
 
     bulkUpdateTags(db, {
-      memberId: member.id,
+      profileId: profile.id,
       transactionIds: [t1.id],
       addTags: [],
       removeTags: ["Home"],
     });
 
-    expect(findTransactionById(db, t1.id, member.id)?.tags).toBeNull();
+    expect(findTransactionById(db, t1.id, profile.id)?.tags).toBeNull();
   });
 
-  it("rejects the whole batch when one id doesn't belong to this Member, changing nothing (atomicity)", () => {
+  it("rejects the whole batch when one id doesn't belong to this Profile, changing nothing (atomicity)", () => {
     const db = createTestDb();
-    const { member, bank, food } = setUpLedger(db);
+    const { profile, bank, food } = setUpLedger(db);
     const otherLedger = setUpLedger(db);
     const t1 = createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Groceries",
       tags: ["Home"],
@@ -392,9 +392,9 @@ describe("bulkUpdateTags", () => {
       ],
     });
     const otherTransaction = createTransaction(db, {
-      memberId: otherLedger.member.id,
+      profileId: otherLedger.profile.id,
       date: "2026-08-15",
-      description: "Not this member's",
+      description: "Not this profile's",
       postings: [
         { accountId: otherLedger.food.id, debit: 500, credit: 0 },
         { accountId: otherLedger.bank.id, debit: 0, credit: 500 },
@@ -403,23 +403,23 @@ describe("bulkUpdateTags", () => {
 
     expect(() =>
       bulkUpdateTags(db, {
-        memberId: member.id,
+        profileId: profile.id,
         transactionIds: [t1.id, otherTransaction.id],
         addTags: ["Japan2026"],
         removeTags: [],
       }),
     ).toThrow(NotFoundError);
 
-    expect(findTransactionById(db, t1.id, member.id)?.tags).toEqual(["Home"]);
+    expect(findTransactionById(db, t1.id, profile.id)?.tags).toEqual(["Home"]);
   });
 });
 
 describe("mergeTransactions", () => {
   it("replaces two eligible transactions with one balanced union of their postings", () => {
     const db = createTestDb();
-    const { member, bank, food, creditCard } = setUpLedger(db);
+    const { profile, bank, food, creditCard } = setUpLedger(db);
     const t1 = createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Groceries",
       postings: [
@@ -428,7 +428,7 @@ describe("mergeTransactions", () => {
       ],
     });
     const t2 = createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Snacks",
       postings: [
@@ -438,7 +438,7 @@ describe("mergeTransactions", () => {
     });
 
     const merged = mergeTransactions(db, {
-      memberId: member.id,
+      profileId: profile.id,
       transactionIds: [t1.id, t2.id],
     });
 
@@ -449,16 +449,16 @@ describe("mergeTransactions", () => {
     expect(totalDebit).toBe(totalCredit);
 
     // Originals are gone (hard-replaced), only the merged transaction remains.
-    expect(findTransactionById(db, t1.id, member.id)).toBeUndefined();
-    expect(findTransactionById(db, t2.id, member.id)).toBeUndefined();
-    expect(listTransactions(db, member.id)).toHaveLength(1);
+    expect(findTransactionById(db, t1.id, profile.id)).toBeUndefined();
+    expect(findTransactionById(db, t2.id, profile.id)).toBeUndefined();
+    expect(listTransactions(db, profile.id)).toHaveLength(1);
   });
 
   it("rejects an ineligible merge and leaves both originals untouched (atomicity)", () => {
     const db = createTestDb();
-    const { member, bank, food, creditCard, salary } = setUpLedger(db);
+    const { profile, bank, food, creditCard, salary } = setUpLedger(db);
     const t1 = createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Groceries",
       postings: [
@@ -467,7 +467,7 @@ describe("mergeTransactions", () => {
       ],
     });
     const t2 = createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-16", // different date — no common date, no common account
       description: "Paycheck",
       postings: [
@@ -478,21 +478,21 @@ describe("mergeTransactions", () => {
     void creditCard;
 
     expect(() =>
-      mergeTransactions(db, { memberId: member.id, transactionIds: [t1.id, t2.id] }),
+      mergeTransactions(db, { profileId: profile.id, transactionIds: [t1.id, t2.id] }),
     ).toThrow(MergeIneligibleError);
 
-    expect(findTransactionById(db, t1.id, member.id)).toBeDefined();
-    expect(findTransactionById(db, t2.id, member.id)).toBeDefined();
+    expect(findTransactionById(db, t1.id, profile.id)).toBeDefined();
+    expect(findTransactionById(db, t2.id, profile.id)).toBeDefined();
     expect(findPostingsByTransaction(db, t1.id)).toHaveLength(2);
     expect(findPostingsByTransaction(db, t2.id)).toHaveLength(2);
   });
 
-  it("rejects merging another Member's transaction (rule #6) and touches nothing", () => {
+  it("rejects merging another Profile's transaction (rule #6) and touches nothing", () => {
     const db = createTestDb();
-    const { member, bank, food } = setUpLedger(db);
+    const { profile, bank, food } = setUpLedger(db);
     const otherLedger = setUpLedger(db);
     const t1 = createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Groceries",
       postings: [
@@ -501,9 +501,9 @@ describe("mergeTransactions", () => {
       ],
     });
     const otherTransaction = createTransaction(db, {
-      memberId: otherLedger.member.id,
+      profileId: otherLedger.profile.id,
       date: "2026-08-15",
-      description: "Not this member's",
+      description: "Not this profile's",
       postings: [
         { accountId: otherLedger.food.id, debit: 500, credit: 0 },
         { accountId: otherLedger.bank.id, debit: 0, credit: 500 },
@@ -512,27 +512,27 @@ describe("mergeTransactions", () => {
 
     expect(() =>
       mergeTransactions(db, {
-        memberId: member.id,
+        profileId: profile.id,
         transactionIds: [t1.id, otherTransaction.id],
       }),
     ).toThrow(NotFoundError);
 
-    expect(findTransactionById(db, t1.id, member.id)).toBeDefined();
+    expect(findTransactionById(db, t1.id, profile.id)).toBeDefined();
     expect(findPostingsByTransaction(db, t1.id)).toHaveLength(2);
     expect(
-      findTransactionById(db, otherTransaction.id, otherLedger.member.id),
+      findTransactionById(db, otherTransaction.id, otherLedger.profile.id),
     ).toBeDefined();
   });
 });
 
 describe("listTransactions", () => {
-  it("returns every Transaction for the Member with postings attached, scoped by memberId", () => {
+  it("returns every Transaction for the Profile with postings attached, scoped by profileId", () => {
     const db = createTestDb();
-    const { member, bank, food } = setUpLedger(db);
+    const { profile, bank, food } = setUpLedger(db);
     const otherLedger = setUpLedger(db);
 
     const t1 = createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Groceries",
       postings: [
@@ -541,16 +541,16 @@ describe("listTransactions", () => {
       ],
     });
     createTransaction(db, {
-      memberId: otherLedger.member.id,
+      profileId: otherLedger.profile.id,
       date: "2026-08-15",
-      description: "Not this member's",
+      description: "Not this profile's",
       postings: [
         { accountId: otherLedger.food.id, debit: 500, credit: 0 },
         { accountId: otherLedger.bank.id, debit: 0, credit: 500 },
       ],
     });
 
-    const list = listTransactions(db, member.id);
+    const list = listTransactions(db, profile.id);
     expect(list).toHaveLength(1);
     expect(list[0].id).toBe(t1.id);
     expect(list[0].postings).toHaveLength(2);

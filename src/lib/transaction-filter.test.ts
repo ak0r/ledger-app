@@ -14,7 +14,7 @@ import {
 function account(id: string, classification: string): AccountRow {
   return {
     id,
-    memberId: "member-1",
+    profileId: "profile-1",
     currencyId: "currency-1",
     name: id,
     classification: classification as never,
@@ -39,7 +39,7 @@ function transaction(
 ): TransactionWithPostings {
   return {
     id,
-    memberId: "member-1",
+    profileId: "profile-1",
     date,
     description,
     tags,

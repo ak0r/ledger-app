@@ -8,9 +8,9 @@ import { NAV_ITEMS } from "@/components/nav-items";
 // Mobile persistent bottom nav (docs/design/design.md §4.2) — not a
 // squeezed copy of the desktop sidebar, a dedicated mobile-first surface.
 // Same NAV_ITEMS as SidebarNav, only shown below md.
-export function BottomNav({ familyId, memberId }: { familyId: string; memberId: string }) {
+export function BottomNav({ profileId }: { profileId: string }) {
   const pathname = usePathname();
-  const base = `/f/${familyId}/m/${memberId}`;
+  const base = `/p/${profileId}`;
 
   return (
     <nav

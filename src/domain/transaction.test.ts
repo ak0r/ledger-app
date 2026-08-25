@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import { validateTransaction, type AccountRef } from "./transaction";
 
 // Fixture accounts mirror the worked examples in docs/02-domain-model.md,
-// all owned by the same Member and all INR (MVP-only currency, ADR-020).
-const MEMBER = "member-1";
-const OTHER_MEMBER = "member-2";
+// all owned by the same Profile and all INR (MVP-only currency, ADR-020).
+const PROFILE = "profile-1";
+const OTHER_PROFILE = "profile-2";
 
-function account(id: string, memberId = MEMBER, currencyCode = "INR"): AccountRef {
-  return { id, memberId, currencyCode };
+function account(id: string, profileId = PROFILE, currencyCode = "INR"): AccountRef {
+  return { id, profileId, currencyCode };
 }
 
 const accounts = new Map<string, AccountRef>(
@@ -19,8 +19,8 @@ const accounts = new Map<string, AccountRef>(
     account("hdfc-credit-card"),
     account("receivable"),
     account("opening-balance"),
-    account("other-member-bank", OTHER_MEMBER),
-    account("jpy-bank", MEMBER, "JPY"),
+    account("other-profile-bank", OTHER_PROFILE),
+    account("jpy-bank", PROFILE, "JPY"),
   ].map((a) => [a.id, a]),
 );
 
@@ -30,7 +30,7 @@ describe("validateTransaction — architecture testing checklist", () => {
   it("accepts a balanced transaction", () => {
     const violations = validateTransaction(
       {
-        memberId: MEMBER,
+        profileId: PROFILE,
         postings: [
           { accountId: "food-expense", debit: 2000, credit: 0 },
           { accountId: "hdfc-bank", debit: 0, credit: 2000 },
@@ -44,7 +44,7 @@ describe("validateTransaction — architecture testing checklist", () => {
   it("rejects an unbalanced transaction", () => {
     const violations = validateTransaction(
       {
-        memberId: MEMBER,
+        profileId: PROFILE,
         postings: [
           { accountId: "food-expense", debit: 2000, credit: 0 },
           { accountId: "hdfc-bank", debit: 0, credit: 1900 },
@@ -62,7 +62,7 @@ describe("validateTransaction — architecture testing checklist", () => {
   it("accepts an expense", () => {
     const violations = validateTransaction(
       {
-        memberId: MEMBER,
+        profileId: PROFILE,
         postings: [
           { accountId: "food-expense", debit: 2000, credit: 0 },
           { accountId: "hdfc-bank", debit: 0, credit: 2000 },
@@ -76,7 +76,7 @@ describe("validateTransaction — architecture testing checklist", () => {
   it("accepts income", () => {
     const violations = validateTransaction(
       {
-        memberId: MEMBER,
+        profileId: PROFILE,
         postings: [
           { accountId: "hdfc-bank", debit: 100000, credit: 0 },
           { accountId: "salary-income", debit: 0, credit: 100000 },
@@ -90,7 +90,7 @@ describe("validateTransaction — architecture testing checklist", () => {
   it("accepts a transfer", () => {
     const violations = validateTransaction(
       {
-        memberId: MEMBER,
+        profileId: PROFILE,
         postings: [
           { accountId: "icici-bank", debit: 20000, credit: 0 },
           { accountId: "hdfc-bank", debit: 0, credit: 20000 },
@@ -104,7 +104,7 @@ describe("validateTransaction — architecture testing checklist", () => {
   it("accepts a credit-card purchase", () => {
     const violations = validateTransaction(
       {
-        memberId: MEMBER,
+        profileId: PROFILE,
         postings: [
           { accountId: "food-expense", debit: 5000, credit: 0 },
           { accountId: "hdfc-credit-card", debit: 0, credit: 5000 },
@@ -118,7 +118,7 @@ describe("validateTransaction — architecture testing checklist", () => {
   it("accepts a credit-card payment (not another expense)", () => {
     const violations = validateTransaction(
       {
-        memberId: MEMBER,
+        profileId: PROFILE,
         postings: [
           { accountId: "hdfc-credit-card", debit: 5000, credit: 0 },
           { accountId: "hdfc-bank", debit: 0, credit: 5000 },
@@ -132,7 +132,7 @@ describe("validateTransaction — architecture testing checklist", () => {
   it("accepts a multi-posting (split) transaction", () => {
     const violations = validateTransaction(
       {
-        memberId: MEMBER,
+        profileId: PROFILE,
         postings: [
           { accountId: "food-expense", debit: 2000, credit: 0 },
           { accountId: "receivable", debit: 3000, credit: 0 },
@@ -147,7 +147,7 @@ describe("validateTransaction — architecture testing checklist", () => {
   it("accepts an opening balance via the Balancing account", () => {
     const violations = validateTransaction(
       {
-        memberId: MEMBER,
+        profileId: PROFILE,
         postings: [
           { accountId: "hdfc-bank", debit: 250000, credit: 0 },
           { accountId: "opening-balance", debit: 0, credit: 250000 },
@@ -166,7 +166,7 @@ describe("validateTransaction — architecture testing checklist", () => {
   // was balanced. Full atomic-swap integration coverage belongs to Phase 4.
   it("edit preserves balance: a balanced replacement set is accepted", () => {
     const original = {
-      memberId: MEMBER,
+      profileId: PROFILE,
       postings: [
         { accountId: "food-expense", debit: 2000, credit: 0 },
         { accountId: "hdfc-bank", debit: 0, credit: 2000 },
@@ -175,7 +175,7 @@ describe("validateTransaction — architecture testing checklist", () => {
     expect(validateTransaction(original, accounts)).toEqual([]);
 
     const edited = {
-      memberId: MEMBER,
+      profileId: PROFILE,
       postings: [
         { accountId: "food-expense", debit: 2500, credit: 0 },
         { accountId: "hdfc-bank", debit: 0, credit: 2500 },
@@ -186,7 +186,7 @@ describe("validateTransaction — architecture testing checklist", () => {
 
   it("edit preserves balance: an unbalanced replacement set is rejected", () => {
     const edited = {
-      memberId: MEMBER,
+      profileId: PROFILE,
       postings: [
         { accountId: "food-expense", debit: 2500, credit: 0 },
         { accountId: "hdfc-bank", debit: 0, credit: 2000 },
@@ -208,7 +208,7 @@ describe("validateTransaction — architecture testing checklist", () => {
   // — always fails validation, which is why deletion must stay atomic.
   it("delete does not corrupt balance: a partially deleted posting set fails validation", () => {
     const fullyPosted = {
-      memberId: MEMBER,
+      profileId: PROFILE,
       postings: [
         { accountId: "food-expense", debit: 2000, credit: 0 },
         { accountId: "receivable", debit: 3000, credit: 0 },
@@ -218,7 +218,7 @@ describe("validateTransaction — architecture testing checklist", () => {
     expect(validateTransaction(fullyPosted, accounts)).toEqual([]);
 
     const afterNonAtomicPartialDelete = {
-      memberId: MEMBER,
+      profileId: PROFILE,
       postings: [
         { accountId: "food-expense", debit: 2000, credit: 0 },
         { accountId: "hdfc-credit-card", debit: 0, credit: 5000 },
@@ -234,12 +234,12 @@ describe("validateTransaction — architecture testing checklist", () => {
 });
 
 describe("validateTransaction — ownership and currency invariants", () => {
-  it("rejects a posting whose account belongs to a different Member", () => {
+  it("rejects a posting whose account belongs to a different Profile", () => {
     const violations = validateTransaction(
       {
-        memberId: MEMBER,
+        profileId: PROFILE,
         postings: [
-          { accountId: "other-member-bank", debit: 1000, credit: 0 },
+          { accountId: "other-profile-bank", debit: 1000, credit: 0 },
           { accountId: "food-expense", debit: 0, credit: 1000 },
         ],
       },
@@ -247,14 +247,14 @@ describe("validateTransaction — ownership and currency invariants", () => {
     );
     expect(violations).toContainEqual({
       code: "OWNERSHIP_MISMATCH",
-      accountId: "other-member-bank",
+      accountId: "other-profile-bank",
     });
   });
 
   it("rejects a posting against a non-INR account (MVP-only, ADR-020)", () => {
     const violations = validateTransaction(
       {
-        memberId: MEMBER,
+        profileId: PROFILE,
         postings: [
           { accountId: "jpy-bank", debit: 1000, credit: 0 },
           { accountId: "food-expense", debit: 0, credit: 1000 },
@@ -272,7 +272,7 @@ describe("validateTransaction — ownership and currency invariants", () => {
   it("rejects a posting against an unknown account", () => {
     const violations = validateTransaction(
       {
-        memberId: MEMBER,
+        profileId: PROFILE,
         postings: [
           { accountId: "does-not-exist", debit: 1000, credit: 0 },
           { accountId: "food-expense", debit: 0, credit: 1000 },
@@ -289,7 +289,7 @@ describe("validateTransaction — ownership and currency invariants", () => {
   it("rejects fewer than two postings", () => {
     const violations = validateTransaction(
       {
-        memberId: MEMBER,
+        profileId: PROFILE,
         postings: [{ accountId: "food-expense", debit: 2000, credit: 0 }],
       },
       accounts,

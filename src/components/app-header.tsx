@@ -12,8 +12,7 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "@/components/ui/menu";
-import { activateFamilyAction } from "@/server/actions/activeFamily";
-import { activateMemberAction } from "@/server/actions/activeMember";
+import { activateProfileAction } from "@/server/actions/activeProfile";
 import { logoutAction } from "@/server/actions/auth";
 
 interface Entry {
@@ -30,66 +29,33 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
-// Header identity + switching (docs/design/design.md §5). Family/Member
-// switching is a zero-JS server-action form underneath (mirrors the
-// /families and /members picker pages) — each MenuItem renders (via the
-// `render` prop, same composition pattern as ConfirmDialog's DialogClose)
-// as the form's actual submit button, so Base UI's Menu supplies real
-// keyboard navigation/focus management around a still-zero-JS submission.
-// Desktop shows Family and Member as two separate menus; mobile collapses
-// both into one compact trigger to keep the header light (§5 "Mobile: Keep
-// header compact").
-function FamilyItems({ familyId, families }: { familyId: string; families: Entry[] }) {
+// Header identity + switching (docs/design/design.md §5). Profile switching
+// is a zero-JS server-action form underneath (mirrors the /profiles picker
+// page) — each MenuItem renders (via the `render` prop, same composition
+// pattern as ConfirmDialog's DialogClose) as the form's actual submit
+// button, so Base UI's Menu supplies real keyboard navigation/focus
+// management around a still-zero-JS submission. Only the Primary User gets
+// a switcher at all (2026-08-20 User Simplification delta) — a Normal
+// AppUser has exactly one Profile, so `profiles` is omitted for them and
+// this collapses to identity + log out.
+function ProfileItems({ profileId, profiles }: { profileId: string; profiles: Entry[] }) {
   return (
     <MenuGroup>
-      <MenuGroupLabel>Family</MenuGroupLabel>
-      {families.map((family) => (
-        <form key={family.id} action={activateFamilyAction.bind(null, family.id)}>
+      <MenuGroupLabel>Profile</MenuGroupLabel>
+      {profiles.map((profile) => (
+        <form key={profile.id} action={activateProfileAction.bind(null, profile.id)}>
           <MenuItem
-            aria-current={family.id === familyId ? "true" : undefined}
-            className={family.id === familyId ? "bg-accent text-accent-foreground" : undefined}
+            aria-current={profile.id === profileId ? "true" : undefined}
+            className={profile.id === profileId ? "bg-accent text-accent-foreground" : undefined}
             nativeButton
             render={<button type="submit" className="w-full text-left" />}
           >
-            {family.name}
+            {profile.name}
           </MenuItem>
         </form>
       ))}
-      <MenuItem render={<Link href="/families" className="text-muted-foreground" />}>
-        Manage families
-      </MenuItem>
-    </MenuGroup>
-  );
-}
-
-function MemberItems({
-  familyId,
-  memberId,
-  members,
-}: {
-  familyId: string;
-  memberId: string;
-  members: Entry[];
-}) {
-  return (
-    <MenuGroup>
-      <MenuGroupLabel>Member</MenuGroupLabel>
-      {members.map((member) => (
-        <form key={member.id} action={activateMemberAction.bind(null, familyId, member.id)}>
-          <MenuItem
-            aria-current={member.id === memberId ? "true" : undefined}
-            className={member.id === memberId ? "bg-accent text-accent-foreground" : undefined}
-            nativeButton
-            render={<button type="submit" className="w-full text-left" />}
-          >
-            {member.name}
-          </MenuItem>
-        </form>
-      ))}
-      <MenuItem
-        render={<Link href={`/f/${familyId}/members`} className="text-muted-foreground" />}
-      >
-        Manage members
+      <MenuItem render={<Link href="/profiles" className="text-muted-foreground" />}>
+        Manage profiles
       </MenuItem>
       <MenuSeparator />
       <form action={logoutAction}>
@@ -102,21 +68,17 @@ function MemberItems({
 }
 
 export function AppHeader({
-  familyId,
-  memberId,
-  familyName,
-  memberName,
-  families,
-  members,
+  profileId,
+  profileName,
+  profiles,
 }: {
-  familyId: string;
-  memberId: string;
-  familyName: string;
-  memberName: string;
-  families: Entry[];
-  members: Entry[];
+  profileId: string;
+  profileName: string;
+  // Present (and possibly length-1) only for the Primary User; omitted
+  // entirely for a Normal AppUser, who has nothing to switch between.
+  profiles?: Entry[];
 }) {
-  const base = `/f/${familyId}/m/${memberId}`;
+  const base = `/p/${profileId}`;
 
   return (
     <header className="flex items-center justify-between border-b border-border px-3 py-2.5 sm:px-4 sm:py-3">
@@ -125,51 +87,59 @@ export function AppHeader({
         <span className="text-[10px] text-muted-foreground sm:text-xs">v0.1.0</span>
       </Link>
 
-      {/* Desktop: Family switcher, Member switcher, appearance — each its
-          own trigger (docs/design/design.md §5 desktop example). */}
+      {/* Desktop: Profile switcher (Primary only), appearance — Normal
+          AppUsers get identity + log out (docs/design/design.md §5 desktop
+          example). */}
       <div className="hidden items-center gap-2 md:flex">
-        <Menu>
-          <MenuTrigger className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground">
-            {familyName}
-            <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
-          </MenuTrigger>
-          <MenuContent>
-            <FamilyItems familyId={familyId} families={families} />
-          </MenuContent>
-        </Menu>
-
         <Menu>
           <MenuTrigger className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground">
             <span className="flex size-6 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground">
-              {initials(memberName)}
+              {initials(profileName)}
             </span>
-            {memberName}
+            {profileName}
             <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
           </MenuTrigger>
           <MenuContent>
-            <MemberItems familyId={familyId} memberId={memberId} members={members} />
+            {profiles ? (
+              <ProfileItems profileId={profileId} profiles={profiles} />
+            ) : (
+              <MenuGroup>
+                <form action={logoutAction}>
+                  <MenuItem nativeButton render={<button type="submit" className="w-full text-left" />}>
+                    Log out
+                  </MenuItem>
+                </form>
+              </MenuGroup>
+            )}
           </MenuContent>
         </Menu>
 
         <ThemeToggle variant="icon" />
       </div>
 
-      {/* Mobile: one compact trigger holds both switchers (§5 mobile
-          example — "AK ˅" — family/member switching stays reachable
-          without heavy header chrome). */}
+      {/* Mobile: one compact trigger holds identity + switching (§5 mobile
+          example — "AK ˅"). */}
       <div className="flex items-center gap-1 md:hidden">
         <ThemeToggle variant="icon" />
         <Menu>
           <MenuTrigger className="flex items-center gap-1 rounded-lg py-1.5 pl-1.5 pr-2 text-sm hover:bg-accent hover:text-accent-foreground">
             <span className="flex size-7 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
-              {initials(memberName)}
+              {initials(profileName)}
             </span>
             <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
           </MenuTrigger>
           <MenuContent>
-            <MemberItems familyId={familyId} memberId={memberId} members={members} />
-            <MenuSeparator />
-            <FamilyItems familyId={familyId} families={families} />
+            {profiles ? (
+              <ProfileItems profileId={profileId} profiles={profiles} />
+            ) : (
+              <MenuGroup>
+                <form action={logoutAction}>
+                  <MenuItem nativeButton render={<button type="submit" className="w-full text-left" />}>
+                    Log out
+                  </MenuItem>
+                </form>
+              </MenuGroup>
+            )}
           </MenuContent>
         </Menu>
       </div>

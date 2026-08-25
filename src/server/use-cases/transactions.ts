@@ -1,15 +1,15 @@
 import { validateTransaction } from "@/domain";
 import { matchesFilter, type TransactionFilterState } from "@/lib/transaction-filter";
 import { checkMergeEligibility } from "@/lib/merge-eligibility";
-import type { Db } from "../db/family-client";
-import { findAccountRefs, findAccountsByMember, type AccountRow } from "../repositories/accounts";
+import type { Db } from "../db/client";
+import { findAccountRefs, findAccountsByProfile, type AccountRow } from "../repositories/accounts";
 import {
   deletePostingsByTransaction,
   deleteTransactionRow,
   findPostingsByTransaction,
   findPostingsByTransactionIds,
   findTransactionById,
-  findTransactionsByMember,
+  findTransactionsByProfile,
   insertPostings,
   insertTransaction,
   updateTransactionFields,
@@ -49,19 +49,19 @@ function buildPostingRows(
 // checks that may also run at the Phase 5 API boundary.
 function assertBalanced(
   db: Db,
-  memberId: string,
+  profileId: string,
   postingInputs: readonly PostingInput[],
 ): void {
   const accountIds = postingInputs.map((posting) => posting.accountId);
   const accounts = findAccountRefs(db, accountIds);
-  const violations = validateTransaction({ memberId, postings: postingInputs }, accounts);
+  const violations = validateTransaction({ profileId, postings: postingInputs }, accounts);
   if (violations.length > 0) {
     throw new TransactionValidationError(violations);
   }
 }
 
 export interface CreateTransactionInput {
-  memberId: string;
+  profileId: string;
   date: string;
   description: string;
   tags?: string[];
@@ -72,12 +72,12 @@ export function createTransaction(
   db: Db,
   input: CreateTransactionInput,
 ): TransactionWithPostings {
-  assertBalanced(db, input.memberId, input.postings);
+  assertBalanced(db, input.profileId, input.postings);
 
   const now = new Date().toISOString();
   const transaction: TransactionRow = {
     id: crypto.randomUUID(),
-    memberId: input.memberId,
+    profileId: input.profileId,
     date: input.date,
     description: input.description,
     tags: input.tags ?? null,
@@ -102,7 +102,7 @@ export function createTransaction(
 // so there is no partial state to reconcile).
 export interface EditTransactionInput {
   transactionId: string;
-  memberId: string;
+  profileId: string;
   date: string;
   description: string;
   tags?: string[];
@@ -113,14 +113,14 @@ export function editTransaction(
   db: Db,
   input: EditTransactionInput,
 ): TransactionWithPostings {
-  const existing = findTransactionById(db, input.transactionId, input.memberId);
+  const existing = findTransactionById(db, input.transactionId, input.profileId);
   if (!existing) {
     throw new NotFoundError(
-      `Transaction ${input.transactionId} not found for member ${input.memberId}`,
+      `Transaction ${input.transactionId} not found for profile ${input.profileId}`,
     );
   }
 
-  assertBalanced(db, input.memberId, input.postings);
+  assertBalanced(db, input.profileId, input.postings);
 
   const now = new Date().toISOString();
   const postingRows = buildPostingRows(input.transactionId, input.postings, now);
@@ -155,7 +155,7 @@ export function editTransaction(
 // anything fails, nothing commits and the originals are untouched (doc
 // §11's "if merge fails, all original transactions remain unchanged").
 export interface MergeTransactionsInput {
-  memberId: string;
+  profileId: string;
   transactionIds: string[];
 }
 
@@ -164,17 +164,17 @@ export function mergeTransactions(
   input: MergeTransactionsInput,
 ): TransactionWithPostings {
   const targets = input.transactionIds.map((transactionId) => {
-    const transaction = findTransactionById(db, transactionId, input.memberId);
+    const transaction = findTransactionById(db, transactionId, input.profileId);
     if (!transaction) {
       throw new NotFoundError(
-        `Transaction ${transactionId} not found for member ${input.memberId}`,
+        `Transaction ${transactionId} not found for profile ${input.profileId}`,
       );
     }
     return { ...transaction, postings: findPostingsByTransaction(db, transactionId) };
   });
 
   const accountsById = new Map(
-    findAccountsByMember(db, input.memberId).map((account) => [account.id, account]),
+    findAccountsByProfile(db, input.profileId).map((account) => [account.id, account]),
   );
   const eligibility = checkMergeEligibility(targets, accountsById);
   if (!eligibility.eligible) {
@@ -188,14 +188,14 @@ export function mergeTransactions(
       credit: posting.credit,
     })),
   );
-  assertBalanced(db, input.memberId, mergedPostingInputs);
+  assertBalanced(db, input.profileId, mergedPostingInputs);
 
   const now = new Date().toISOString();
   const descriptions = [...new Set(targets.map((transaction) => transaction.description))];
   const mergedTags = [...new Set(targets.flatMap((transaction) => transaction.tags ?? []))];
   const merged: TransactionRow = {
     id: crypto.randomUUID(),
-    memberId: input.memberId,
+    profileId: input.profileId,
     date: targets[0].date,
     description: descriptions.join(" + "),
     tags: mergedTags.length > 0 ? mergedTags : null,
@@ -208,7 +208,7 @@ export function mergeTransactions(
     insertTransaction(tx, merged);
     insertPostings(tx, postingRows);
     for (const target of targets) {
-      deleteTransactionRow(tx, target.id, input.memberId);
+      deleteTransactionRow(tx, target.id, input.profileId);
     }
   });
 
@@ -217,40 +217,40 @@ export function mergeTransactions(
 
 export interface DeleteTransactionInput {
   transactionId: string;
-  memberId: string;
+  profileId: string;
 }
 
 // Hard delete (rule #9, ADR-019). Postings cascade at the schema level; the
 // transaction wrapper still atomically covers this whole operation.
 export function deleteTransaction(db: Db, input: DeleteTransactionInput): void {
-  const existing = findTransactionById(db, input.transactionId, input.memberId);
+  const existing = findTransactionById(db, input.transactionId, input.profileId);
   if (!existing) {
     throw new NotFoundError(
-      `Transaction ${input.transactionId} not found for member ${input.memberId}`,
+      `Transaction ${input.transactionId} not found for profile ${input.profileId}`,
     );
   }
 
   db.transaction((tx) => {
-    deleteTransactionRow(tx, input.transactionId, input.memberId);
+    deleteTransactionRow(tx, input.transactionId, input.profileId);
   });
 }
 
 export interface BulkDeleteTransactionsInput {
-  memberId: string;
+  profileId: string;
   transactionIds: string[];
 }
 
 // BulkActionBar's Delete (transactionworkspacedelta.md §12) — same hard
 // delete as the single-row path, all-or-nothing: every target is verified
-// to exist (and belong to this Member) before any delete runs, so a
+// to exist (and belong to this Profile) before any delete runs, so a
 // mismatched id in the selection rejects the whole batch rather than
 // deleting some and silently skipping others.
 export function bulkDeleteTransactions(db: Db, input: BulkDeleteTransactionsInput): void {
   const targets = input.transactionIds.map((transactionId) => {
-    const transaction = findTransactionById(db, transactionId, input.memberId);
+    const transaction = findTransactionById(db, transactionId, input.profileId);
     if (!transaction) {
       throw new NotFoundError(
-        `Transaction ${transactionId} not found for member ${input.memberId}`,
+        `Transaction ${transactionId} not found for profile ${input.profileId}`,
       );
     }
     return transaction;
@@ -258,13 +258,13 @@ export function bulkDeleteTransactions(db: Db, input: BulkDeleteTransactionsInpu
 
   db.transaction((tx) => {
     for (const target of targets) {
-      deleteTransactionRow(tx, target.id, input.memberId);
+      deleteTransactionRow(tx, target.id, input.profileId);
     }
   });
 }
 
 export interface BulkUpdateTagsInput {
-  memberId: string;
+  profileId: string;
   transactionIds: string[];
   addTags: string[];
   removeTags: string[];
@@ -278,10 +278,10 @@ export interface BulkUpdateTagsInput {
 // partial patch) — passed straight through unchanged per target.
 export function bulkUpdateTags(db: Db, input: BulkUpdateTagsInput): void {
   const targets = input.transactionIds.map((transactionId) => {
-    const transaction = findTransactionById(db, transactionId, input.memberId);
+    const transaction = findTransactionById(db, transactionId, input.profileId);
     if (!transaction) {
       throw new NotFoundError(
-        `Transaction ${transactionId} not found for member ${input.memberId}`,
+        `Transaction ${transactionId} not found for profile ${input.profileId}`,
       );
     }
     return transaction;
@@ -308,15 +308,15 @@ export function bulkUpdateTags(db: Db, input: BulkUpdateTagsInput): void {
 export function getTransactionWithPostings(
   db: Db,
   transactionId: string,
-  memberId: string,
+  profileId: string,
 ): TransactionWithPostings | undefined {
-  const transaction = findTransactionById(db, transactionId, memberId);
+  const transaction = findTransactionById(db, transactionId, profileId);
   if (!transaction) return undefined;
   return { ...transaction, postings: findPostingsByTransaction(db, transactionId) };
 }
 
-export function listTransactions(db: Db, memberId: string): TransactionWithPostings[] {
-  const transactionRows = findTransactionsByMember(db, memberId);
+export function listTransactions(db: Db, profileId: string): TransactionWithPostings[] {
+  const transactionRows = findTransactionsByProfile(db, profileId);
   const postingRows = findPostingsByTransactionIds(
     db,
     transactionRows.map((transaction) => transaction.id),
@@ -337,8 +337,8 @@ export function listTransactions(db: Db, memberId: string): TransactionWithPosti
 
 // Condition-based filter model lives in src/lib/transaction-filter.ts (pure,
 // DB-independent, reusable by future Spaces/reports) — this just delegates
-// the per-transaction predicate to it. "Member" isn't a separate filter
-// field: /m/[memberId]/... already scopes everything to one Member via the
+// the per-transaction predicate to it. "Profile" isn't a separate filter
+// field: /m/[profileId]/... already scopes everything to one Profile via the
 // URL (resolved 2026-08-15, HANDOFF.md open decisions #3).
 export function filterTransactions(
   transactions: readonly TransactionWithPostings[],

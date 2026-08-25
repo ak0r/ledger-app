@@ -4,12 +4,12 @@ import { validatePosting, type PostingInput, type PostingViolationCode } from ".
 
 export interface AccountRef {
   id: string;
-  memberId: string;
+  profileId: string;
   currencyCode: string;
 }
 
 export interface TransactionInput {
-  memberId: string;
+  profileId: string;
   postings: readonly PostingInput[];
 }
 
@@ -49,7 +49,7 @@ export function validateTransaction(
       violations.push({ code: "ACCOUNT_NOT_FOUND", accountId: posting.accountId });
       continue;
     }
-    if (account.memberId !== input.memberId) {
+    if (account.profileId !== input.profileId) {
       violations.push({ code: "OWNERSHIP_MISMATCH", accountId: posting.accountId });
     }
     if (!isSupportedCurrencyCode(account.currencyCode)) {

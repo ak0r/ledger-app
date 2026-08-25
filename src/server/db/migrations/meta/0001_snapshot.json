@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "5c84abc0-7e90-4bbd-962c-2f054a393154",
-  "prevId": "3de55a42-d491-49b0-8e26-32207ea9ae85",
+  "id": "d8636686-e1e0-4773-981d-c476dbc81588",
+  "prevId": "e4fe178f-5442-4c3e-a4ea-88fcdf87b3cd",
   "tables": {
     "accounts": {
       "name": "accounts",
@@ -14,8 +14,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "member_id": {
-          "name": "member_id",
+        "profile_id": {
+          "name": "profile_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -109,12 +109,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "accounts_member_id_members_id_fk": {
-          "name": "accounts_member_id_members_id_fk",
+        "accounts_profile_id_profiles_id_fk": {
+          "name": "accounts_profile_id_profiles_id_fk",
           "tableFrom": "accounts",
-          "tableTo": "members",
+          "tableTo": "profiles",
           "columnsFrom": [
-            "member_id"
+            "profile_id"
           ],
           "columnsTo": [
             "id"
@@ -140,6 +140,67 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "app_users": {
+      "name": "app_users",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "is_primary": {
+          "name": "is_primary",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "app_users_email_unique": {
+          "name": "app_users_email_unique",
+          "columns": [
+            "email"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "currencies": {
       "name": "currencies",
       "columns": {
@@ -150,8 +211,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "member_id": {
-          "name": "member_id",
+        "profile_id": {
+          "name": "profile_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -202,12 +263,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "currencies_member_id_members_id_fk": {
-          "name": "currencies_member_id_members_id_fk",
+        "currencies_profile_id_profiles_id_fk": {
+          "name": "currencies_profile_id_profiles_id_fk",
           "tableFrom": "currencies",
-          "tableTo": "members",
+          "tableTo": "profiles",
           "columnsFrom": [
-            "member_id"
+            "profile_id"
           ],
           "columnsTo": [
             "id"
@@ -220,8 +281,8 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "members": {
-      "name": "members",
+    "instruments": {
+      "name": "instruments",
       "columns": {
         "id": {
           "name": "id",
@@ -230,11 +291,25 @@
           "notNull": true,
           "autoincrement": false
         },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
         "name": {
           "name": "name",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "unit_label": {
+          "name": "unit_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "created_at": {
@@ -346,6 +421,125 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "profiles": {
+      "name": "profiles",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "app_user_id": {
+          "name": "app_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "profiles_app_user_id_unique": {
+          "name": "profiles_app_user_id_unique",
+          "columns": [
+            "app_user_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "profiles_app_user_id_app_users_id_fk": {
+          "name": "profiles_app_user_id_app_users_id_fk",
+          "tableFrom": "profiles",
+          "tableTo": "app_users",
+          "columnsFrom": [
+            "app_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "sessions": {
+      "name": "sessions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "app_user_id": {
+          "name": "app_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "sessions_app_user_id_app_users_id_fk": {
+          "name": "sessions_app_user_id_app_users_id_fk",
+          "tableFrom": "sessions",
+          "tableTo": "app_users",
+          "columnsFrom": [
+            "app_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "transactions": {
       "name": "transactions",
       "columns": {
@@ -356,8 +550,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "member_id": {
-          "name": "member_id",
+        "profile_id": {
+          "name": "profile_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -401,12 +595,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "transactions_member_id_members_id_fk": {
-          "name": "transactions_member_id_members_id_fk",
+        "transactions_profile_id_profiles_id_fk": {
+          "name": "transactions_profile_id_profiles_id_fk",
           "tableFrom": "transactions",
-          "tableTo": "members",
+          "tableTo": "profiles",
           "columnsFrom": [
-            "member_id"
+            "profile_id"
           ],
           "columnsTo": [
             "id"

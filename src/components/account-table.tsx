@@ -69,8 +69,7 @@ function SelectRowCheckbox({ id }: { id: string }) {
 
 export function AccountTable({
   accounts,
-  familyId,
-  memberId,
+  profileId,
   currencyCode,
   currencySymbol,
   currencyScale,
@@ -80,8 +79,7 @@ export function AccountTable({
   sortPreserve,
 }: {
   accounts: AccountWithBalance[];
-  familyId: string;
-  memberId: string;
+  profileId: string;
   currencyCode: string;
   currencySymbol: string;
   currencyScale: number;
@@ -141,7 +139,7 @@ export function AccountTable({
               </TableCell>
               <TableCell role="gridcell" className="py-2.5">
                 <Link
-                  href={`/f/${familyId}/m/${memberId}/accounts/${account.id}`}
+                  href={`/p/${profileId}/accounts/${account.id}`}
                   className="flex items-center gap-2 text-primary hover:underline"
                 >
                   <AccountIcon classification={account.classification} icon={account.icon} />
@@ -153,6 +151,10 @@ export function AccountTable({
                   </Badge>
                 )}
               </TableCell>
+              {/* Deliberately plain text, not colored per classification
+                  (design-audit decision, 2026-08-20) — category color lives
+                  on the icon above, not the label, so lists don't turn into
+                  confetti. Don't add per-classification text color here. */}
               <TableCell role="gridcell" className="py-2.5">
                 {humanizeEnum(account.classification)}
               </TableCell>
@@ -171,8 +173,7 @@ export function AccountTable({
                 <div className="flex justify-end gap-1.5">
                   <AccountFormSheet
                     mode="edit"
-                    familyId={familyId}
-                    memberId={memberId}
+                    profileId={profileId}
                     currencies={[]}
                     existingTags={existingTags}
                     account={{
@@ -200,8 +201,7 @@ export function AccountTable({
                   {!account.isArchived && (
                     <div className="opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100">
                       <ArchiveAccountButton
-                        familyId={familyId}
-                        memberId={memberId}
+                        profileId={profileId}
                         accountId={account.id}
                         variant="ghost"
                       />

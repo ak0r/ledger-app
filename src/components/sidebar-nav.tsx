@@ -11,17 +11,17 @@ import { NAV_ITEMS } from "@/components/nav-items";
 // sections, visible text labels, collapses to icon-only while preserving
 // nav order. Hidden below md — BottomNav takes over there (§4.2), same
 // NAV_ITEMS data, different presentation (§20).
-export function SidebarNav({ familyId, memberId }: { familyId: string; memberId: string }) {
+export function SidebarNav({ profileId }: { profileId: string }) {
   const pathname = usePathname();
-  const base = `/f/${familyId}/m/${memberId}`;
+  const base = `/p/${profileId}`;
   const [collapsed, setCollapsed] = useState(false);
 
   const home = NAV_ITEMS.filter((item) => item.key === "home");
   const track = NAV_ITEMS.filter((item) => item.key !== "home");
 
-  const renderGroup = (label: string, items: typeof NAV_ITEMS) => (
+  const renderGroup = (label: string | null, items: typeof NAV_ITEMS) => (
     <div className="flex flex-col gap-0.5">
-      {!collapsed && (
+      {!collapsed && label && (
         <span className="px-2 pb-1 text-xs font-medium tracking-wide text-muted-foreground">
           {label}
         </span>
@@ -57,7 +57,7 @@ export function SidebarNav({ familyId, memberId }: { familyId: string; memberId:
         collapsed ? "w-16" : "w-56",
       )}
     >
-      {renderGroup("Home", home)}
+      {renderGroup(null, home)}
       {renderGroup("Track / Manage", track)}
       <div className="flex-1" />
       <button

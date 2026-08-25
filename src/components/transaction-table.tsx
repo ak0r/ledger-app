@@ -183,8 +183,7 @@ function TransactionRow({
   row,
   rows,
   isFirst,
-  familyId,
-  memberId,
+  profileId,
   mergeCandidates,
   accountsById,
   currencySymbol,
@@ -195,8 +194,7 @@ function TransactionRow({
   row: LegacyRow<TransactionTableRow>;
   rows: LegacyRow<TransactionTableRow>[];
   isFirst: boolean;
-  familyId: string;
-  memberId: string;
+  profileId: string;
   mergeCandidates: TransactionTableRow[];
   accountsById: ReadonlyMap<string, { currencyId: string }>;
   currencySymbol: string;
@@ -370,8 +368,7 @@ function TransactionRow({
       {isFirstRow && (
         <TransactionRowMenu
           row={t}
-          familyId={familyId}
-          memberId={memberId}
+          profileId={profileId}
           onQuickEdit={setQuickEditRowId}
           mergeCandidates={mergeCandidates}
           accountsById={accountsById}
@@ -523,16 +520,14 @@ function TransactionRow({
 // list is the natural equivalent).
 function MobileTransactionCard({
   row,
-  familyId,
-  memberId,
+  profileId,
   mergeCandidates,
   accountsById,
   currencySymbol,
   currencyScale,
 }: {
   row: LegacyRow<TransactionTableRow>;
-  familyId: string;
-  memberId: string;
+  profileId: string;
   mergeCandidates: TransactionTableRow[];
   accountsById: ReadonlyMap<string, { currencyId: string }>;
   currencySymbol: string;
@@ -575,8 +570,7 @@ function MobileTransactionCard({
         </div>
         <TransactionRowMenu
           row={t}
-          familyId={familyId}
-          memberId={memberId}
+          profileId={profileId}
           mergeCandidates={mergeCandidates}
           accountsById={accountsById}
           currencySymbol={currencySymbol}
@@ -665,8 +659,7 @@ export interface TransactionTableRow {
 
 export function TransactionTable({
   rows,
-  familyId,
-  memberId,
+  profileId,
   accounts,
   currencySymbol,
   currencyScale,
@@ -678,8 +671,7 @@ export function TransactionTable({
   sortPreserve = {},
 }: {
   rows: TransactionTableRow[];
-  familyId: string;
-  memberId: string;
+  profileId: string;
   // Quick Edit's inline row (transaction-quick-edit-row.tsx) needs the same
   // account/currency/tag data Full Edit's Sheet does — threaded through
   // here rather than fetched again, same zero-extra-fetch posture as the
@@ -824,8 +816,7 @@ export function TransactionTable({
     <>
       <BulkActionBar
         rows={rows}
-        familyId={familyId}
-        memberId={memberId}
+        profileId={profileId}
         accountsById={accountsById}
         currencySymbol={currencySymbol}
         currencyScale={currencyScale}
@@ -883,8 +874,7 @@ export function TransactionTable({
                 <TransactionQuickEditRow
                   key={row.id}
                   row={row.original}
-                  familyId={familyId}
-                  memberId={memberId}
+                  profileId={profileId}
                   accounts={accounts}
                   currencySymbol={currencySymbol}
                   currencyScale={currencyScale}
@@ -897,8 +887,7 @@ export function TransactionTable({
                   row={row}
                   rows={table.getRowModel().rows}
                   isFirst={index === 0}
-                  familyId={familyId}
-                  memberId={memberId}
+                  profileId={profileId}
                   mergeCandidates={mergeCandidatesByRowId.get(row.original.id) ?? []}
                   accountsById={accountsById}
                   currencySymbol={currencySymbol}
@@ -917,8 +906,7 @@ export function TransactionTable({
           <MobileTransactionCard
             key={row.id}
             row={row}
-            familyId={familyId}
-            memberId={memberId}
+            profileId={profileId}
             mergeCandidates={mergeCandidatesByRowId.get(row.original.id) ?? []}
             accountsById={accountsById}
             currencySymbol={currencySymbol}

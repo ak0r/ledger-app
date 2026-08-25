@@ -1,6 +1,6 @@
 import { and, eq, inArray, sum as sqlSum } from "drizzle-orm";
 import type { AccountRef } from "@/domain";
-import type { DbOrTx } from "../db/family-client";
+import type { DbOrTx } from "../db/client";
 import { accounts, currencies, postings } from "../db/schema";
 
 export type AccountRow = typeof accounts.$inferSelect;
@@ -9,40 +9,41 @@ export function insertAccount(db: DbOrTx, row: AccountRow): void {
   db.insert(accounts).values(row).run();
 }
 
-// Unscoped — see deleteAllTransactions in repositories/transactions.ts for
-// why this is safe without a memberId filter (Clean Up Content only).
-export function deleteAllAccounts(db: DbOrTx): void {
-  db.delete(accounts).run();
+// Profile-scoped (rule #6) — see deleteAllTransactions in
+// repositories/transactions.ts for why this must filter explicitly now
+// that all Profiles share one database (Clean Up Content only).
+export function deleteAllAccounts(db: DbOrTx, profileId: string): void {
+  db.delete(accounts).where(eq(accounts.profileId, profileId)).run();
 }
 
-// Member-scoped (rule #6).
+// Profile-scoped (rule #6).
 export function findAccountById(
   db: DbOrTx,
   id: string,
-  memberId: string,
+  profileId: string,
 ): AccountRow | undefined {
   return db
     .select()
     .from(accounts)
-    .where(and(eq(accounts.id, id), eq(accounts.memberId, memberId)))
+    .where(and(eq(accounts.id, id), eq(accounts.profileId, profileId)))
     .get();
 }
 
-export function findAccountsByMember(db: DbOrTx, memberId: string): AccountRow[] {
-  return db.select().from(accounts).where(eq(accounts.memberId, memberId)).all();
+export function findAccountsByProfile(db: DbOrTx, profileId: string): AccountRow[] {
+  return db.select().from(accounts).where(eq(accounts.profileId, profileId)).all();
 }
 
 export function setAccountArchived(
   db: DbOrTx,
   id: string,
-  memberId: string,
+  profileId: string,
   isArchived: boolean,
   updatedAt: string,
 ): void {
   db
     .update(accounts)
     .set({ isArchived, updatedAt })
-    .where(and(eq(accounts.id, id), eq(accounts.memberId, memberId)))
+    .where(and(eq(accounts.id, id), eq(accounts.profileId, profileId)))
     .run();
 }
 
@@ -62,19 +63,20 @@ export type EditableAccountFields = Pick<
 export function updateAccountFields(
   db: DbOrTx,
   id: string,
-  memberId: string,
+  profileId: string,
   fields: EditableAccountFields,
 ): void {
   db
     .update(accounts)
     .set(fields)
-    .where(and(eq(accounts.id, id), eq(accounts.memberId, memberId)))
+    .where(and(eq(accounts.id, id), eq(accounts.profileId, profileId)))
     .run();
 }
 
 // Feeds the domain layer's ownership/currency invariants (docs/06-architecture.md).
-// Not Member-scoped by itself — callers pass the transaction's Member and the
-// domain layer flags any account that turns out to belong to someone else.
+// Not Profile-scoped by itself — callers pass the transaction's Profile and
+// the domain layer flags any account that turns out to belong to someone
+// else.
 export function findAccountRefs(
   db: DbOrTx,
   accountIds: readonly string[],
@@ -84,7 +86,7 @@ export function findAccountRefs(
   const rows = db
     .select({
       id: accounts.id,
-      memberId: accounts.memberId,
+      profileId: accounts.profileId,
       currencyCode: currencies.code,
     })
     .from(accounts)
@@ -101,11 +103,11 @@ export interface AccountPostingTotals {
 }
 
 // Feeds domain's accountBalance (docs/03-accounting-principles.md) — all-time
-// totals per Account, Member-scoped via the join (rule #6). Accounts with no
-// postings are simply absent from the result; callers default to zero.
-export function findPostingTotalsByMember(
+// totals per Account, Profile-scoped via the join (rule #6). Accounts with
+// no postings are simply absent from the result; callers default to zero.
+export function findPostingTotalsByProfile(
   db: DbOrTx,
-  memberId: string,
+  profileId: string,
 ): Map<string, AccountPostingTotals> {
   const rows = db
     .select({
@@ -115,7 +117,7 @@ export function findPostingTotalsByMember(
     })
     .from(postings)
     .innerJoin(accounts, eq(postings.accountId, accounts.id))
-    .where(eq(accounts.memberId, memberId))
+    .where(eq(accounts.profileId, profileId))
     .groupBy(postings.accountId)
     .all();
 

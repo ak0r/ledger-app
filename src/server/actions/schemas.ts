@@ -7,17 +7,26 @@
 import { z } from "zod";
 import { CLASSIFICATIONS, CREATABLE_CLASSIFICATIONS, INSTRUMENT_TYPES } from "../db/schema";
 
-export const createMemberSchema = z.object({
+export const createProfileSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
 });
 
-export const createFamilySchema = z.object({
+export const renameProfileSchema = z.object({
+  profileId: z.string().min(1),
   name: z.string().trim().min(1, "Name is required"),
 });
 
 export const registerAppUserSchema = z.object({
   email: z.string().trim().toLowerCase().email("Enter a valid email"),
   password: z.string().min(8, "Password must be at least 8 characters"),
+  // Optional: used only when registration creates a brand-new Profile
+  // (falls back to a name derived from the email if omitted); ignored when
+  // linking to an already-named existing Profile via `profileId`.
+  name: z.string().trim().min(1).optional(),
+  // Present when registering via a Primary User's "Registration link"
+  // (2026-08-20 User Simplification delta §6) — links to that existing
+  // unlinked Profile instead of creating a new one.
+  profileId: z.string().min(1).optional(),
 });
 
 export const loginAppUserSchema = z.object({
@@ -25,13 +34,8 @@ export const loginAppUserSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
-export const renameFamilySchema = z.object({
-  familyId: z.string().min(1),
-  name: z.string().trim().min(1, "Name is required"),
-});
-
 export const createCurrencySchema = z.object({
-  memberId: z.string().min(1),
+  profileId: z.string().min(1),
   code: z.string().length(3, "Currency code must be 3 letters"),
   name: z.string().trim().min(1),
   symbol: z.string().trim().min(1),
@@ -50,7 +54,7 @@ const tagsSchema = z.array(z.string().trim().min(1)).optional();
 // the full `CLASSIFICATIONS` set: existing Balancing accounts must remain
 // editable for their other fields.
 export const createAccountSchema = z.object({
-  memberId: z.string().min(1),
+  profileId: z.string().min(1),
   currencyId: z.string().min(1),
   name: z.string().trim().min(1),
   classification: z.enum(CREATABLE_CLASSIFICATIONS),
@@ -63,7 +67,7 @@ export const createAccountSchema = z.object({
 });
 
 export const editAccountSchema = z.object({
-  memberId: z.string().min(1),
+  profileId: z.string().min(1),
   accountId: z.string().min(1),
   name: z.string().trim().min(1),
   classification: z.enum(CLASSIFICATIONS),
@@ -76,17 +80,17 @@ export const editAccountSchema = z.object({
 });
 
 export const archiveAccountSchema = z.object({
-  memberId: z.string().min(1),
+  profileId: z.string().min(1),
   accountId: z.string().min(1),
 });
 
 export const bulkArchiveAccountsSchema = z.object({
-  memberId: z.string().min(1),
+  profileId: z.string().min(1),
   accountIds: z.array(z.string().min(1)).min(1, "Select at least one account"),
 });
 
 export const bulkUpdateAccountTagsSchema = z.object({
-  memberId: z.string().min(1),
+  profileId: z.string().min(1),
   accountIds: z.array(z.string().min(1)).min(1, "Select at least one account"),
   addTags: z.array(z.string().trim().min(1)).default([]),
   removeTags: z.array(z.string().trim().min(1)).default([]),
@@ -103,7 +107,7 @@ const postingSchema = z
   });
 
 const transactionFieldsSchema = z.object({
-  memberId: z.string().min(1),
+  profileId: z.string().min(1),
   date: z.string().min(1),
   description: z.string().trim().min(1),
   tags: tagsSchema,
@@ -127,22 +131,22 @@ export const editTransactionSchema = transactionFieldsSchema
   .refine(isBalanced, balancedMessage);
 
 export const deleteTransactionSchema = z.object({
-  memberId: z.string().min(1),
+  profileId: z.string().min(1),
   transactionId: z.string().min(1),
 });
 
 export const mergeTransactionsSchema = z.object({
-  memberId: z.string().min(1),
+  profileId: z.string().min(1),
   transactionIds: z.array(z.string().min(1)).min(2, "Select at least two transactions to merge"),
 });
 
 export const bulkDeleteTransactionsSchema = z.object({
-  memberId: z.string().min(1),
+  profileId: z.string().min(1),
   transactionIds: z.array(z.string().min(1)).min(1, "Select at least one transaction"),
 });
 
 export const bulkUpdateTagsSchema = z.object({
-  memberId: z.string().min(1),
+  profileId: z.string().min(1),
   transactionIds: z.array(z.string().min(1)).min(1, "Select at least one transaction"),
   addTags: z.array(z.string().trim().min(1)).default([]),
   removeTags: z.array(z.string().trim().min(1)).default([]),

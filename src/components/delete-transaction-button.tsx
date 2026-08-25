@@ -10,12 +10,10 @@ import { deleteTransactionAction } from "@/server/actions/transactions";
 // already accepted: hard delete, no soft-delete field. ConfirmDialog is the
 // entire safety net; the delete itself is immediate and permanent.
 export function DeleteTransactionButton({
-  familyId,
-  memberId,
+  profileId,
   transactionId,
 }: {
-  familyId: string;
-  memberId: string;
+  profileId: string;
   transactionId: string;
 }) {
   const router = useRouter();
@@ -32,7 +30,7 @@ export function DeleteTransactionButton({
       confirmLabel="Delete"
       destructive
       onConfirm={async () => {
-        const result = await deleteTransactionAction(familyId, { memberId, transactionId });
+        const result = await deleteTransactionAction(profileId, { profileId, transactionId });
         if (result.success) router.refresh();
         return result;
       }}

@@ -1,20 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "../testing/createTestDb";
-import { findAllMembers } from "../repositories/members";
-import { listMembers } from "./members";
+import { createProfile } from "./profiles";
 import { listTransactions } from "./transactions";
-import { createDemoFamilyData } from "./demo-data";
+import { createDemoProfileData } from "./demo-data";
 
-describe("createDemoFamilyData", () => {
+describe("createDemoProfileData", () => {
   it("inserts the full demo dataset into a real database atomically", () => {
     const db = createTestDb();
+    const profile = createProfile(db, { name: "Amit" });
 
-    const primaryMember = createDemoFamilyData(db);
+    createDemoProfileData(db, profile.id);
 
-    expect(primaryMember.isPrimary).toBe(true);
-    expect(findAllMembers(db)).toHaveLength(2);
-
-    const allTransactions = listMembers(db).flatMap((member) => listTransactions(db, member.id));
-    expect(allTransactions.length).toBeGreaterThanOrEqual(1000);
+    const allTransactions = listTransactions(db, profile.id);
+    expect(allTransactions.length).toBeGreaterThanOrEqual(800);
   });
 });

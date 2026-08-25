@@ -31,8 +31,7 @@ import { bulkDeleteTransactionsAction } from "@/server/actions/transactions";
 // of choosing what goes in `rows`.
 export function BulkActionBar({
   rows,
-  familyId,
-  memberId,
+  profileId,
   accountsById,
   currencySymbol,
   currencyScale,
@@ -41,8 +40,7 @@ export function BulkActionBar({
   // The current page's full row set, so selected ids can be resolved back
   // into TransactionTableRow objects for the Merge dialog's preview.
   rows: TransactionTableRow[];
-  familyId: string;
-  memberId: string;
+  profileId: string;
   accountsById: ReadonlyMap<string, MergeCandidateAccount>;
   currencySymbol: string;
   currencyScale: number;
@@ -129,8 +127,7 @@ export function BulkActionBar({
         key={selectedIdsArray.join(",")}
         open={mergeOpen}
         onOpenChange={setMergeOpen}
-        familyId={familyId}
-        memberId={memberId}
+        profileId={profileId}
         rows={selectedRows}
         accountsById={accountsById}
         currencySymbol={currencySymbol}
@@ -139,8 +136,7 @@ export function BulkActionBar({
       <BulkTagsDialog
         open={tagsOpen}
         onOpenChange={setTagsOpen}
-        familyId={familyId}
-        memberId={memberId}
+        profileId={profileId}
         transactionIds={selectedIdsArray}
         existingTags={existingTags}
       />
@@ -152,8 +148,8 @@ export function BulkActionBar({
         confirmLabel="Delete"
         destructive
         onConfirm={async () => {
-          const result = await bulkDeleteTransactionsAction(familyId, {
-            memberId,
+          const result = await bulkDeleteTransactionsAction(profileId, {
+            profileId,
             transactionIds: selectedIdsArray,
           });
           if (result.success) {

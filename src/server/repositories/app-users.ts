@@ -1,17 +1,23 @@
 import { eq } from "drizzle-orm";
-import type { AppDbOrTx } from "../db/app-client";
-import { appUsers } from "../db/app-schema";
+import type { DbOrTx } from "../db/client";
+import { appUsers } from "../db/schema";
 
 export type AppUserRow = typeof appUsers.$inferSelect;
 
-export function insertAppUser(db: AppDbOrTx, row: AppUserRow): void {
+export function insertAppUser(db: DbOrTx, row: AppUserRow): void {
   db.insert(appUsers).values(row).run();
 }
 
-export function findAppUserByEmail(db: AppDbOrTx, email: string): AppUserRow | undefined {
+export function findAppUserByEmail(db: DbOrTx, email: string): AppUserRow | undefined {
   return db.select().from(appUsers).where(eq(appUsers.email, email)).get();
 }
 
-export function findAppUserById(db: AppDbOrTx, id: string): AppUserRow | undefined {
+export function findAppUserById(db: DbOrTx, id: string): AppUserRow | undefined {
   return db.select().from(appUsers).where(eq(appUsers.id, id)).get();
+}
+
+// Used by registerAppUser to decide whether the new AppUser is the Primary
+// User (the very first one ever registered in this Hosted Instance).
+export function hasAnyAppUser(db: DbOrTx): boolean {
+  return db.select({ id: appUsers.id }).from(appUsers).limit(1).get() !== undefined;
 }

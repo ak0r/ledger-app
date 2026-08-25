@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { Db } from "../db/family-client";
+import type { Db } from "../db/client";
 import { createTestDb } from "../testing/createTestDb";
-import { createMember } from "../use-cases/members";
+import { createProfile } from "../use-cases/profiles";
 import { createCurrency } from "../use-cases/currencies";
 import { createAccount } from "../use-cases/accounts";
 import {
@@ -11,9 +11,9 @@ import {
 } from "./transactions.core";
 
 function setUp(db: Db) {
-  const member = createMember(db, { name: "Amit" });
+  const profile = createProfile(db, { name: "Amit" });
   const currency = createCurrency(db, {
-    memberId: member.id,
+    profileId: profile.id,
     code: "INR",
     name: "Indian Rupee",
     symbol: "₹",
@@ -21,14 +21,14 @@ function setUp(db: Db) {
   });
   const account = (name: string, classification: string, instrumentType: string) =>
     createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name,
       classification: classification as never,
       instrumentType: instrumentType as never,
     });
   return {
-    member,
+    profile,
     bank: account("HDFC Bank", "ASSET", "BANK"),
     food: account("Food Expense", "EXPENSE", "EXPENSE"),
   };
@@ -37,10 +37,10 @@ function setUp(db: Db) {
 describe("createTransactionCore", () => {
   it("creates a balanced transaction", () => {
     const db = createTestDb();
-    const { member, bank, food } = setUp(db);
+    const { profile, bank, food } = setUp(db);
 
     const result = createTransactionCore(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Groceries",
       postings: [
@@ -54,10 +54,10 @@ describe("createTransactionCore", () => {
 
   it("rejects an unbalanced transaction at the Zod boundary — fast feedback", () => {
     const db = createTestDb();
-    const { member, bank, food } = setUp(db);
+    const { profile, bank, food } = setUp(db);
 
     const result = createTransactionCore(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Broken",
       postings: [
@@ -70,15 +70,15 @@ describe("createTransactionCore", () => {
     if (!result.success) expect(result.error).toMatch(/balance/i);
   });
 
-  it("rejects a posting to another Member's account — only the domain layer can catch this", () => {
+  it("rejects a posting to another Profile's account — only the domain layer can catch this", () => {
     const db = createTestDb();
-    const { member, food } = setUp(db);
+    const { profile, food } = setUp(db);
     const otherLedger = setUp(db);
 
     const result = createTransactionCore(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
-      description: "Cross-member write attempt",
+      description: "Cross-profile write attempt",
       postings: [
         { accountId: food.id, debit: 1000, credit: 0 },
         { accountId: otherLedger.bank.id, debit: 0, credit: 1000 },
@@ -92,9 +92,9 @@ describe("createTransactionCore", () => {
 describe("editTransactionCore and deleteTransactionCore", () => {
   it("full-replaces a transaction's postings", () => {
     const db = createTestDb();
-    const { member, bank, food } = setUp(db);
+    const { profile, bank, food } = setUp(db);
     const created = createTransactionCore(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Groceries",
       postings: [
@@ -106,7 +106,7 @@ describe("editTransactionCore and deleteTransactionCore", () => {
 
     const edited = editTransactionCore(db, {
       transactionId: created.data.id,
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-16",
       description: "Groceries (corrected)",
       postings: [
@@ -120,9 +120,9 @@ describe("editTransactionCore and deleteTransactionCore", () => {
 
   it("hard-deletes a transaction", () => {
     const db = createTestDb();
-    const { member, bank, food } = setUp(db);
+    const { profile, bank, food } = setUp(db);
     const created = createTransactionCore(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Groceries",
       postings: [
@@ -134,7 +134,7 @@ describe("editTransactionCore and deleteTransactionCore", () => {
 
     const result = deleteTransactionCore(db, {
       transactionId: created.data.id,
-      memberId: member.id,
+      profileId: profile.id,
     });
 
     expect(result.success).toBe(true);

@@ -3,6 +3,9 @@ export { MVP_CURRENCY_CODE, isSupportedCurrencyCode } from "./currency";
 export { CLASSIFICATIONS, CREATABLE_CLASSIFICATIONS, INSTRUMENT_TYPES, TYPES_BY_CLASSIFICATION } from "./account";
 export type { Classification, InstrumentType } from "./account";
 
+export { INSTRUMENT_BACKED_TYPES, isInstrumentBackedType } from "./instrument";
+export type { InstrumentBackedType } from "./instrument";
+
 export { accountBalance, isDebitNormal } from "./balance";
 
 export type { Money } from "./money";

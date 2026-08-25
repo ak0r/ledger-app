@@ -51,8 +51,7 @@ function defaultInstrumentTypeFor(classification: Classification): InstrumentTyp
 }
 
 interface AccountFormProps {
-  familyId: string;
-  memberId: string;
+  profileId: string;
   currencies: { id: string; code: string; symbol: string; minorUnitScale: number }[];
   mode: "create" | "edit";
   existingTags?: string[];
@@ -81,8 +80,7 @@ interface AccountFormProps {
 }
 
 export function AccountForm({
-  familyId,
-  memberId,
+  profileId,
   currencies,
   mode,
   existingTags = [],
@@ -153,8 +151,8 @@ export function AccountForm({
 
     const result =
       mode === "create"
-        ? await createAccountAction(familyId, {
-            memberId,
+        ? await createAccountAction(profileId, {
+            profileId,
             currencyId: values.currencyId,
             name: values.name,
             classification: values.classification,
@@ -162,8 +160,8 @@ export function AccountForm({
             tags: tags.length > 0 ? tags : undefined,
             icon,
           })
-        : await editAccountAction(familyId, {
-            memberId,
+        : await editAccountAction(profileId, {
+            profileId,
             accountId: account?.id,
             name: values.name,
             classification: values.classification,
@@ -179,7 +177,7 @@ export function AccountForm({
     if (onSuccess) {
       onSuccess();
     } else {
-      router.push(`/f/${familyId}/m/${memberId}/accounts`);
+      router.push(`/p/${profileId}/accounts`);
     }
     router.refresh();
   };
@@ -323,8 +321,8 @@ export function AccountForm({
           <Link
             href={
               mode === "edit" && account
-                ? `/f/${familyId}/m/${memberId}/accounts/${account.id}`
-                : `/f/${familyId}/m/${memberId}/accounts`
+                ? `/p/${profileId}/accounts/${account.id}`
+                : `/p/${profileId}/accounts`
             }
             className={buttonVariants({ variant: "outline" })}
           >

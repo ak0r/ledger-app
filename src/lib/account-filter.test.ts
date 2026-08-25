@@ -16,7 +16,7 @@ function account(
 ): AccountWithBalance {
   return {
     id,
-    memberId: "member-1",
+    profileId: "profile-1",
     currencyId: "currency-1",
     name,
     classification: classification as never,

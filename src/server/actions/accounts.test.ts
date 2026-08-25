@@ -1,29 +1,29 @@
 import { describe, expect, it } from "vitest";
-import type { Db } from "../db/family-client";
+import type { Db } from "../db/client";
 import { createTestDb } from "../testing/createTestDb";
-import { createMember } from "../use-cases/members";
+import { createProfile } from "../use-cases/profiles";
 import { createCurrency } from "../use-cases/currencies";
 import { archiveAccountCore, createAccountCore, editAccountCore } from "./accounts.core";
 
 function setUp(db: Db) {
-  const member = createMember(db, { name: "Amit" });
+  const profile = createProfile(db, { name: "Amit" });
   const currency = createCurrency(db, {
-    memberId: member.id,
+    profileId: profile.id,
     code: "INR",
     name: "Indian Rupee",
     symbol: "₹",
     minorUnitScale: 2,
   });
-  return { member, currency };
+  return { profile, currency };
 }
 
 describe("createAccountCore", () => {
   it("creates an Account for an existing Currency", () => {
     const db = createTestDb();
-    const { member, currency } = setUp(db);
+    const { profile, currency } = setUp(db);
 
     const result = createAccountCore(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
@@ -35,10 +35,10 @@ describe("createAccountCore", () => {
 
   it("rejects an unknown classification enum value — fast client feedback", () => {
     const db = createTestDb();
-    const { member, currency } = setUp(db);
+    const { profile, currency } = setUp(db);
 
     const result = createAccountCore(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "NOT_A_REAL_CLASSIFICATION",
@@ -50,10 +50,10 @@ describe("createAccountCore", () => {
 
   it("rejects classification: BALANCING — system-managed, not a normal user-creatable classification (2026-08-19 delta §3/§14, rule #17 defense-in-depth on top of hiding it from the picker)", () => {
     const db = createTestDb();
-    const { member, currency } = setUp(db);
+    const { profile, currency } = setUp(db);
 
     const result = createAccountCore(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "Should be rejected",
       classification: "BALANCING",
@@ -63,13 +63,13 @@ describe("createAccountCore", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects a Currency belonging to a different Member", () => {
+  it("rejects a Currency belonging to a different Profile", () => {
     const db = createTestDb();
     const { currency } = setUp(db);
-    const otherMember = createMember(db, { name: "Partner" });
+    const otherProfile = createProfile(db, { name: "Partner" });
 
     const result = createAccountCore(db, {
-      memberId: otherMember.id,
+      profileId: otherProfile.id,
       currencyId: currency.id,
       name: "Should fail",
       classification: "ASSET",
@@ -83,9 +83,9 @@ describe("createAccountCore", () => {
 describe("archiveAccountCore", () => {
   it("archives an existing Account", () => {
     const db = createTestDb();
-    const { member, currency } = setUp(db);
+    const { profile, currency } = setUp(db);
     const created = createAccountCore(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
@@ -94,7 +94,7 @@ describe("archiveAccountCore", () => {
     if (!created.success) throw new Error("setup failed");
 
     const result = archiveAccountCore(db, {
-      memberId: member.id,
+      profileId: profile.id,
       accountId: created.data.id,
     });
 
@@ -106,9 +106,9 @@ describe("archiveAccountCore", () => {
 describe("editAccountCore", () => {
   it("updates an existing Account", () => {
     const db = createTestDb();
-    const { member, currency } = setUp(db);
+    const { profile, currency } = setUp(db);
     const created = createAccountCore(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
@@ -117,7 +117,7 @@ describe("editAccountCore", () => {
     if (!created.success) throw new Error("setup failed");
 
     const result = editAccountCore(db, {
-      memberId: member.id,
+      profileId: profile.id,
       accountId: created.data.id,
       name: "HDFC Bank — Salary",
       classification: "ASSET",
@@ -130,13 +130,13 @@ describe("editAccountCore", () => {
 
   it("still allows editing an existing BALANCING account — only creation is restricted", () => {
     const db = createTestDb();
-    const { member, currency } = setUp(db);
+    const { profile, currency } = setUp(db);
     // Balancing accounts are seeded directly (src/server/demo/dataset.ts),
     // not via createAccountCore (which now rejects that classification) —
     // insert one the same way, then confirm editAccountCore still accepts
     // its unchanged classification on a normal field edit.
     const balancing = createAccountCore(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "Opening Balance",
       classification: "ASSET",
@@ -145,7 +145,7 @@ describe("editAccountCore", () => {
     if (!balancing.success) throw new Error("setup failed");
 
     const result = editAccountCore(db, {
-      memberId: member.id,
+      profileId: profile.id,
       accountId: balancing.data.id,
       name: "Opening Balance — renamed",
       classification: "BALANCING",
@@ -155,12 +155,12 @@ describe("editAccountCore", () => {
     expect(result.success).toBe(true);
   });
 
-  it("rejects editing another Member's Account", () => {
+  it("rejects editing another Profile's Account", () => {
     const db = createTestDb();
-    const { member, currency } = setUp(db);
-    const otherMember = createMember(db, { name: "Partner" });
+    const { profile, currency } = setUp(db);
+    const otherProfile = createProfile(db, { name: "Partner" });
     const created = createAccountCore(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
@@ -169,7 +169,7 @@ describe("editAccountCore", () => {
     if (!created.success) throw new Error("setup failed");
 
     const result = editAccountCore(db, {
-      memberId: otherMember.id,
+      profileId: otherProfile.id,
       accountId: created.data.id,
       name: "Hijacked",
       classification: "ASSET",

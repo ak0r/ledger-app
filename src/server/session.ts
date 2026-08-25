@@ -1,10 +1,9 @@
-// Real session/auth gate (2026-08-19 Family/Application Architecture
-// delta) — unlike activeFamily.ts/activeMember.ts's convenience-only
-// cookies (URL/DB re-derives those on every request regardless), this
-// cookie IS the actual authentication credential, so it's backed by a real
+// Real session/auth gate — unlike activeProfile.ts's convenience-only
+// cookie (URL/DB re-derives it on every request regardless), this cookie
+// IS the actual authentication credential, so it's backed by a real
 // DB-validated session row, not just read-and-trust.
 import { cookies } from "next/headers";
-import { appDb } from "./db/app-client";
+import { db } from "./db/client";
 import { findSessionById } from "./repositories/sessions";
 import { findAppUserById, type AppUserRow } from "./repositories/app-users";
 
@@ -20,8 +19,8 @@ export async function getCurrentAppUser(): Promise<AppUserRow | undefined> {
   const sessionId = cookieStore.get(SESSION_COOKIE)?.value;
   if (!sessionId) return undefined;
 
-  const session = findSessionById(appDb, sessionId);
+  const session = findSessionById(db, sessionId);
   if (!session || new Date(session.expiresAt).getTime() <= Date.now()) return undefined;
 
-  return findAppUserById(appDb, session.appUserId);
+  return findAppUserById(db, session.appUserId);
 }

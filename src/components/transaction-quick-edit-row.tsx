@@ -41,8 +41,7 @@ type QuickEditValues = z.infer<ReturnType<typeof buildTransactionFormSchema>>;
 // via the exact same `editTransactionAction` Full Edit uses).
 export function TransactionQuickEditRow({
   row,
-  familyId,
-  memberId,
+  profileId,
   accounts,
   currencySymbol,
   currencyScale,
@@ -50,8 +49,7 @@ export function TransactionQuickEditRow({
   onCancel,
 }: {
   row: TransactionTableRow;
-  familyId: string;
-  memberId: string;
+  profileId: string;
   accounts: { id: string; name: string; classification: string }[];
   currencySymbol: string;
   currencyScale: number;
@@ -108,8 +106,8 @@ export function TransactionQuickEditRow({
       })),
     ];
 
-    const result = await editTransactionAction(familyId, {
-      memberId,
+    const result = await editTransactionAction(profileId, {
+      profileId,
       date: values.date,
       description: values.description,
       tags: tags.length > 0 ? tags : undefined,

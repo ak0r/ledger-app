@@ -6,13 +6,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 // reads it (docs/06-architecture.md).
 export const dynamic = "force-dynamic";
 
-export default function RegisterPage() {
+export default async function RegisterPage(props: PageProps<"/register">) {
+  const searchParams = await props.searchParams;
+  const profileId = typeof searchParams.profileId === "string" ? searchParams.profileId : undefined;
+
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 p-4">
       <div>
         <h1 className="text-xl font-semibold">Create your account</h1>
         <p className="text-sm text-muted-foreground">
-          An AppUser can create and own multiple Families, each with its own isolated data.
+          {profileId
+            ? "You've been invited to manage your own financial Profile."
+            : "The first account you create becomes the Primary User for this instance."}
         </p>
       </div>
 
@@ -21,7 +26,7 @@ export default function RegisterPage() {
           <CardTitle>Register</CardTitle>
         </CardHeader>
         <CardContent>
-          <RegisterForm />
+          <RegisterForm profileId={profileId} />
         </CardContent>
       </Card>
 

@@ -1,16 +1,18 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireFamilyDb } from "../authz";
-import { cleanUpFamilyContent } from "../use-cases/cleanup";
+import { db } from "../db/client";
+import { requireProfileAccess } from "../authz";
+import { cleanUpProfileContent } from "../use-cases/cleanup";
 import { fromThrown, ok, type ActionResult } from "./result";
 
-export async function cleanUpFamilyContentAction(familyId: string): Promise<ActionResult<void>> {
+export async function cleanUpProfileContentAction(profileId: string): Promise<ActionResult<void>> {
+  await requireProfileAccess(profileId);
   try {
-    cleanUpFamilyContent(await requireFamilyDb(familyId));
+    cleanUpProfileContent(db, profileId);
   } catch (error) {
     return fromThrown(error);
   }
-  revalidatePath(`/f/${familyId}`, "layout");
+  revalidatePath(`/p/${profileId}`, "layout");
   return ok(undefined);
 }

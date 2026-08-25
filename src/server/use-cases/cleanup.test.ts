@@ -1,38 +1,37 @@
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "../testing/createTestDb";
-import { createMember } from "./members";
+import { createProfile, getProfile } from "./profiles";
 import { createCurrency } from "./currencies";
 import { createAccount, listAccounts } from "./accounts";
 import { createTransaction, listTransactions } from "./transactions";
-import { findAllMembers } from "../repositories/members";
-import { findCurrenciesByMember } from "../repositories/currencies";
-import { cleanUpFamilyContent } from "./cleanup";
+import { findCurrenciesByProfile } from "../repositories/currencies";
+import { cleanUpProfileContent } from "./cleanup";
 
-function seedFamilyData(db: ReturnType<typeof createTestDb>) {
-  const member = createMember(db, { name: "Amit" });
+function seedProfileData(db: ReturnType<typeof createTestDb>) {
+  const profile = createProfile(db, { name: "Amit" });
   const currency = createCurrency(db, {
-    memberId: member.id,
+    profileId: profile.id,
     code: "INR",
     name: "Indian Rupee",
     symbol: "₹",
     minorUnitScale: 2,
   });
   const bank = createAccount(db, {
-    memberId: member.id,
+    profileId: profile.id,
     currencyId: currency.id,
     name: "Bank",
     classification: "ASSET",
     instrumentType: "BANK",
   });
   const income = createAccount(db, {
-    memberId: member.id,
+    profileId: profile.id,
     currencyId: currency.id,
     name: "Salary",
     classification: "INCOME",
     instrumentType: "INCOME",
   });
   createTransaction(db, {
-    memberId: member.id,
+    profileId: profile.id,
     date: "2026-01-01",
     description: "Salary",
     postings: [
@@ -40,27 +39,27 @@ function seedFamilyData(db: ReturnType<typeof createTestDb>) {
       { accountId: bank.id, debit: 100000, credit: 0 },
     ],
   });
-  return { member, currency };
+  return { profile, currency };
 }
 
-describe("cleanUpFamilyContent", () => {
-  it("deletes all financial content but preserves the Member", () => {
+describe("cleanUpProfileContent", () => {
+  it("deletes all financial content but preserves the Profile", () => {
     const db = createTestDb();
-    const { member } = seedFamilyData(db);
+    const { profile } = seedProfileData(db);
 
-    cleanUpFamilyContent(db);
+    cleanUpProfileContent(db, profile.id);
 
-    expect(findAllMembers(db)).toEqual([member]);
-    expect(listAccounts(db, member.id)).toHaveLength(0);
-    expect(listTransactions(db, member.id)).toHaveLength(0);
-    expect(findCurrenciesByMember(db, member.id)).toHaveLength(0);
+    expect(getProfile(db, profile.id)).toEqual(profile);
+    expect(listAccounts(db, profile.id)).toHaveLength(0);
+    expect(listTransactions(db, profile.id)).toHaveLength(0);
+    expect(findCurrenciesByProfile(db, profile.id)).toHaveLength(0);
   });
 
-  it("is a no-op (not an error) on a Family with no financial content yet", () => {
+  it("is a no-op (not an error) on a Profile with no financial content yet", () => {
     const db = createTestDb();
-    createMember(db, { name: "Amit" });
+    const profile = createProfile(db, { name: "Amit" });
 
-    expect(() => cleanUpFamilyContent(db)).not.toThrow();
-    expect(findAllMembers(db)).toHaveLength(1);
+    expect(() => cleanUpProfileContent(db, profile.id)).not.toThrow();
+    expect(getProfile(db, profile.id)).toEqual(profile);
   });
 });

@@ -2,12 +2,18 @@ import { describe, expect, it } from "vitest";
 import { CLASSIFICATIONS, INSTRUMENT_TYPES } from "@/domain";
 import { buildDemoDataset, validateDataset } from "./dataset";
 
-describe("buildDemoDataset", () => {
-  it("produces at least 1000 transactions covering roughly one year", () => {
-    const now = new Date("2026-08-16T00:00:00.000Z");
-    const dataset = buildDemoDataset(now);
+const PROFILE_ID = "profile-1";
 
-    expect(dataset.transactions.length).toBeGreaterThanOrEqual(1000);
+describe("buildDemoDataset", () => {
+  // Threshold halved from the old two-Member household dataset (2026-08-20
+  // User Simplification delta trimmed generation to one Profile's worth of
+  // activity, see src/server/demo/dataset.ts's own file header) — still
+  // "hundreds of transactions across a full year," just for one Profile.
+  it("produces at least 800 transactions covering roughly one year", () => {
+    const now = new Date("2026-08-16T00:00:00.000Z");
+    const dataset = buildDemoDataset(PROFILE_ID, now);
+
+    expect(dataset.transactions.length).toBeGreaterThanOrEqual(800);
 
     const dates = dataset.transactions.map((t) => t.date).sort();
     const earliest = new Date(dates[0]);
@@ -18,28 +24,19 @@ describe("buildDemoDataset", () => {
   });
 
   it("every generated transaction balances and satisfies ownership (rule #3)", () => {
-    const dataset = buildDemoDataset(new Date("2026-08-16T00:00:00.000Z"));
+    const dataset = buildDemoDataset(PROFILE_ID, new Date("2026-08-16T00:00:00.000Z"));
     expect(() => validateDataset(dataset)).not.toThrow();
   });
 
-  it("has exactly 2 Members, exactly one marked primary", () => {
-    const dataset = buildDemoDataset();
-    expect(dataset.members).toHaveLength(2);
-    expect(dataset.members.filter((m) => m.isPrimary)).toHaveLength(1);
-    expect(dataset.members.find((m) => m.id === dataset.primaryMemberId)?.isPrimary).toBe(true);
-  });
-
-  it("gives every Member their own INR Currency", () => {
-    const dataset = buildDemoDataset();
-    expect(dataset.currencies).toHaveLength(dataset.members.length);
-    for (const currency of dataset.currencies) {
-      expect(currency.code).toBe("INR");
-      expect(dataset.members.some((m) => m.id === currency.memberId)).toBe(true);
-    }
+  it("gives the Profile a single INR Currency", () => {
+    const dataset = buildDemoDataset(PROFILE_ID);
+    expect(dataset.currencies).toHaveLength(1);
+    expect(dataset.currencies[0].code).toBe("INR");
+    expect(dataset.currencies[0].profileId).toBe(PROFILE_ID);
   });
 
   it("stays entirely within the frozen classification/instrument-type set (rule #11)", () => {
-    const dataset = buildDemoDataset();
+    const dataset = buildDemoDataset(PROFILE_ID);
     for (const account of dataset.accounts) {
       expect(CLASSIFICATIONS).toContain(account.classification);
       expect(INSTRUMENT_TYPES).toContain(account.instrumentType);
@@ -51,7 +48,7 @@ describe("buildDemoDataset", () => {
   });
 
   it("includes at least one Split transaction (multi-destination, e.g. the Home Loan EMI)", () => {
-    const dataset = buildDemoDataset();
+    const dataset = buildDemoDataset(PROFILE_ID);
     const postingsByTransaction = new Map<string, number>();
     for (const posting of dataset.postings) {
       postingsByTransaction.set(
@@ -63,21 +60,21 @@ describe("buildDemoDataset", () => {
     expect(hasSplit).toBe(true);
   });
 
-  it("includes activity for both Members", () => {
-    const dataset = buildDemoDataset();
-    const memberIdsWithTransactions = new Set(dataset.transactions.map((t) => t.memberId));
-    expect(memberIdsWithTransactions.size).toBe(2);
+  it("scopes every generated Account and Transaction to the given Profile", () => {
+    const dataset = buildDemoDataset(PROFILE_ID);
+    expect(dataset.accounts.every((a) => a.profileId === PROFILE_ID)).toBe(true);
+    expect(dataset.transactions.every((t) => t.profileId === PROFILE_ID)).toBe(true);
   });
 
   it("includes at least some tagged transactions", () => {
-    const dataset = buildDemoDataset();
+    const dataset = buildDemoDataset(PROFILE_ID);
     expect(dataset.transactions.some((t) => t.tags && t.tags.length > 0)).toBe(true);
   });
 
   it("is deterministic given the same date and seed", () => {
     const now = new Date("2026-08-16T00:00:00.000Z");
-    const a = buildDemoDataset(now, 42);
-    const b = buildDemoDataset(now, 42);
+    const a = buildDemoDataset(PROFILE_ID, now, 42);
+    const b = buildDemoDataset(PROFILE_ID, now, 42);
     expect(a.transactions.length).toBe(b.transactions.length);
     expect(a.transactions.map((t) => t.description)).toEqual(b.transactions.map((t) => t.description));
   });

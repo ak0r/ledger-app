@@ -1,12 +1,12 @@
 // In-memory SQLite wired with the real migrations, for integration tests
-// only. Never imported by production code — src/server/db/family-client.ts
-// owns the real per-Family connection resolver.
+// only. Never imported by production code — src/server/db/client.ts owns
+// the real connection singleton.
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "../db/schema";
-import type { Db } from "../db/family-client";
+import type { Db } from "../db/client";
 
 const MIGRATIONS_DIR = path.resolve(import.meta.dirname, "../db/migrations");
 

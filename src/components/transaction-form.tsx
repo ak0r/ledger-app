@@ -9,6 +9,7 @@ import { z } from "zod";
 import { toMinorUnits } from "@/domain";
 import { humanizeEnum } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -64,8 +65,7 @@ export function buildTransactionFormSchema(currencyScale: number) {
 type TransactionFormValues = z.infer<ReturnType<typeof buildTransactionFormSchema>>;
 
 interface TransactionFormProps {
-  familyId: string;
-  memberId: string;
+  profileId: string;
   accounts: { id: string; name: string; classification: string }[];
   currencySymbol: string;
   currencyScale: number;
@@ -101,8 +101,7 @@ interface TransactionFormProps {
 }
 
 export function TransactionForm({
-  familyId,
-  memberId,
+  profileId,
   accounts,
   currencySymbol,
   currencyScale,
@@ -221,7 +220,7 @@ export function TransactionForm({
     ];
 
     const payload = {
-      memberId,
+      profileId,
       date: values.date,
       description: values.description,
       tags: tags.length > 0 ? tags : undefined,
@@ -230,8 +229,8 @@ export function TransactionForm({
 
     const result =
       mode === "create"
-        ? await createTransactionAction(familyId, payload)
-        : await editTransactionAction(familyId, { ...payload, transactionId: transaction!.id });
+        ? await createTransactionAction(profileId, payload)
+        : await editTransactionAction(profileId, { ...payload, transactionId: transaction!.id });
 
     if (!result.success) {
       setServerError(result.error);
@@ -240,7 +239,7 @@ export function TransactionForm({
     if (onSuccess) {
       onSuccess();
     } else {
-      router.push(cancelHref ?? `/f/${familyId}/m/${memberId}/transactions`);
+      router.push(cancelHref ?? `/p/${profileId}/transactions`);
     }
     router.refresh();
   };
@@ -264,7 +263,19 @@ export function TransactionForm({
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="transaction-date">Date</Label>
-        <Input id="transaction-date" type="date" {...register("date")} />
+        <Controller
+          control={control}
+          name="date"
+          render={({ field }) => (
+            <DatePicker
+              id="transaction-date"
+              value={field.value}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
+              aria-invalid={!!errors.date}
+            />
+          )}
+        />
         {errors.date && <p className="text-sm text-destructive">{errors.date.message}</p>}
       </div>
 
@@ -427,7 +438,7 @@ export function TransactionForm({
           </Button>
         ) : (
           <Link
-            href={cancelHref ?? `/f/${familyId}/m/${memberId}/transactions`}
+            href={cancelHref ?? `/p/${profileId}/transactions`}
             className={buttonVariants({ variant: "outline" })}
           >
             Cancel

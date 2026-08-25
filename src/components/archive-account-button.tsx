@@ -10,13 +10,11 @@ import { archiveAccountAction } from "@/server/actions/accounts";
 // Transaction delete — inconsistent (docs/design/design.md §19). Same
 // ConfirmDialog, not destructive-styled since archive isn't data loss.
 export function ArchiveAccountButton({
-  familyId,
-  memberId,
+  profileId,
   accountId,
   variant = "ghost",
 }: {
-  familyId: string;
-  memberId: string;
+  profileId: string;
   accountId: string;
   variant?: "ghost" | "outline";
 }) {
@@ -33,7 +31,7 @@ export function ArchiveAccountButton({
       description="It will be marked archived. Its existing transactions and balance are unaffected."
       confirmLabel="Archive"
       onConfirm={async () => {
-        await archiveAccountAction(familyId, memberId, accountId);
+        await archiveAccountAction(profileId, accountId);
         router.refresh();
       }}
     />

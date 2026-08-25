@@ -1,4 +1,4 @@
-import type { Db } from "../db/family-client";
+import type { Db } from "../db/client";
 import { getAccountBalances, type AccountWithBalance } from "./accounts";
 import { listTransactions, type TransactionWithPostings } from "./transactions";
 
@@ -17,8 +17,8 @@ const RECENT_TRANSACTIONS_LIMIT = 5;
 // Basic reports, computed read-side from ledger data only
 // (docs/04-modules.md "Budgets"/"Reports": "Consume ledger data. Calculated
 // spend is not source of truth.") — nothing here is persisted.
-export function getDashboardSummary(db: Db, memberId: string): DashboardSummary {
-  const accountBalances = getAccountBalances(db, memberId);
+export function getDashboardSummary(db: Db, profileId: string): DashboardSummary {
+  const accountBalances = getAccountBalances(db, profileId);
 
   const sumByClassification = (classification: string) =>
     accountBalances
@@ -37,6 +37,6 @@ export function getDashboardSummary(db: Db, memberId: string): DashboardSummary 
     netPosition: totalAssets - totalLiabilities,
     totalIncome,
     totalExpenses,
-    recentTransactions: listTransactions(db, memberId).slice(0, RECENT_TRANSACTIONS_LIMIT),
+    recentTransactions: listTransactions(db, profileId).slice(0, RECENT_TRANSACTIONS_LIMIT),
   };
 }

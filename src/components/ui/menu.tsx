@@ -31,7 +31,7 @@ function MenuContent({
         <MenuPrimitive.Popup
           data-slot="menu-content"
           className={cn(
-            "w-56 origin-(--transform-origin) rounded-xl bg-popover p-1.5 text-popover-foreground ring-1 ring-foreground/10 shadow-md outline-none duration-100 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+            "flex w-56 origin-(--transform-origin) flex-col gap-0.5 rounded-xl bg-popover p-1.5 text-popover-foreground ring-1 ring-foreground/10 shadow-md outline-none duration-100 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
             className,
           )}
           {...props}
@@ -56,8 +56,14 @@ function MenuItem({ className, ...props }: MenuPrimitive.Item.Props) {
   )
 }
 
-function MenuGroup(props: MenuPrimitive.Group.Props) {
-  return <MenuPrimitive.Group data-slot="menu-group" {...props} />
+function MenuGroup({ className, ...props }: MenuPrimitive.Group.Props) {
+  return (
+    <MenuPrimitive.Group
+      data-slot="menu-group"
+      className={cn("flex flex-col gap-0.5", className)}
+      {...props}
+    />
+  )
 }
 
 function MenuGroupLabel({ className, ...props }: MenuPrimitive.GroupLabel.Props) {

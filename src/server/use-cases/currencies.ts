@@ -1,18 +1,18 @@
 import { isSupportedCurrencyCode } from "@/domain";
-import type { Db } from "../db/family-client";
+import type { Db } from "../db/client";
 import {
-  findCurrenciesByMember,
+  findCurrenciesByProfile,
   insertCurrency,
   type CurrencyRow,
 } from "../repositories/currencies";
 import { UnsupportedCurrencyError } from "./errors";
 
-// Currency creation is a separate step from Member creation (resolved
+// Currency creation is a separate step from Profile creation (resolved
 // 2026-08-15, see HANDOFF.md open decisions #1) — even though MVP enforces
 // INR-only (rule #7, ADR-020), the screens/use-cases stay independent so
-// a future multi-currency Member doesn't require re-splitting this flow.
+// a future multi-currency Profile doesn't require re-splitting this flow.
 export interface CreateCurrencyInput {
-  memberId: string;
+  profileId: string;
   code: string;
   name: string;
   symbol: string;
@@ -27,7 +27,7 @@ export function createCurrency(db: Db, input: CreateCurrencyInput): CurrencyRow 
   const now = new Date().toISOString();
   const currency: CurrencyRow = {
     id: crypto.randomUUID(),
-    memberId: input.memberId,
+    profileId: input.profileId,
     code: input.code,
     name: input.name,
     symbol: input.symbol,
@@ -39,6 +39,6 @@ export function createCurrency(db: Db, input: CreateCurrencyInput): CurrencyRow 
   return currency;
 }
 
-export function listCurrencies(db: Db, memberId: string): CurrencyRow[] {
-  return findCurrenciesByMember(db, memberId);
+export function listCurrencies(db: Db, profileId: string): CurrencyRow[] {
+  return findCurrenciesByProfile(db, profileId);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTestAppDb } from "../testing/createTestAppDb";
+import { createTestDb } from "../testing/createTestDb";
 import { findAppUserByEmail } from "../repositories/app-users";
 import { findSessionById } from "../repositories/sessions";
 import { loginAppUser, logoutAppUser, registerAppUser } from "./auth";
@@ -7,7 +7,7 @@ import { EmailAlreadyRegisteredError, InvalidCredentialsError } from "./errors";
 
 describe("registerAppUser", () => {
   it("persists a hashed password (not the plaintext) and creates a session", () => {
-    const db = createTestAppDb();
+    const db = createTestDb();
     const { appUser, session } = registerAppUser(db, {
       email: "amit@example.com",
       password: "correct horse battery staple",
@@ -20,7 +20,7 @@ describe("registerAppUser", () => {
   });
 
   it("rejects a duplicate email", () => {
-    const db = createTestAppDb();
+    const db = createTestDb();
     registerAppUser(db, { email: "amit@example.com", password: "password123" });
 
     expect(() =>
@@ -31,7 +31,7 @@ describe("registerAppUser", () => {
 
 describe("loginAppUser", () => {
   it("creates a new session on correct credentials", () => {
-    const db = createTestAppDb();
+    const db = createTestDb();
     const { appUser } = registerAppUser(db, { email: "amit@example.com", password: "password123" });
 
     const { session } = loginAppUser(db, { email: "amit@example.com", password: "password123" });
@@ -39,7 +39,7 @@ describe("loginAppUser", () => {
   });
 
   it("throws InvalidCredentialsError for a wrong password", () => {
-    const db = createTestAppDb();
+    const db = createTestDb();
     registerAppUser(db, { email: "amit@example.com", password: "password123" });
 
     expect(() =>
@@ -48,7 +48,7 @@ describe("loginAppUser", () => {
   });
 
   it("throws the same InvalidCredentialsError for an unknown email (never reveals which)", () => {
-    const db = createTestAppDb();
+    const db = createTestDb();
 
     expect(() =>
       loginAppUser(db, { email: "nobody@example.com", password: "anything" }),
@@ -58,7 +58,7 @@ describe("loginAppUser", () => {
 
 describe("logoutAppUser", () => {
   it("deletes the session row", () => {
-    const db = createTestAppDb();
+    const db = createTestDb();
     const { session } = registerAppUser(db, { email: "amit@example.com", password: "password123" });
 
     logoutAppUser(db, session.id);
@@ -69,7 +69,7 @@ describe("logoutAppUser", () => {
 
 describe("session expiry (via getCurrentAppUser's own logic, exercised directly here)", () => {
   it("a session's expiresAt is in the future at creation time", () => {
-    const db = createTestAppDb();
+    const db = createTestDb();
     const before = Date.now();
     const { session } = registerAppUser(db, { email: "amit@example.com", password: "password123" });
 

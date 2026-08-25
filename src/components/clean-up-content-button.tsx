@@ -4,13 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { cleanUpFamilyContentAction } from "@/server/actions/cleanup";
+import { cleanUpProfileContentAction } from "@/server/actions/cleanup";
 
 // Clean Up Content (docs/onboarding.md §11) — the primary use case is
-// leaving a demo Family's sample data behind without losing the Family/
-// Members themselves. Destructive (hard delete, rule #9) and Family-wide
-// (every Member's data, not just one) — always confirmed, unlike Archive.
-export function CleanUpContentButton({ familyId }: { familyId: string }) {
+// leaving a demo Profile's sample data behind without losing the Profile
+// itself. Destructive (hard delete, rule #9) and Profile-wide — always
+// confirmed, unlike Archive.
+export function CleanUpContentButton({ profileId }: { profileId: string }) {
   const router = useRouter();
   const [done, setDone] = useState(false);
 
@@ -23,11 +23,11 @@ export function CleanUpContentButton({ familyId }: { familyId: string }) {
           </Button>
         }
         title="Clean up content?"
-        description="This will permanently delete all accounts, transactions, postings, and other financial data in this Family. Your Family and Members will remain."
+        description="This will permanently delete all accounts, transactions, postings, and other financial data in this Profile. Your Profile will remain."
         confirmLabel="Clean Up Content"
         destructive
         onConfirm={async () => {
-          const result = await cleanUpFamilyContentAction(familyId);
+          const result = await cleanUpProfileContentAction(profileId);
           if (result.success) {
             setDone(true);
             router.refresh();
@@ -37,7 +37,7 @@ export function CleanUpContentButton({ familyId }: { familyId: string }) {
       />
       {done && (
         <p className="text-sm text-muted-foreground">
-          Content cleaned up. Your Family and Members are still here.
+          Content cleaned up. Your Profile is still here.
         </p>
       )}
     </div>

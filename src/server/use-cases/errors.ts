@@ -48,3 +48,14 @@ export class EmailAlreadyRegisteredError extends Error {
     this.name = "EmailAlreadyRegisteredError";
   }
 }
+
+// A Profile can be linked to at most one AppUser (2026-08-20 User
+// Simplification delta) — thrown when a registration link targets a
+// Profile that's already linked, so it falls back to creating a fresh
+// Profile instead of silently stealing/erroring on someone else's.
+export class ProfileAlreadyLinkedError extends Error {
+  constructor(profileId: string) {
+    super(`Profile ${profileId} is already linked to an AppUser`);
+    this.name = "ProfileAlreadyLinkedError";
+  }
+}

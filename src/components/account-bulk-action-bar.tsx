@@ -18,12 +18,10 @@ import { bulkArchiveAccountsAction } from "@/server/actions/accounts";
 // Transactions' bulk Delete (Accounts don't have a delete operation at
 // all, only archive).
 export function AccountBulkActionBar({
-  familyId,
-  memberId,
+  profileId,
   existingTags,
 }: {
-  familyId: string;
-  memberId: string;
+  profileId: string;
   existingTags: string[];
 }) {
   const router = useRouter();
@@ -69,8 +67,7 @@ export function AccountBulkActionBar({
       <AccountBulkTagsDialog
         open={tagsOpen}
         onOpenChange={setTagsOpen}
-        familyId={familyId}
-        memberId={memberId}
+        profileId={profileId}
         accountIds={selectedIdsArray}
         existingTags={existingTags}
       />
@@ -81,8 +78,8 @@ export function AccountBulkActionBar({
         description="Archived accounts are hidden from active use. Their existing Transactions and balances are unaffected."
         confirmLabel="Archive"
         onConfirm={async () => {
-          const result = await bulkArchiveAccountsAction(familyId, {
-            memberId,
+          const result = await bulkArchiveAccountsAction(profileId, {
+            profileId,
             accountIds: selectedIdsArray,
           });
           if (result.success) {

@@ -36,10 +36,10 @@ function getToAccountIds(transaction: MergeCandidateTransaction): Set<string> {
 
 // Same date, same currency (every posting's account must share one
 // `currencyId`), and a common source account OR common destination account
-// across the whole set (transactionworkspacedelta.md §11) — "same Member"
+// across the whole set (transactionworkspacedelta.md §11) — "same Profile"
 // isn't checked here since both callers already scope their input to one
-// Member before calling this (the page's own rows, or the DB query by
-// `memberId`) — see mergeTransactions' own re-check for where that's
+// Profile before calling this (the page's own rows, or the DB query by
+// `profileId`) — see mergeTransactions' own re-check for where that's
 // actually enforced (a mismatched id there is simply not found).
 export function checkMergeEligibility(
   transactions: readonly MergeCandidateTransaction[],

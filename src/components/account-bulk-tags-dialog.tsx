@@ -21,15 +21,13 @@ import { bulkUpdateAccountTagsAction } from "@/server/actions/accounts";
 export function AccountBulkTagsDialog({
   open,
   onOpenChange,
-  familyId,
-  memberId,
+  profileId,
   accountIds,
   existingTags,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  familyId: string;
-  memberId: string;
+  profileId: string;
   accountIds: string[];
   existingTags: string[];
 }) {
@@ -51,8 +49,8 @@ export function AccountBulkTagsDialog({
   const handleSave = async () => {
     setError(null);
     setIsSaving(true);
-    const result = await bulkUpdateAccountTagsAction(familyId, {
-      memberId,
+    const result = await bulkUpdateAccountTagsAction(profileId, {
+      profileId,
       accountIds,
       addTags,
       removeTags,

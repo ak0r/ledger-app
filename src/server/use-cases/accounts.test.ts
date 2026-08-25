@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { Db } from "../db/family-client";
+import type { Db } from "../db/client";
 import { createTestDb } from "../testing/createTestDb";
-import { createMember } from "./members";
+import { createProfile } from "./profiles";
 import { createCurrency } from "./currencies";
 import {
   bulkArchiveAccounts,
@@ -16,44 +16,44 @@ import {
 import { createTransaction } from "./transactions";
 import { NotFoundError } from "./errors";
 
-function setUpMemberWithCurrency(db: Db) {
-  const member = createMember(db, { name: "Amit" });
+function setUpProfileWithCurrency(db: Db) {
+  const profile = createProfile(db, { name: "Amit" });
   const currency = createCurrency(db, {
-    memberId: member.id,
+    profileId: profile.id,
     code: "INR",
     name: "Indian Rupee",
     symbol: "₹",
     minorUnitScale: 2,
   });
-  return { member, currency };
+  return { profile, currency };
 }
 
 describe("createAccount", () => {
   it("persists an Account against an existing Currency", () => {
     const db = createTestDb();
-    const { member, currency } = setUpMemberWithCurrency(db);
+    const { profile, currency } = setUpProfileWithCurrency(db);
 
     const account = createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
       instrumentType: "BANK",
     });
 
-    expect(account.memberId).toBe(member.id);
+    expect(account.profileId).toBe(profile.id);
     expect(account.currencyId).toBe(currency.id);
     expect(account.isArchived).toBe(false);
   });
 
-  it("rejects a Currency that does not belong to the Member (rule #6)", () => {
+  it("rejects a Currency that does not belong to the Profile (rule #6)", () => {
     const db = createTestDb();
-    const { currency } = setUpMemberWithCurrency(db);
-    const otherMember = createMember(db, { name: "Partner" });
+    const { currency } = setUpProfileWithCurrency(db);
+    const otherProfile = createProfile(db, { name: "Partner" });
 
     expect(() =>
       createAccount(db, {
-        memberId: otherMember.id,
+        profileId: otherProfile.id,
         currencyId: currency.id,
         name: "Should fail",
         classification: "ASSET",
@@ -66,77 +66,77 @@ describe("createAccount", () => {
 describe("archiveAccount", () => {
   it("marks an Account archived", () => {
     const db = createTestDb();
-    const { member, currency } = setUpMemberWithCurrency(db);
+    const { profile, currency } = setUpProfileWithCurrency(db);
     const account = createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "Old Card",
       classification: "LIABILITY",
       instrumentType: "CREDIT_CARD",
     });
 
-    const archived = archiveAccount(db, { accountId: account.id, memberId: member.id });
+    const archived = archiveAccount(db, { accountId: account.id, profileId: profile.id });
     expect(archived.isArchived).toBe(true);
   });
 
-  it("rejects archiving another Member's Account (rule #6)", () => {
+  it("rejects archiving another Profile's Account (rule #6)", () => {
     const db = createTestDb();
-    const { member, currency } = setUpMemberWithCurrency(db);
+    const { profile, currency } = setUpProfileWithCurrency(db);
     const account = createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
       instrumentType: "BANK",
     });
-    const otherMember = createMember(db, { name: "Partner" });
+    const otherProfile = createProfile(db, { name: "Partner" });
 
     expect(() =>
-      archiveAccount(db, { accountId: account.id, memberId: otherMember.id }),
+      archiveAccount(db, { accountId: account.id, profileId: otherProfile.id }),
     ).toThrow(NotFoundError);
   });
 });
 
 describe("listAccounts and getAccount", () => {
-  it("scopes listAccounts to the given Member", () => {
+  it("scopes listAccounts to the given Profile", () => {
     const db = createTestDb();
-    const { member, currency } = setUpMemberWithCurrency(db);
-    const otherMember = createMember(db, { name: "Partner" });
+    const { profile, currency } = setUpProfileWithCurrency(db);
+    const otherProfile = createProfile(db, { name: "Partner" });
     createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
       instrumentType: "BANK",
     });
 
-    expect(listAccounts(db, member.id)).toHaveLength(1);
-    expect(listAccounts(db, otherMember.id)).toEqual([]);
+    expect(listAccounts(db, profile.id)).toHaveLength(1);
+    expect(listAccounts(db, otherProfile.id)).toEqual([]);
   });
 
-  it("getAccount returns undefined for another Member's Account", () => {
+  it("getAccount returns undefined for another Profile's Account", () => {
     const db = createTestDb();
-    const { member, currency } = setUpMemberWithCurrency(db);
-    const otherMember = createMember(db, { name: "Partner" });
+    const { profile, currency } = setUpProfileWithCurrency(db);
+    const otherProfile = createProfile(db, { name: "Partner" });
     const account = createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
       instrumentType: "BANK",
     });
 
-    expect(getAccount(db, account.id, member.id)).toEqual(account);
-    expect(getAccount(db, account.id, otherMember.id)).toBeUndefined();
+    expect(getAccount(db, account.id, profile.id)).toEqual(account);
+    expect(getAccount(db, account.id, otherProfile.id)).toBeUndefined();
   });
 });
 
 describe("editAccount", () => {
   it("updates editable fields", () => {
     const db = createTestDb();
-    const { member, currency } = setUpMemberWithCurrency(db);
+    const { profile, currency } = setUpProfileWithCurrency(db);
     const account = createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
@@ -145,7 +145,7 @@ describe("editAccount", () => {
 
     const edited = editAccount(db, {
       accountId: account.id,
-      memberId: member.id,
+      profileId: profile.id,
       name: "HDFC Bank — Salary",
       classification: "ASSET",
       instrumentType: "BANK",
@@ -159,9 +159,9 @@ describe("editAccount", () => {
 
   it("round-trips tags (rule #13, changing one record's tags only changes that record)", () => {
     const db = createTestDb();
-    const { member, currency } = setUpMemberWithCurrency(db);
+    const { profile, currency } = setUpProfileWithCurrency(db);
     const account = createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
@@ -172,7 +172,7 @@ describe("editAccount", () => {
 
     const edited = editAccount(db, {
       accountId: account.id,
-      memberId: member.id,
+      profileId: profile.id,
       name: account.name,
       classification: account.classification,
       instrumentType: account.instrumentType,
@@ -180,15 +180,15 @@ describe("editAccount", () => {
     });
 
     expect(edited.tags).toEqual(["primary", "salary"]);
-    expect(getAccount(db, account.id, member.id)?.tags).toEqual(["primary", "salary"]);
+    expect(getAccount(db, account.id, profile.id)?.tags).toEqual(["primary", "salary"]);
   });
 
-  it("rejects editing another Member's Account (rule #6)", () => {
+  it("rejects editing another Profile's Account (rule #6)", () => {
     const db = createTestDb();
-    const { member, currency } = setUpMemberWithCurrency(db);
-    const otherMember = createMember(db, { name: "Partner" });
+    const { profile, currency } = setUpProfileWithCurrency(db);
+    const otherProfile = createProfile(db, { name: "Partner" });
     const account = createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
@@ -198,7 +198,7 @@ describe("editAccount", () => {
     expect(() =>
       editAccount(db, {
         accountId: account.id,
-        memberId: otherMember.id,
+        profileId: otherProfile.id,
         name: "Hijacked",
         classification: "ASSET",
         instrumentType: "BANK",
@@ -210,23 +210,23 @@ describe("editAccount", () => {
 describe("getAccountBalances", () => {
   it("computes each Account's all-time balance from its postings", () => {
     const db = createTestDb();
-    const { member, currency } = setUpMemberWithCurrency(db);
+    const { profile, currency } = setUpProfileWithCurrency(db);
     const bank = createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
       instrumentType: "BANK",
     });
     const food = createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "Food",
       classification: "EXPENSE",
       instrumentType: "EXPENSE",
     });
     const salary = createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "Salary",
       classification: "INCOME",
@@ -234,7 +234,7 @@ describe("getAccountBalances", () => {
     });
 
     createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-15",
       description: "Salary",
       postings: [
@@ -243,7 +243,7 @@ describe("getAccountBalances", () => {
       ],
     });
     createTransaction(db, {
-      memberId: member.id,
+      profileId: profile.id,
       date: "2026-08-16",
       description: "Groceries",
       postings: [
@@ -253,7 +253,7 @@ describe("getAccountBalances", () => {
     });
 
     const balances = new Map(
-      getAccountBalances(db, member.id).map((account) => [account.id, account.balance]),
+      getAccountBalances(db, profile.id).map((account) => [account.id, account.balance]),
     );
 
     expect(balances.get(bank.id)).toBe(98000);
@@ -263,16 +263,16 @@ describe("getAccountBalances", () => {
 
   it("defaults to zero for an Account with no postings", () => {
     const db = createTestDb();
-    const { member, currency } = setUpMemberWithCurrency(db);
+    const { profile, currency } = setUpProfileWithCurrency(db);
     const account = createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "New Account",
       classification: "ASSET",
       instrumentType: "BANK",
     });
 
-    const balances = getAccountBalances(db, member.id);
+    const balances = getAccountBalances(db, profile.id);
     expect(balances.find((a) => a.id === account.id)?.balance).toBe(0);
   });
 });
@@ -280,68 +280,68 @@ describe("getAccountBalances", () => {
 describe("bulkArchiveAccounts", () => {
   it("archives every account in the selection", () => {
     const db = createTestDb();
-    const { member, currency } = setUpMemberWithCurrency(db);
+    const { profile, currency } = setUpProfileWithCurrency(db);
     const a1 = createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "A1",
       classification: "ASSET",
       instrumentType: "BANK",
     });
     const a2 = createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "A2",
       classification: "EXPENSE",
       instrumentType: "EXPENSE",
     });
 
-    bulkArchiveAccounts(db, { memberId: member.id, accountIds: [a1.id, a2.id] });
+    bulkArchiveAccounts(db, { profileId: profile.id, accountIds: [a1.id, a2.id] });
 
-    expect(getAccount(db, a1.id, member.id)?.isArchived).toBe(true);
-    expect(getAccount(db, a2.id, member.id)?.isArchived).toBe(true);
+    expect(getAccount(db, a1.id, profile.id)?.isArchived).toBe(true);
+    expect(getAccount(db, a2.id, profile.id)?.isArchived).toBe(true);
   });
 
-  it("rejects the whole batch when one id doesn't belong to this Member, archiving nothing (atomicity)", () => {
+  it("rejects the whole batch when one id doesn't belong to this Profile, archiving nothing (atomicity)", () => {
     const db = createTestDb();
-    const { member, currency } = setUpMemberWithCurrency(db);
-    const otherMember = createMember(db, { name: "Priya" });
+    const { profile, currency } = setUpProfileWithCurrency(db);
+    const otherProfile = createProfile(db, { name: "Priya" });
     const a1 = createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "A1",
       classification: "ASSET",
       instrumentType: "BANK",
     });
     const otherCurrency = createCurrency(db, {
-      memberId: otherMember.id,
+      profileId: otherProfile.id,
       code: "INR",
       name: "Indian Rupee",
       symbol: "₹",
       minorUnitScale: 2,
     });
     const otherAccount = createAccount(db, {
-      memberId: otherMember.id,
+      profileId: otherProfile.id,
       currencyId: otherCurrency.id,
-      name: "Not this member's",
+      name: "Not this profile's",
       classification: "ASSET",
       instrumentType: "BANK",
     });
 
     expect(() =>
-      bulkArchiveAccounts(db, { memberId: member.id, accountIds: [a1.id, otherAccount.id] }),
+      bulkArchiveAccounts(db, { profileId: profile.id, accountIds: [a1.id, otherAccount.id] }),
     ).toThrow(NotFoundError);
 
-    expect(getAccount(db, a1.id, member.id)?.isArchived).toBe(false);
+    expect(getAccount(db, a1.id, profile.id)?.isArchived).toBe(false);
   });
 });
 
 describe("bulkUpdateAccountTags", () => {
   it("adds and removes tags across the selection, preserving every other field", () => {
     const db = createTestDb();
-    const { member, currency } = setUpMemberWithCurrency(db);
+    const { profile, currency } = setUpProfileWithCurrency(db);
     const a1 = createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "A1",
       classification: "ASSET",
@@ -349,7 +349,7 @@ describe("bulkUpdateAccountTags", () => {
       tags: ["old", "keep"],
     });
     const a2 = createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "A2",
       classification: "EXPENSE",
@@ -357,25 +357,25 @@ describe("bulkUpdateAccountTags", () => {
     });
 
     bulkUpdateAccountTags(db, {
-      memberId: member.id,
+      profileId: profile.id,
       accountIds: [a1.id, a2.id],
       addTags: ["new"],
       removeTags: ["old"],
     });
 
-    const updated1 = getAccount(db, a1.id, member.id);
-    const updated2 = getAccount(db, a2.id, member.id);
+    const updated1 = getAccount(db, a1.id, profile.id);
+    const updated2 = getAccount(db, a2.id, profile.id);
     expect(updated1?.tags).toEqual(["keep", "new"]);
     expect(updated1?.name).toBe("A1");
     expect(updated1?.classification).toBe("ASSET");
     expect(updated2?.tags).toEqual(["new"]);
   });
 
-  it("rejects the whole batch when one id doesn't belong to this Member, changing nothing (atomicity)", () => {
+  it("rejects the whole batch when one id doesn't belong to this Profile, changing nothing (atomicity)", () => {
     const db = createTestDb();
-    const { member, currency } = setUpMemberWithCurrency(db);
+    const { profile, currency } = setUpProfileWithCurrency(db);
     const a1 = createAccount(db, {
-      memberId: member.id,
+      profileId: profile.id,
       currencyId: currency.id,
       name: "A1",
       classification: "ASSET",
@@ -385,13 +385,13 @@ describe("bulkUpdateAccountTags", () => {
 
     expect(() =>
       bulkUpdateAccountTags(db, {
-        memberId: member.id,
+        profileId: profile.id,
         accountIds: [a1.id, "does-not-exist"],
         addTags: ["new"],
         removeTags: [],
       }),
     ).toThrow(NotFoundError);
 
-    expect(getAccount(db, a1.id, member.id)?.tags).toEqual(["keep"]);
+    expect(getAccount(db, a1.id, profile.id)?.tags).toEqual(["keep"]);
   });
 });

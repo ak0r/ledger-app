@@ -1,4 +1,4 @@
-import type { Db } from "../db/family-client";
+import type { Db } from "../db/client";
 import {
   bulkDeleteTransactions,
   bulkUpdateTags,
