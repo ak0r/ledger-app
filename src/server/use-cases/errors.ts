@@ -1,4 +1,4 @@
-import type { TransactionViolation } from "@/domain";
+import type { RecurringRuleViolation, TransactionViolation } from "@/domain";
 
 export class NotFoundError extends Error {
   constructor(message: string) {
@@ -11,6 +11,13 @@ export class TransactionValidationError extends Error {
   constructor(public readonly violations: readonly TransactionViolation[]) {
     super("Transaction failed domain validation");
     this.name = "TransactionValidationError";
+  }
+}
+
+export class RecurringRuleValidationError extends Error {
+  constructor(public readonly violations: readonly RecurringRuleViolation[]) {
+    super("Recurring rule failed domain validation");
+    this.name = "RecurringRuleValidationError";
   }
 }
 
@@ -57,5 +64,28 @@ export class ProfileAlreadyLinkedError extends Error {
   constructor(profileId: string) {
     super(`Profile ${profileId} is already linked to an AppUser`);
     this.name = "ProfileAlreadyLinkedError";
+  }
+}
+
+// Generic CSV adapter couldn't find a recognizable date/description +
+// debit-credit-or-amount-direction column set in the uploaded file's header
+// row (Import Framework Phase 1 delta §5).
+export class UnsupportedImportFormatError extends Error {
+  constructor(reason: string) {
+    super(`Unsupported import file format: ${reason}`);
+    this.name = "UnsupportedImportFormatError";
+  }
+}
+
+// Password-protected import file (Federal Bank Account PDF adapter) — the
+// password itself is never persisted anywhere: it exists only for the
+// single `adapter.parse()` call that needs it to decrypt the file, and is
+// discarded once that call returns (rule: never store it). `reason`
+// distinguishes "never tried one" (first upload) from "tried one, it was
+// wrong" (retry) so the UI can show the right prompt copy.
+export class PasswordRequiredError extends Error {
+  constructor(public readonly reason: "required" | "incorrect" = "required") {
+    super(reason === "incorrect" ? "Incorrect password" : "This file is password-protected");
+    this.name = "PasswordRequiredError";
   }
 }

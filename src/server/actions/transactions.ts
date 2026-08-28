@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "../db/client";
-import { requireProfileAccess } from "../authz";
+import { requireActiveProfile } from "../authz";
 import type { TransactionWithPostings } from "../use-cases/transactions";
 import {
   bulkDeleteTransactionsCore,
@@ -14,49 +14,37 @@ import {
 import type { ActionResult } from "./result";
 
 export async function createTransactionAction(
-  profileId: string,
   input: unknown,
 ): Promise<ActionResult<TransactionWithPostings>> {
-  await requireProfileAccess(profileId);
-  return createTransactionCore(db, input);
+  const { profile } = await requireActiveProfile();
+  return createTransactionCore(db, { ...(input as object), profileId: profile.id });
 }
 
 export async function editTransactionAction(
-  profileId: string,
   input: unknown,
 ): Promise<ActionResult<TransactionWithPostings>> {
-  await requireProfileAccess(profileId);
-  return editTransactionCore(db, input);
+  const { profile } = await requireActiveProfile();
+  return editTransactionCore(db, { ...(input as object), profileId: profile.id });
 }
 
-export async function deleteTransactionAction(
-  profileId: string,
-  input: unknown,
-): Promise<ActionResult<null>> {
-  await requireProfileAccess(profileId);
-  return deleteTransactionCore(db, input);
+export async function deleteTransactionAction(input: unknown): Promise<ActionResult<null>> {
+  const { profile } = await requireActiveProfile();
+  return deleteTransactionCore(db, { ...(input as object), profileId: profile.id });
 }
 
 export async function mergeTransactionsAction(
-  profileId: string,
   input: unknown,
 ): Promise<ActionResult<TransactionWithPostings>> {
-  await requireProfileAccess(profileId);
-  return mergeTransactionsCore(db, input);
+  const { profile } = await requireActiveProfile();
+  return mergeTransactionsCore(db, { ...(input as object), profileId: profile.id });
 }
 
-export async function bulkDeleteTransactionsAction(
-  profileId: string,
-  input: unknown,
-): Promise<ActionResult<null>> {
-  await requireProfileAccess(profileId);
-  return bulkDeleteTransactionsCore(db, input);
+export async function bulkDeleteTransactionsAction(input: unknown): Promise<ActionResult<null>> {
+  const { profile } = await requireActiveProfile();
+  return bulkDeleteTransactionsCore(db, { ...(input as object), profileId: profile.id });
 }
 
-export async function bulkUpdateTagsAction(
-  profileId: string,
-  input: unknown,
-): Promise<ActionResult<null>> {
-  await requireProfileAccess(profileId);
-  return bulkUpdateTagsCore(db, input);
+export async function bulkUpdateTagsAction(input: unknown): Promise<ActionResult<null>> {
+  const { profile } = await requireActiveProfile();
+  return bulkUpdateTagsCore(db, { ...(input as object), profileId: profile.id });
 }

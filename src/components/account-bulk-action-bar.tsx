@@ -17,13 +17,7 @@ import { bulkArchiveAccountsAction } from "@/server/actions/accounts";
 // and not what was asked for); Archive is Accounts' equivalent of
 // Transactions' bulk Delete (Accounts don't have a delete operation at
 // all, only archive).
-export function AccountBulkActionBar({
-  profileId,
-  existingTags,
-}: {
-  profileId: string;
-  existingTags: string[];
-}) {
+export function AccountBulkActionBar({ existingTags }: { existingTags: string[] }) {
   const router = useRouter();
   const { selectedIds, clearSelection } = useAccountWorkspace();
   const [tagsOpen, setTagsOpen] = useState(false);
@@ -67,7 +61,6 @@ export function AccountBulkActionBar({
       <AccountBulkTagsDialog
         open={tagsOpen}
         onOpenChange={setTagsOpen}
-        profileId={profileId}
         accountIds={selectedIdsArray}
         existingTags={existingTags}
       />
@@ -78,10 +71,7 @@ export function AccountBulkActionBar({
         description="Archived accounts are hidden from active use. Their existing Transactions and balances are unaffected."
         confirmLabel="Archive"
         onConfirm={async () => {
-          const result = await bulkArchiveAccountsAction(profileId, {
-            profileId,
-            accountIds: selectedIdsArray,
-          });
+          const result = await bulkArchiveAccountsAction({ accountIds: selectedIdsArray });
           if (result.success) {
             clearSelection();
             router.refresh();

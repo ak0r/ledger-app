@@ -3,11 +3,18 @@
 Core ledger:
 
 ```text
-Member
+Profile
 Currency
 Account
 Transaction
 Posting
+```
+
+Identity (separate from the ledger domain — see
+`docs/completed/2026-08-20-User-Simplification.md`):
+
+```text
+AppUser  ──1:1──  Profile
 ```
 
 ## Spaces — deferred
@@ -21,7 +28,7 @@ PERSONAL
 SHARED
 ```
 
-Members can participate without registration.
+Profiles can participate without registration.
 
 Spaces are a module, not accounting entities.
 
@@ -30,7 +37,8 @@ Spaces are a module, not accounting entities.
 Separate from accounting splits.
 
 Purpose:
-- split shared expenses between members
+
+- split shared expenses between Profiles
 - calculate obligations
 - receivables/payables
 - settlement payments
@@ -47,35 +55,82 @@ Expense sharing:
 
 ```text
 ₹5,000
-Member A   ₹2,000
-Member B   ₹3,000
+Profile A   ₹2,000
+Profile B   ₹3,000
 ```
 
 Do not merge these concepts.
 
-## Imports — deferred
+## Imports
 
-Future sources:
-- Email
-- SMS
-- PDF statements
-- CSV/XLS
-
-Conceptual pipeline:
+Shipped (2026-08-25/26 deltas, archived in `docs/completed/`; see
+ADR-030/031/032 in `docs/07-decisions.md`). Locked pipeline:
 
 ```text
-Raw Source
+Upload file(s)
     ↓
-Parser
+Detect adapter
     ↓
-Candidate Transaction
+Parse
     ↓
-Review
+Normalise
     ↓
-Posted Transaction
+Account Resolution
+    ↓
+Import Preview (editable, transient)
+    ↓
+User Approval
+    ↓
+Commit to Ledger (atomic)
 ```
 
-Import logic stays outside accounting core.
+- **Adapters**: registered `institution.product.format` (e.g.
+  `hdfc.account.xls`), tried in priority order; a generic-CSV adapter is
+  always last as the universal fallback. An adapter owns only parsing +
+  extracting the source account identifier — never Ledger-specific
+  categorization.
+- **Account Resolution**: the source (bank/card) account and every
+  counter-account (e.g. the "Unknown" catch-alls) are resolved the same
+  way — exact `AccountIdentifier` match, then a masked-suffix "possible
+  match", then ambiguous-requires-user-resolution, or a proposed new
+  account. Nothing is created until commit.
+- **Commit**: one atomic transaction creates any approved new Accounts (+
+  their `AccountIdentifier` rows), the `ImportFile` provenance row(s), and
+  the resulting Transactions/Postings — normal double-entry rows,
+  permanently tagged with `import_file_id`.
+- Sources supported today: generic CSV, HDFC Bank Account XLS, Axis Bank
+  Account XLS, IDFC FIRST Bank Account XLS, Federal Bank Account PDF.
+- Password-protected files (Federal Bank's PDF statements, ADR-034): the UI
+  prompts for a password only when the adapter reports one is needed (or
+  wrong), sends it once to the server for that single parse call, and never
+  persists it — not in the `ImportFile` row, not in a log, not anywhere.
+  Approval/commit never re-reads the original file, so the password never
+  needs to flow past preview.
+
+**Still deferred** (explicit future plugin extension points, not built):
+Rules (auto-categorization), Duplicate Detection, any adapter beyond the
+five above, email/SMS statement sources, PDF statements from any
+institution other than Federal Bank.
+
+## Recurring Transactions
+
+Phase 1 shipped (2026-08-28, `docs/completed/2026-08-27-Recurring-Transactions.md`;
+see ADR-035 in `docs/07-decisions.md`). A Recurring Rule is a **definition**
+(Name + Transaction Template + Schedule), never a Transaction itself —
+creating or editing one never posts to the Ledger.
+
+- **Two entry points**: `+ Add New` on the `/recurring` page (blank form),
+  or `Make recurring` on a transaction row's `...` menu (prefills the same
+  form from that transaction; the two stay independent afterward).
+- **Schedule**: Daily/Weekly/Monthly/Yearly, structured columns (not a
+  stored RRULE string — ADR-035), Start date, optional End date.
+- **Recurring page**: two read-only views over the same rules — **Rules**
+  (Name/Next Due/Schedule/Amount, Edit/Delete) and **Calendar** (month
+  grid of occurrences, derived on read, never persisted).
+
+**Still deferred** (explicit future capability, not built): automatic
+transaction generation/posting, transaction matching/filtering, reminders
+and notifications.
 
 ## Budgets
 
@@ -83,7 +138,11 @@ Consume ledger data. Calculated spend is not source of truth.
 
 ## Investments
 
-Future module.
+Foundations only: an `Instrument` catalogue entity exists (shared reference
+data, not Profile-scoped) and `MUTUAL_FUND`/`STOCK`/`COMMODITY` are frozen
+Account instrument types — Step 1 of `docs/pending/2026-08-21-Instrument-Model-Pricing-Foundations.md`'s
+10-step plan. Quantity, pricing, valuation, and the rest of that plan are
+still not built.
 
 ## Reports
 
@@ -106,6 +165,7 @@ TransactionVersion[]
 Frozen transaction-entry representation.
 
 Suggested visual states:
+
 - green = added
 - yellow = modified
 - red = deleted

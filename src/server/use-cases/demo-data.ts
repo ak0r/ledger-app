@@ -8,7 +8,7 @@ import { buildDemoDataset, validateDataset } from "../demo/dataset";
 // (docs/onboarding.md §4). One db.transaction() around every insert — a
 // thrown error rolls back everything, so a failed demo copy never leaves
 // the Profile half-initialized (rule #10 territory: no partially-created
-// accounting data); it's simply retryable from /p/[profileId]/setup, which
+// accounting data); it's simply retryable from /setup, which
 // stays reachable exactly because no Account exists yet.
 export function createDemoProfileData(db: Db, profileId: string): void {
   const dataset = buildDemoDataset(profileId);

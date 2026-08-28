@@ -12,11 +12,18 @@ import {
   CREATABLE_CLASSIFICATIONS,
   INSTRUMENT_TYPES,
   INSTRUMENT_BACKED_TYPES,
+  RECURRING_FREQUENCIES,
 } from "@/domain";
-import type { Classification, InstrumentType, InstrumentBackedType } from "@/domain";
+import type {
+  Classification,
+  InstrumentType,
+  InstrumentBackedType,
+  ImportStatus,
+  RecurringFrequency,
+} from "@/domain";
 
-export { CLASSIFICATIONS, CREATABLE_CLASSIFICATIONS, INSTRUMENT_TYPES, INSTRUMENT_BACKED_TYPES };
-export type { Classification, InstrumentType, InstrumentBackedType };
+export { CLASSIFICATIONS, CREATABLE_CLASSIFICATIONS, INSTRUMENT_TYPES, INSTRUMENT_BACKED_TYPES, RECURRING_FREQUENCIES };
+export type { Classification, InstrumentType, InstrumentBackedType, ImportStatus, RecurringFrequency };
 
 const id = () =>
   text("id")
@@ -124,6 +131,59 @@ export const accounts = sqliteTable("accounts", {
   ...timestamps,
 });
 
+// Account Resolution delta (2026-08-26) §11 — a child entity, not a JSON/
+// list property on `accounts` (explicitly ruled out by §11): "an account
+// can have multiple known representations" (a full account number plus
+// masked variants observed across statements), each independently
+// queryable/indexed for resolution. No `profileId` column — scope derives
+// via the `accountId` join, same as `postings` deriving scope via
+// `transactionId`/`accountId`.
+export const accountIdentifiers = sqliteTable("account_identifiers", {
+  id: id(),
+  accountId: text("account_id")
+    .notNull()
+    .references(() => accounts.id),
+  identifier: text("identifier").notNull(),
+  ...timestamps,
+});
+
+// Import Workflow delta (2026-08-25, 0aa87019) §2/§3 — one row per uploaded
+// source file. "Import" (the ephemeral, possibly multi-file review
+// workspace) is never itself persisted; "ImportFile" is the persisted
+// provenance record — renamed from the original Phase 1 delta's `imports`
+// table to match that vocabulary once it existed. Phase 1 only ever
+// persists the terminal `successful` state (see use-cases/imports.ts):
+// Parse/Normalise/Account Resolution/the editable workspace all run
+// in-memory for the request, so there is no persisted "uploaded"/"parsing"/
+// "ready" row — a future staging phase can add those without a breaking
+// migration, since `status` stays plain text. `accountId`/`newAccountCount`/
+// `inflowMinor`/`outflowMinor` added by the Account Resolution delta
+// (2026-08-26) §2/§20 for the redesigned import-history table — computed
+// once at commit time from data already in hand, not recomputed per view.
+export const importFiles = sqliteTable("import_files", {
+  id: id(),
+  profileId: text("profile_id")
+    .notNull()
+    .references(() => profiles.id),
+  filename: text("filename").notNull(),
+  // Adapter id, e.g. "hdfc.account.xls" (delta §5) — which parser produced
+  // this.
+  source: text("source").notNull(),
+  status: text("status").notNull().$type<ImportStatus>(),
+  // The resolved source Account this file's transactions were posted
+  // against — nullable only because it predates this column (Delta 1/2
+  // rows); every row committed from here on always sets it.
+  accountId: text("account_id").references(() => accounts.id),
+  newAccountCount: integer("new_account_count").notNull().default(0),
+  inflowMinor: integer("inflow_minor").notNull().default(0),
+  outflowMinor: integer("outflow_minor").notNull().default(0),
+  dateRangeStart: text("date_range_start"),
+  dateRangeEnd: text("date_range_end"),
+  transactionCount: integer("transaction_count").notNull(),
+  metadata: text("metadata"),
+  ...timestamps,
+});
+
 export const transactions = sqliteTable("transactions", {
   id: id(),
   profileId: text("profile_id")
@@ -132,6 +192,40 @@ export const transactions = sqliteTable("transactions", {
   date: text("date").notNull(),
   description: text("description").notNull(),
   tags: text("tags", { mode: "json" }).$type<string[]>(),
+  // Permanent source provenance (Import delta §4/§13) — null for
+  // transactions created outside the import workflow. Never cleared after
+  // commit, even though the ImportFile itself only ever reaches
+  // `committed`.
+  importFileId: text("import_file_id").references(() => importFiles.id),
+  ...timestamps,
+});
+
+// Recurring Transactions Phase 1 (docs/pending/2026-08-27-Recurring-Transactions.md)
+// — a definition, not a Transaction (§2): no `postings` row exists until a
+// future automation phase explicitly creates one. Structured schedule
+// columns rather than a stored RRULE string (domain/recurring.ts's own
+// header comment has the full rationale) — `byMonthDay`/`byWeekday` cover
+// MONTHLY/YEARLY and WEEKLY respectively, `endDate` null means "Never".
+export const recurringRules = sqliteTable("recurring_rules", {
+  id: id(),
+  profileId: text("profile_id")
+    .notNull()
+    .references(() => profiles.id),
+  name: text("name").notNull(),
+  fromAccountId: text("from_account_id")
+    .notNull()
+    .references(() => accounts.id),
+  toAccountId: text("to_account_id")
+    .notNull()
+    .references(() => accounts.id),
+  amountMinor: integer("amount_minor").notNull(),
+  description: text("description").notNull(),
+  frequency: text("frequency").notNull().$type<RecurringFrequency>(),
+  interval: integer("interval").notNull().default(1),
+  byMonthDay: integer("by_month_day"),
+  byWeekday: integer("by_weekday"),
+  startDate: text("start_date").notNull(),
+  endDate: text("end_date"),
   ...timestamps,
 });
 

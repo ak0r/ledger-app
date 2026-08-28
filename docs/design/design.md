@@ -239,6 +239,17 @@ Priorities:
 
 Avoid oversized hero-metric typography.
 
+Font families (folded in from the former `design-delta-1.md`):
+
+- UI / Primary: Geist Sans (default for all UI text).
+- Financial / Tabular: Geist Mono, only where tabular alignment improves
+  scanning — do not use monospace for all financial text.
+- Long-form editorial content: Literata (optional, not used for core
+  application UI).
+- Avoid mixing multiple fonts within the same component without clear
+  purpose. Typography hierarchy should come from size, weight, spacing, and
+  semantic emphasis rather than excessive font variation.
+
 ## 3.5 Icons
 
 Use a consistent outline icon family.
@@ -314,15 +325,14 @@ Ledger
 version
 
 Right:
-Family selector
-Member selector
+Profile switcher (Primary User only)
 Appearance / utility controls
 ```
 
 Example:
 
 ```text
-Ledger v0.1.0                         Amit's Family   AK   ☼
+Ledger v0.1.0                                          AK   ☼
 ```
 
 ## Mobile
@@ -334,7 +344,7 @@ Ledger                         AK  ˅
 v0.1.0
 ```
 
-Family/member switching remains accessible without making the header heavy.
+Profile switching (Primary User only) remains accessible without making the header heavy.
 
 ---
 
@@ -570,46 +580,36 @@ Avoid long multi-section forms unless genuinely required.
 
 # 13. Screen Contracts
 
-## 13.1 Add / Edit Family
+## 13.1 Add / Edit Profile
 
-### Fields
-
-```text
-Family name
-```
-
-### Behaviour
-
-Create an isolated Family dataset.
-
-Edit changes Family display name.
-
-### Rules
-
-- Name required.
-- Name human-readable.
-- Family switching preserves active Family context.
-- Family is a dataset boundary, not an accounting entity.
-
-## 13.2 Add / Edit Member
+Renamed from the former "Add/Edit Family" + "Add/Edit Member" pair
+(2026-08-20 User Simplification delta removed Family entirely — see
+`docs/completed/2026-08-20-User-Simplification.md` — a Profile is now the
+whole financial identity, matching `src/components/profile-form.tsx`).
 
 ### Fields
 
 ```text
 Name
-Date of birth       optional
 ```
+
+### Behaviour
+
+Create ("create" mode, Primary User only, from `/profiles`): adds a new,
+initially-unlinked Profile.
+
+Edit ("edit" mode): renames an existing Profile — the only editable field.
 
 ### Rules
 
 - Name required.
-- Member belongs to exactly one Family.
-- Member owns Accounts and Transactions.
-- MVP supports multiple local Members.
-- No separate Member registration/login.
-- Member switching changes active financial context.
+- Profile owns Accounts, Transactions and Currencies.
+- No separate Profile registration/login — that's the AppUser layer
+  (registration links an AppUser to a Profile, 1:1).
+- A Primary User can switch between Profiles via `/profiles`; a normal
+  AppUser has exactly one Profile and no switcher.
 
-## 13.3 Add / Edit Account
+## 13.2 Add / Edit Account
 
 ### Core fields
 
@@ -637,13 +637,13 @@ Ledger does not maintain an MVP instrument catalogue.
 
 ### Rules
 
-- Account belongs to one Member.
+- Account belongs to one Profile.
 - Account has one currency.
 - Currency is INR in MVP.
 - Account tags are inline.
 - Asset instruments may reference external instrument identity.
 
-## 13.4 Add / Edit Transaction
+## 13.3 Add / Edit Transaction
 
 ### Core fields
 
@@ -670,7 +670,7 @@ Destinations[]
 
 ### Rules
 
-- Transaction belongs to one Member through its Accounts/Postings.
+- Transaction belongs to one Profile through its Accounts/Postings.
 - Minimum two postings.
 - Transaction must balance.
 - Posting/account currencies must agree in MVP.
@@ -755,7 +755,7 @@ Important rules:
 Transaction has >= 2 postings
 Transaction balances
 Posting has valid accounting side
-Accounts belong to same Member
+Accounts belong to same Profile
 Currencies agree in MVP
 ```
 

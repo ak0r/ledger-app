@@ -1,0 +1,20 @@
+CREATE TABLE `recurring_rules` (
+	`id` text PRIMARY KEY NOT NULL,
+	`profile_id` text NOT NULL,
+	`name` text NOT NULL,
+	`from_account_id` text NOT NULL,
+	`to_account_id` text NOT NULL,
+	`amount_minor` integer NOT NULL,
+	`description` text NOT NULL,
+	`frequency` text NOT NULL,
+	`interval` integer DEFAULT 1 NOT NULL,
+	`by_month_day` integer,
+	`by_weekday` integer,
+	`start_date` text NOT NULL,
+	`end_date` text,
+	`created_at` text NOT NULL,
+	`updated_at` text NOT NULL,
+	FOREIGN KEY (`profile_id`) REFERENCES `profiles`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`from_account_id`) REFERENCES `accounts`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`to_account_id`) REFERENCES `accounts`(`id`) ON UPDATE no action ON DELETE no action
+);

@@ -2,17 +2,19 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, MergeIcon, MoreHorizontal, Pencil, Split, Trash2 } from "lucide-react";
+import { Eye, MergeIcon, MoreHorizontal, Pencil, Repeat, Split, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ViewTransactionDrawer } from "@/components/view-transaction-drawer";
 import { MergeTransactionsDialog } from "@/components/merge-transactions-dialog";
+import { RecurringFormSheet } from "@/components/recurring-form-sheet";
 import { useTransactionWorkspace } from "@/components/transaction-workspace";
 import type { MergeCandidateAccount } from "@/lib/merge-eligibility";
 import type { TransactionTableRow } from "@/components/transaction-table";
 import { deleteTransactionAction } from "@/server/actions/transactions";
+import { toMinorUnits } from "@/domain";
 import { cn } from "@/lib/utils";
 
 // Actions cell for both the desktop table and mobile card (product-polish
@@ -40,22 +42,25 @@ import { cn } from "@/lib/utils";
 // fine — only Quick Edit is blocked for that case.
 export function TransactionRowMenu({
   row,
-  profileId,
   onQuickEdit,
   mergeCandidates = [],
+  accounts = [],
   accountsById,
   currencySymbol,
   currencyScale,
   quickEditForceVisible = false,
 }: {
   row: TransactionTableRow;
-  profileId: string;
   // Desktop table only (transactionworkspacedelta.md §6/§16 — no Quick Edit
   // icon on mobile): when provided, the standalone Pencil button sets
   // quickEditRowId in the workspace instead of opening Full Edit. Omitted
   // on mobile, where Pencil still opens Full Edit directly.
   onQuickEdit?: (rowId: string) => void;
   mergeCandidates?: TransactionTableRow[];
+  // "Make recurring" (spec §3) needs name/classification for RecurringForm's
+  // account picker — accountsById (below) only carries currencyId, enough
+  // for Merge but not this.
+  accounts?: { id: string; name: string; classification: string }[];
   accountsById?: ReadonlyMap<string, MergeCandidateAccount>;
   currencySymbol?: string;
   currencyScale?: number;
@@ -74,6 +79,7 @@ export function TransactionRowMenu({
   const [viewOpen, setViewOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [makeRecurringOpen, setMakeRecurringOpen] = useState(false);
   const isSplit = row.toLines.length > 1;
   const isMultiFrom = row.fromLines.length > 1;
   const quickEditDisabledReason = isMultiFrom
@@ -165,6 +171,19 @@ export function TransactionRowMenu({
               <span className="ml-2">Split Transaction</span>
             </MenuItem>
           )}
+          {/* Phase 1 (spec §11/§13): only a normal non-split transaction is
+              the safe supported case — same guard as Split Transaction
+              above. */}
+          {!isSplit &&
+            !isMultiFrom &&
+            accounts.length > 0 &&
+            currencySymbol !== undefined &&
+            currencyScale !== undefined && (
+              <MenuItem onClick={() => setMakeRecurringOpen(true)}>
+                <Repeat className="size-3.5" aria-hidden="true" />
+                <span className="ml-2">Make recurring</span>
+              </MenuItem>
+            )}
           {mergeCandidates.length > 0 && (
             <MenuItem onClick={() => setMergeOpen(true)}>
               <MergeIcon className="size-3.5" aria-hidden="true" />
@@ -191,14 +210,29 @@ export function TransactionRowMenu({
         confirmLabel="Delete"
         destructive
         onConfirm={async () => {
-          const result = await deleteTransactionAction(profileId, {
-            profileId,
-            transactionId: row.id,
-          });
+          const result = await deleteTransactionAction({ transactionId: row.id });
           if (result.success) router.refresh();
           return result;
         }}
       />
+      {accounts.length > 0 && currencySymbol !== undefined && currencyScale !== undefined && row.edit.toLines[0] && (
+        <RecurringFormSheet
+          mode="create"
+          open={makeRecurringOpen}
+          onOpenChange={setMakeRecurringOpen}
+          accounts={accounts}
+          currencySymbol={currencySymbol}
+          currencyScale={currencyScale}
+          prefill={{
+            name: row.description,
+            fromAccountId: row.edit.fromAccountId,
+            toAccountId: row.edit.toLines[0].accountId,
+            amountMinor: toMinorUnits(row.edit.amount, currencyScale),
+            description: row.description,
+            startDate: row.date,
+          }}
+        />
+      )}
       {accountsById && currencySymbol !== undefined && currencyScale !== undefined && (
         <MergeTransactionsDialog
           // Same staleness guard as BulkActionBar's own usage — see that
@@ -207,7 +241,6 @@ export function TransactionRowMenu({
           key={[row.id, ...mergeCandidates.map((candidate) => candidate.id)].join(",")}
           open={mergeOpen}
           onOpenChange={setMergeOpen}
-          profileId={profileId}
           rows={[row, ...mergeCandidates]}
           accountsById={accountsById}
           currencySymbol={currencySymbol}

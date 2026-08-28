@@ -22,14 +22,12 @@ import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes-guard";
 // every way to reach the form.
 export function AccountFormSheet({
   trigger,
-  profileId,
   currencies,
   mode,
   existingTags,
   account,
 }: {
   trigger: React.ReactElement;
-  profileId: string;
   currencies: { id: string; code: string; symbol: string; minorUnitScale: number }[];
   mode: "create" | "edit";
   existingTags?: string[];
@@ -66,7 +64,6 @@ export function AccountFormSheet({
           </SheetHeader>
           {open && (
             <AccountForm
-              profileId={profileId}
               currencies={currencies}
               mode={mode}
               existingTags={existingTags}

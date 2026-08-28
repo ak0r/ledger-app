@@ -3,7 +3,8 @@
 ## Core entities
 
 MVP:
-- Member
+
+- Profile
 - Currency
 - Account
 - Transaction
@@ -11,37 +12,37 @@ MVP:
 
 No separate accounting Category entity. Expense categories are Expense Accounts. Income categories are Income Accounts.
 
-## Member
+## Profile
 
-Represents a local person/profile.
+Renamed from "Member" (2026-08-20 User Simplification delta — see
+`docs/completed/2026-08-20-User-Simplification.md` for the full identity
+model). Represents one financial identity within the Hosted Instance.
 
-MVP supports multiple Members in one local installation.
-
-- no registration
-- no authentication
-- Member is a financial identity, not an authenticated user
-- application maintains an active Member
-- Accounts, Transactions and Currencies are Member-scoped
+- a Profile is a financial identity, independent of authentication
+- each AppUser (real login/session) is linked to exactly one Profile
+- a Profile can also exist unlinked to any AppUser (created by the Primary
+  User for someone who registers later)
+- Accounts, Transactions and Currencies are Profile-scoped
 
 Example:
 
 ```text
-Local Ledger
-├── Amit
-│   ├── Accounts
-│   ├── Transactions
-│   └── Currency
-└── Partner
+Hosted Instance
+├── AppUser (amit@example.com) ──1:1── Profile "Amit"
+│                                        ├── Accounts
+│                                        ├── Transactions
+│                                        └── Currency
+└── Profile "Partner" (unlinked)
     ├── Accounts
     ├── Transactions
     └── Currency
 ```
 
-No shared Accounts in MVP.
+No shared Accounts.
 
 ## Currency
 
-Currency is a Member-scoped reference.
+Currency is a Profile-scoped reference.
 
 MVP supports INR only.
 
@@ -62,12 +63,13 @@ Future multi-currency / FX may introduce additional currencies and FX mechanics.
 
 ## Account
 
-Every Account belongs to exactly one Member and exactly one Currency.
+Every Account belongs to exactly one Profile and exactly one Currency.
 
 Fields/concepts:
+
 - id
 - name
-- member
+- profile
 - classification
 - instrument type
 - optional instrument ID
@@ -97,7 +99,7 @@ BALANCING
 
 Instrument type describes the nature of the Account/instrument. It does not determine accounting treatment.
 
-MVP:
+MVP (frozen — AGENTS.md rule #11, 2026-08-19 account-model delta):
 
 ```text
 BANK
@@ -107,16 +109,20 @@ LOAN
 EXPENSE
 INCOME
 BALANCING
+MUTUAL_FUND
+STOCK
+COMMODITY
 ```
 
-Future:
+`MUTUAL_FUND`/`STOCK`/`COMMODITY` are instrument-backed (see the separate
+Instrument entity below) but full investment mechanics — quantity, pricing,
+valuation — are still not built (Step 1 of 10 shipped; see
+`docs/pending/2026-08-21-Instrument-Model-Pricing-Foundations.md`).
+
+Future (not yet a frozen type):
 
 ```text
-STOCK
-METAL
-MUTUAL_FUND
 ETF
-...
 ```
 
 Examples:
@@ -151,13 +157,19 @@ classification = INCOME
 instrument_type = INCOME
 ```
 
-Investment examples such as Stock and Metal are documented as future module concepts. They are not MVP account types.
+`STOCK`/`MUTUAL_FUND`/`COMMODITY` Accounts exist as a frozen instrument type
+(above), but full investment mechanics remain future work — see the note
+above.
 
 ### Instrument identifiers
 
-`instrument_id` and `instrument_label` are nullable.
-
-Future examples:
+`instrument_id` and `instrument_label` on `accounts` are nullable free-text
+fields (ADR-016) — unrelated to the separate `Instrument` catalogue entity
+(shared reference data, not Profile-scoped — one row per real-world
+instrument like "HDFC Bank the stock") or to `AccountIdentifier` (a bank
+statement's account-number identifier, used by Import account resolution —
+see `docs/04-modules.md`'s Imports section). Examples of the free-text
+fields:
 
 ```text
 Stock:
@@ -166,22 +178,22 @@ instrument_label = BSE Limited
 ```
 
 ```text
-Metal:
+Commodity:
 instrument_id = gold-999
 instrument_label = Gold 999
 ```
 
-MVP does not implement investment valuation, quantity, cost basis, tax rules or price feeds.
+Investment valuation, quantity, cost basis, and tax rules are still not implemented.
 
 ## Transaction
 
 Transaction is the user/domain representation of a financial event.
 
-A Transaction belongs to exactly one Member.
+A Transaction belongs to exactly one Profile.
 
 A Transaction contains at least two Postings.
 
-Every Posting must reference an Account owned by the Transaction Member.
+Every Posting must reference an Account owned by the Transaction's Profile.
 
 MVP supports INR only. Cross-currency Transactions are not supported.
 
@@ -189,13 +201,18 @@ Fields/concepts:
 
 ```text
 id
-member_id
+profile_id
 date
 description
 tags
+import_file_id
 created_at
 updated_at
 ```
+
+`import_file_id` is nullable — set only for Transactions created by the
+Import workflow (see `docs/04-modules.md`), permanent provenance back to
+the originating `ImportFile` even after commit.
 
 No merchant entity in MVP. Description/payee remains text.
 
@@ -251,12 +268,12 @@ No partially posted or unbalanced Transaction.
 ## Ownership invariant
 
 ```text
-transaction.member_id
+transaction.profile_id
     ==
-posting.account.member_id
+posting.account.profile_id
 ```
 
-All Accounts referenced by a Transaction must belong to the same Member as the Transaction.
+All Accounts referenced by a Transaction must belong to the same Profile as the Transaction.
 
 ## Examples
 
@@ -354,6 +371,7 @@ Example Transaction:
 ```
 
 Tag semantics:
+
 - opaque strings, no key/value structure, not typed, not hierarchical
 - multiple tags per record
 - tags belong to the record, not to a global Tag entity
@@ -377,6 +395,7 @@ No shared tag table.
 MVP uses hard delete.
 
 Deleting a Transaction removes:
+
 - Transaction
 - its Postings
 - dependent transaction-level data such as tags
@@ -416,9 +435,9 @@ Deferred.
 
 ### Imports
 
-Raw source → parser → candidate → review → posted Transaction.
-
-Deferred.
+No longer deferred — see `docs/04-modules.md` for the shipped
+adapter/account-resolution/atomic-commit architecture. Rules and Duplicate
+Detection remain future plugin modules.
 
 ### Investments
 

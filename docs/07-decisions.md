@@ -1,45 +1,62 @@
 # Architecture Decision Log
 
 ## ADR-001 — Double-entry
+
 Accepted. Double-entry is the accounting spine.
 
 ## ADR-002 — Transaction contains postings
+
 Accepted. Use `Transaction -> Postings[]`.
 
 ## ADR-003 — Expense categories are Expense Accounts
+
 Accepted. No separate accounting Category entity.
 
 ## ADR-004 — Rename Equity
+
 Accepted. Use `BALANCING` instead of user-facing `EQUITY`.
 
 ## ADR-005 — Currency belongs to accounts
-Accepted. Currencies are Member/Profile-specific. Default INR.
+
+Accepted. Currencies are Profile-specific. Default INR.
 
 ## ADR-006 — Members do not require registration
-Accepted. Member is a financial identity/profile, not necessarily an authenticated user.
+
+Accepted. Superseded in vocabulary and in the registration premise by
+ADR-029: a Profile is a financial identity independent of authentication,
+but real AppUser authentication now exists — a Profile is typically linked
+to exactly one authenticated AppUser (it can still exist unlinked).
 
 ## ADR-007 — Spaces are a module
+
 Accepted. Not MVP core.
 
 ## ADR-008 — Expense sharing is a module
+
 Accepted. Separate from accounting split.
 
 ## ADR-009 — Imports are a module
+
 Accepted. Raw external data becomes candidate/postable transactions.
 
 ## ADR-010 — History is deferred
+
 Accepted. Editing/deletion allowed in MVP; history UI later.
 
 ## ADR-011 — No merchant entity in MVP
+
 Accepted. Use description/payee text.
 
 ## ADR-012 — SQLite
+
 Accepted. Local-first SQLite. No Supabase/Postgres dependency for MVP.
 
 ## ADR-013 — AI is not core
+
 Accepted. Future module consuming ledger/query data.
 
 ## ADR-014 — Tags are views
+
 Accepted. Tags filter transactions/accounts without changing accounting classification. Account Tags and Transaction Tags are separate.
 
 ## ADR-015 — Account classification vs instrument type
@@ -67,6 +84,7 @@ Accepted.
 `instrument_id` and `instrument_label` are optional Account fields.
 
 Examples:
+
 - stock: ISIN
 - metal: commodity/security identifier
 - bank: institution/instrument identifier
@@ -89,9 +107,10 @@ Do not force one naming convention across all layers.
 
 ## ADR-018 — Explicit transaction ownership
 
-Accepted.
+Accepted. Superseded in vocabulary by ADR-029 (`member_id` → `profile_id`),
+invariant unchanged.
 
-Transactions contain `member_id`. Every Posting Account must belong to that same Member.
+Transactions contain `profile_id`. Every Posting Account must belong to that same Profile.
 
 ## ADR-019 — Hard delete
 
@@ -133,13 +152,11 @@ STOCK, METAL, MUTUAL_FUND, ETF and similar types belong to future investment mod
 
 ## ADR-025 — Multiple local Members
 
-Accepted.
-
-One local installation may contain multiple Members.
-
-No authentication or registration in MVP.
-
-Active Member is application state.
+Accepted. Superseded by ADR-029: a Hosted Instance may contain multiple
+Profiles, but "no authentication" is no longer true — real AppUser
+login/session exists. Further superseded in mechanism by ADR-033: the
+active Profile is application-level context (a session-derived cookie),
+not a URL segment.
 
 ## ADR-026 — Inline tags
 
@@ -159,6 +176,7 @@ replaced it with a simple tag list, no typed/hierarchical semantics).
 No global Tag entity and no tag join tables.
 
 Reason:
+
 - tags are views/metadata
 - changing one record's tag must not rename/change other records
 - simple MVP storage
@@ -169,6 +187,7 @@ Reason:
 Accepted.
 
 MVP provides:
+
 - Simple mode for common two-leg transactions
 - Split mode for multi-posting transactions
 
@@ -189,3 +208,175 @@ exactly one > 0
 Every Transaction must have at least two Postings and balance.
 
 These are domain rules, not UI-only validation.
+
+## ADR-029 — AppUser/Profile identity replaces Family/Member
+
+Accepted (2026-08-20 User Simplification delta — see
+`docs/completed/2026-08-20-User-Simplification.md` for the full spec).
+
+Supersedes ADR-006's "Members do not require registration" framing and the
+Member-ownership wording in ADR-018/ADR-025: the underlying invariant is
+unchanged (every Transaction/Account resolves to exactly one owning
+identity), only the vocabulary and the addition of real authentication.
+
+- Family (a per-installation, later a per-database-boundary container) is
+  removed entirely — not replaced by an equivalent ownership container.
+- AppUser is the real login identity (email/password, session-based).
+- Each AppUser is linked to exactly one Profile (the financial identity,
+  renamed from Member); a Profile can also exist unlinked.
+- The Primary User (first AppUser ever registered in the Hosted Instance)
+  can access every Profile via `/profiles`; a normal AppUser has exactly one.
+- One Hosted Instance = one physical database file — no more per-Family
+  database isolation (that model, specified in the now-deleted
+  `docs/v9-delta/` files, was implemented once and then reversed by this
+  delta).
+
+## ADR-030 — Import adapters are keyed `institution.product.format`
+
+Accepted (2026-08-25 Import Framework delta).
+
+Registered in explicit priority order; a generic-CSV adapter is always
+registered last as the universal fallback when no institution-specific
+adapter's `detect()` matches. An adapter owns only recognizing/parsing its
+source format and extracting a source account identifier — never
+Ledger-specific categorization or accounting intelligence.
+
+## ADR-031 — Account identity for import resolution is a child `AccountIdentifier` entity
+
+Accepted (2026-08-26 Account Resolution delta).
+
+Not a JSON/list column on `accounts` — a separate `account_identifiers`
+table (`id`, `account_id`, `identifier`), independently queryable/indexed,
+so one Account can have multiple known representations (a full account
+number plus masked variants observed across statements).
+
+Resolution order: exact identifier match; then a masked-suffix "possible
+match" heuristic (one identifier's unmasked significant suffix is a
+trailing suffix of the other's full string); then, if more than one Account
+plausibly matches, ambiguous — always requires user resolution, never
+auto-merged. A newly created Account's identifier gets its masked variants
+(last-4, `XX`+last-4, `XXX`+last-4) derived and stored up front; confirming
+an existing-account match for a not-yet-known identifier adds it
+(user-approved learning, not automatic).
+
+## ADR-032 — Import commit is atomic; account creation is deferred to approval
+
+Accepted (2026-08-25/26 Import Framework deltas).
+
+Preview and every edit to it (row edits, bulk edits, changing a proposed
+account's resolution) are transient client-side state only — nothing is
+persisted. Approval runs one atomic transaction that creates every approved
+new Account (source or counter-account alike — a proposed "Unknown"
+catch-all is exactly as much a proposed Account as a proposed bank account,
+not a special temporary import bucket), its `AccountIdentifier` rows, the
+`ImportFile` provenance row(s), and the resulting Transactions/Postings.
+Nothing commits to the Ledger before explicit user approval (delta §9).
+
+## ADR-033 — Profile is application-level context, not a URL segment
+
+Accepted (2026-08-26 routing-flattening delta). Supersedes ADR-025's
+mechanism note (vocabulary/authentication substance unchanged).
+
+Routes are flat and top-level (`/accounts`, `/transactions`, `/imports`,
+`/settings/...`), nested only for genuine resource relationships
+(`/accounts/[accountId]`, `/settings/profiles/[profileId]/edit`) — no route
+carries a `profileId` merely to address "the current Profile." The active
+Profile is resolved server-side by `requireActiveProfile()`
+(`src/server/authz.ts`) from an `activeProfileId` cookie, falling back to
+the AppUser's own Profile; `cache()`-wrapped so a layout and its page
+calling it in the same request cost one DB lookup. Every Server Action that
+previously took `profileId` as a caller-supplied parameter now derives it
+the same way instead, except the few that inherently address a *different*
+Profile by id (switching to it, or a Primary User acting on an arbitrary
+Profile from the `/settings/profiles` admin roster) — those keep an
+explicit `profileId` parameter, since there is no "current" Profile to fall
+back to for those cases.
+
+Accepted trade-off: switching the active Profile is a single global cookie,
+not per-tab URL state — changing it in one browser tab changes it
+everywhere in that browser.
+
+`settings/backup` and `settings/currencies` are not built as part of this
+delta (no existing implementation or spec for either) — only
+`settings/profiles` (a real, pre-existing feature) moved under `/settings`.
+
+## ADR-034 — PDF import adapters and password-protected files
+
+Accepted (2026-08-26, first PDF adapter — Federal Bank Account PDF).
+
+`ImportAdapter.parse()` is `async` for every adapter (`Promise<ParsedFile>`)
+so a PDF adapter can use `pdfjs-dist` (Node "legacy" build) without a
+separate sync/async adapter split; the three existing XLS/CSV adapters just
+wrap their already-synchronous body in an `async` function, no logic
+change. `detect()` stays synchronous and shallow for PDFs specifically
+(filename + `%PDF-` magic bytes only) — encrypted content can't be peeked
+at pre-password, so institution confirmation happens inside `parse()`
+instead, same "detect loosely, parse validates precisely" split the other
+adapters already use.
+
+PDF table extraction has no cell/row grid the way a spreadsheet does —
+`getTextContent()` returns positioned text runs. Column boundaries are
+derived from the header row's own item x-positions (nearest-anchor
+classification, tolerant of the header label's visual position not exactly
+matching the data's left edge), and physical text lines are grouped into
+logical transaction rows by which ones start with a date in the first
+column; a wrapped multi-line Particulars/description is a continuation
+line with content only in that column, merged into the open row.
+
+Password handling: `PasswordRequiredError` (`reason: "required" |
+"incorrect"`) surfaces through `ActionResult`'s new optional `code` field
+(`PASSWORD_REQUIRED` / `PASSWORD_INCORRECT`) — additive, every other
+action's plain `{ success: false, error }` result stays valid. The
+`ImportWorkspace` UI prompts for a password only on that signal, resends
+the same preview call with it attached, and never stores it: it lives in
+one `useState` inside a dialog component that's only mounted while a
+password is actually pending, unmounted (and the value discarded) the
+moment the retry succeeds or is cancelled. The password is never written
+to the `ImportFile` row, a log, or anywhere else — approval/commit never
+re-reads the original file bytes, so it never needs to flow past the one
+preview parse call that used it.
+
+## ADR-035 — Recurring Rule schedule is structured columns, not a stored RRULE string
+
+Accepted (2026-08-28, Recurring Transactions Phase 1 —
+`docs/completed/2026-08-27-Recurring-Transactions.md`).
+
+A Recurring Rule is a definition (Name, Transaction Template, Schedule),
+not a Transaction — creating or editing one never touches the Ledger
+(rule: no automatic transaction generation in Phase 1). The delta's own
+FinBodhi-derived example schedule used an RFC5545 RRULE string (`FREQ=
+MONTHLY;INTERVAL=1;BYMONTHDAY=7`); this was deliberately rejected in
+favor of plain structured columns (`frequency`, `interval`, `by_month_day`,
+`by_weekday`, `start_date`, `end_date`) — an opaque RRULE blob would need a
+parser/serializer dependency just to read a schedule back for the Rules
+table or the edit form, for a scope (four frequencies, one interval, one
+day field) that plain columns already model directly and transparently.
+`nextOccurrence`/`occurrencesInRange` (`src/domain/recurring.ts`) still
+follow RRULE-shaped semantics — `by_month_day`/`by_weekday` are the
+recurrence anchor, independent of `start_date`'s own day-of-month/weekday,
+same as RFC5545's BYMONTHDAY/BYDAY overriding DTSTART — it just isn't
+RFC5545 syntax. No new dependency was added; next-occurrence is a forward
+scan over native `Date` UTC math, capped at 10,000 iterations as a
+pathological-input guard. `by_month_day` clamps to the target month's
+actual length (day 31 in February → the 28th/29th) rather than RFC5545's
+"skip the month entirely" — simpler and friendlier for Phase 1's UI, not a
+literal RFC5545 implementation.
+
+"Next due" is derived on read (`listRecurringRulesWithNextDue`), never
+persisted or cached — Phase 1 has no automation to keep a cached value
+fresh against, so a cache would add invalidation complexity for no benefit
+yet.
+
+The Calendar tab (spec §7) is a pure view over the same rules — occurrences
+for the visible month are computed via `occurrencesInRange` on every
+render, never a separate source of truth. Its month-grid math (day/weekday
+numbering) is shared with `ui/date-picker.tsx`'s existing custom calendar
+rather than reimplemented.
+
+"Make recurring" (spec §3) prefills the same `RecurringForm` used by
+"Recurring → Add New" (spec §14: one form, not two) from an existing
+transaction's From/To Account, Amount, and Description — offered only for
+a normal non-split, single-From transaction (spec §11/§13; same guard as
+the row menu's existing Split Transaction entry). The two objects stay
+independent after creation: editing the rule never modifies the source
+transaction, and vice versa.

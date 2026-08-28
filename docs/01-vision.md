@@ -15,6 +15,7 @@ Accounts
 ```
 
 Principles:
+
 - Money belongs to people through accounts.
 - Transactions describe financial events.
 - Postings represent accounting effects.

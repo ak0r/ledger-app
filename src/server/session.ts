@@ -2,6 +2,7 @@
 // cookie (URL/DB re-derives it on every request regardless), this cookie
 // IS the actual authentication credential, so it's backed by a real
 // DB-validated session row, not just read-and-trust.
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { db } from "./db/client";
 import { findSessionById } from "./repositories/sessions";
@@ -14,7 +15,11 @@ export const SESSION_COOKIE = "sessionId";
 // benefit here.
 export const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 
-export async function getCurrentAppUser(): Promise<AppUserRow | undefined> {
+// cache()-wrapped: with no `profileId` URL segment left to short-circuit
+// re-derivation for free, requireActiveProfile()/requirePrimaryUser() may
+// both run in the same request (layout + page) — this dedupes the session
+// lookup to one DB hit per request instead of one per caller.
+export const getCurrentAppUser = cache(async (): Promise<AppUserRow | undefined> => {
   const cookieStore = await cookies();
   const sessionId = cookieStore.get(SESSION_COOKIE)?.value;
   if (!sessionId) return undefined;
@@ -23,4 +28,4 @@ export async function getCurrentAppUser(): Promise<AppUserRow | undefined> {
   if (!session || new Date(session.expiresAt).getTime() <= Date.now()) return undefined;
 
   return findAppUserById(db, session.appUserId);
-}
+});

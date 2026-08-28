@@ -15,6 +15,34 @@
       "when": 1787409748155,
       "tag": "0001_panoramic_madrox",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787673053644,
+      "tag": "0002_yellow_human_cannonball",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787795200000,
+      "tag": "0003_rename_import_files",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787795200001,
+      "tag": "0004_slim_ares",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787905501642,
+      "tag": "0005_eminent_nicolaos",
+      "breakpoints": true
     }
   ]
 }

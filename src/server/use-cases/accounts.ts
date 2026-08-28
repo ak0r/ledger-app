@@ -1,5 +1,5 @@
 import { accountBalance } from "@/domain";
-import type { Db } from "../db/client";
+import type { Db, DbOrTx } from "../db/client";
 import { findCurrencyById } from "../repositories/currencies";
 import {
   findAccountById,
@@ -31,7 +31,11 @@ export interface CreateAccountInput {
 // by posting a Transaction against a Balancing account after creation, the
 // same way any other entry is recorded (product-polish pass, superseding
 // the earlier V8-CHANGELOG #9/#10 special-cased opening-balance insert).
-export function createAccount(db: Db, input: CreateAccountInput): AccountRow {
+// `db: DbOrTx` (not just `Db`) so this is callable inside an existing
+// `db.transaction()` block — needed by use-cases/imports.ts's commitImport,
+// which creates any missing catch-all accounts atomically alongside the
+// Import row and its Transactions.
+export function createAccount(db: DbOrTx, input: CreateAccountInput): AccountRow {
   const currency = findCurrencyById(db, input.currencyId, input.profileId);
   if (!currency) {
     throw new NotFoundError(

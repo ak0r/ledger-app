@@ -18,6 +18,7 @@
 Initial deployment: local machine.
 
 Later:
+
 - Docker Compose
 - Tailscale
 - Traefik if required
@@ -43,6 +44,7 @@ SQLite
 ## Domain boundary
 
 Core accounting code must not depend on:
+
 - React/UI
 - import parsers
 - email/SMS APIs
@@ -69,6 +71,7 @@ External documents later should live outside transaction rows.
 ## Testing
 
 Critical tests:
+
 - balanced transaction accepted
 - unbalanced rejected
 - expense
@@ -112,9 +115,9 @@ No persisted `DRAFT` status is required for MVP.
 
 ## Transaction ownership invariant
 
-`transactions.member_id` is explicit.
+`transactions.profile_id` is explicit.
 
-Every Posting Account must belong to the same Member.
+Every Posting Account must belong to the same Profile.
 
 The domain/application layer must validate this before persistence.
 
@@ -135,7 +138,7 @@ snake_case
 Examples:
 
 ```text
-member_id
+profile_id
 transaction_id
 instrument_type
 created_at
@@ -150,7 +153,7 @@ camelCase
 Examples:
 
 ```text
-memberId
+profileId
 transactionId
 instrumentType
 createdAt
@@ -170,15 +173,31 @@ UPPER_SNAKE_CASE
 
 Keep database naming and application naming separate. ORM mappings can translate between them.
 
-## Member context
+## Profile context
 
-MVP supports multiple local Members without authentication.
+Renamed from the original "Member" concept (2026-08-20 User Simplification
+delta) — real authentication now exists (AppUser login/session). Profile is
+**application-level context**, not a URL segment (2026-08-26 routing
+flattening delta): routes are flat and top-level (`/accounts`,
+`/transactions`, `/imports`, `/recurring`, `/settings/...`), and the active Profile is
+resolved server-side by `requireActiveProfile()` (`src/server/authz.ts`)
+from an `activeProfileId` cookie, falling back to the AppUser's own Profile.
+It is `cache()`-wrapped so a layout and its page calling it in the same
+request cost one DB lookup, not two.
 
-Application maintains an `activeMemberId`.
+A Primary User can switch their active Profile via `activateProfileAction`
+(any Profile in the Hosted Instance, reachable from the `/settings/profiles`
+roster); a Normal AppUser has exactly one and the cookie is irrelevant for
+them. Switching is a single global cookie, not per-tab: changing the active
+Profile in one browser tab changes it everywhere in that browser, by design.
 
-All Member-scoped operations require an active Member context.
+`requireProfileAccess(profileId)` still exists for the handful of actions
+that address a specific *other* Profile by id rather than "the" active one
+— switching to it (`activateProfileAction`), or a Primary User editing/
+cleaning up an arbitrary Profile from `/settings/profiles/[id]/edit`.
 
-The domain layer must validate ownership independently of UI state.
+All Profile-scoped operations require one of these checks. The domain layer
+must still validate ownership independently of it (rule #17).
 
 ## Tag storage
 
@@ -214,6 +233,6 @@ Enforce in domain/application code and test them:
 postings >= 2
 exactly one of debit/credit > 0 per posting
 sum(debit) == sum(credit)
-posting.account.member_id == transaction.member_id
+posting.account.profile_id == transaction.profile_id
 MVP account currency == INR
 ```

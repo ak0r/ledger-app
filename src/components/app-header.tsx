@@ -38,15 +38,15 @@ function initials(name: string): string {
 // a switcher at all (2026-08-20 User Simplification delta) — a Normal
 // AppUser has exactly one Profile, so `profiles` is omitted for them and
 // this collapses to identity + log out.
-function ProfileItems({ profileId, profiles }: { profileId: string; profiles: Entry[] }) {
+function ProfileItems({ activeProfileId, profiles }: { activeProfileId: string; profiles: Entry[] }) {
   return (
     <MenuGroup>
       <MenuGroupLabel>Profile</MenuGroupLabel>
       {profiles.map((profile) => (
         <form key={profile.id} action={activateProfileAction.bind(null, profile.id)}>
           <MenuItem
-            aria-current={profile.id === profileId ? "true" : undefined}
-            className={profile.id === profileId ? "bg-accent text-accent-foreground" : undefined}
+            aria-current={profile.id === activeProfileId ? "true" : undefined}
+            className={profile.id === activeProfileId ? "bg-accent text-accent-foreground" : undefined}
             nativeButton
             render={<button type="submit" className="w-full text-left" />}
           >
@@ -54,7 +54,7 @@ function ProfileItems({ profileId, profiles }: { profileId: string; profiles: En
           </MenuItem>
         </form>
       ))}
-      <MenuItem render={<Link href="/profiles" className="text-muted-foreground" />}>
+      <MenuItem render={<Link href="/settings/profiles" className="text-muted-foreground" />}>
         Manage profiles
       </MenuItem>
       <MenuSeparator />
@@ -68,21 +68,19 @@ function ProfileItems({ profileId, profiles }: { profileId: string; profiles: En
 }
 
 export function AppHeader({
-  profileId,
+  activeProfileId,
   profileName,
   profiles,
 }: {
-  profileId: string;
+  activeProfileId: string;
   profileName: string;
   // Present (and possibly length-1) only for the Primary User; omitted
   // entirely for a Normal AppUser, who has nothing to switch between.
   profiles?: Entry[];
 }) {
-  const base = `/p/${profileId}`;
-
   return (
     <header className="flex items-center justify-between border-b border-border px-3 py-2.5 sm:px-4 sm:py-3">
-      <Link href={base} className="flex flex-col leading-tight">
+      <Link href="/" className="flex flex-col leading-tight">
         <span className="font-heading text-sm font-semibold sm:text-base">Ledger</span>
         <span className="text-[10px] text-muted-foreground sm:text-xs">v0.1.0</span>
       </Link>
@@ -101,7 +99,7 @@ export function AppHeader({
           </MenuTrigger>
           <MenuContent>
             {profiles ? (
-              <ProfileItems profileId={profileId} profiles={profiles} />
+              <ProfileItems activeProfileId={activeProfileId} profiles={profiles} />
             ) : (
               <MenuGroup>
                 <form action={logoutAction}>
@@ -130,7 +128,7 @@ export function AppHeader({
           </MenuTrigger>
           <MenuContent>
             {profiles ? (
-              <ProfileItems profileId={profileId} profiles={profiles} />
+              <ProfileItems activeProfileId={activeProfileId} profiles={profiles} />
             ) : (
               <MenuGroup>
                 <form action={logoutAction}>

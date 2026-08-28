@@ -6,19 +6,23 @@ Mobile-first web application.
 
 UI should hide accounting complexity while preserving accounting correctness.
 
-## Member context
+## Profile context
 
-MVP supports multiple local Members.
+Renamed from "Member" (2026-08-20 User Simplification delta). Every route
+is scoped to one Profile (`/p/[profileId]/...`).
 
-Show active Member context clearly.
+Show the active Profile clearly (name, and a switcher for the Primary User,
+who can access every Profile in the Hosted Instance via `/profiles`).
 
-Switching Member changes the working scope of:
+Switching Profile changes the working scope of:
+
 - Accounts
 - Transactions
 - Currencies
 - Reports
 
-No authentication.
+AppUser login/session is real authentication now — a normal AppUser has
+exactly one Profile and never sees a switcher.
 
 ## Transaction entry
 
@@ -81,6 +85,7 @@ The underlying domain must support generic N-posting transactions.
 ### Validation
 
 Show:
+
 - missing account
 - missing amount
 - invalid posting
@@ -93,6 +98,7 @@ Do not expose raw debit/credit errors unless useful for an advanced/debug view.
 Spreadsheet-like.
 
 Useful fields:
+
 - Date
 - Description
 - Account(s)
@@ -100,8 +106,9 @@ Useful fields:
 - Type
 - Tags
 
-Filters:
-- Member
+Filters (within one Profile's scope — Profile itself isn't a filter, it's
+already the whole view):
+
 - date
 - Account
 - classification
@@ -117,6 +124,7 @@ Display as chips:
 ```
 
 Support:
+
 - add
 - edit
 - remove
@@ -128,6 +136,7 @@ Editing a tag changes only the current record.
 ## Accounts
 
 Show:
+
 - name
 - classification
 - instrument type
@@ -139,6 +148,7 @@ Show:
 ## Dashboard
 
 MVP:
+
 - account balances
 - net position where meaningful
 - income
@@ -148,6 +158,7 @@ MVP:
 ## Reports
 
 Basic:
+
 - income
 - expenses
 - account balances
@@ -159,6 +170,7 @@ Basic:
 Reuse transaction-entry component in frozen/read-only mode.
 
 States:
+
 - green: added
 - yellow: modified
 - red: deleted

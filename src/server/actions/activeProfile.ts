@@ -23,5 +23,5 @@ async function setActiveProfileCookie(profileId: string): Promise<void> {
 export async function activateProfileAction(profileId: string): Promise<void> {
   await requireProfileAccess(profileId);
   await setActiveProfileCookie(profileId);
-  redirect(`/p/${profileId}`);
+  redirect("/");
 }

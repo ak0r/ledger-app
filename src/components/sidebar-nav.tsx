@@ -11,13 +11,13 @@ import { NAV_ITEMS } from "@/components/nav-items";
 // sections, visible text labels, collapses to icon-only while preserving
 // nav order. Hidden below md — BottomNav takes over there (§4.2), same
 // NAV_ITEMS data, different presentation (§20).
-export function SidebarNav({ profileId }: { profileId: string }) {
+export function SidebarNav({ isPrimary }: { isPrimary: boolean }) {
   const pathname = usePathname();
-  const base = `/p/${profileId}`;
   const [collapsed, setCollapsed] = useState(false);
 
-  const home = NAV_ITEMS.filter((item) => item.key === "home");
-  const track = NAV_ITEMS.filter((item) => item.key !== "home");
+  const items = NAV_ITEMS.filter((item) => !item.primaryOnly || isPrimary);
+  const home = items.filter((item) => item.key === "home");
+  const track = items.filter((item) => item.key !== "home");
 
   const renderGroup = (label: string | null, items: typeof NAV_ITEMS) => (
     <div className="flex flex-col gap-0.5">
@@ -27,11 +27,11 @@ export function SidebarNav({ profileId }: { profileId: string }) {
         </span>
       )}
       {items.map((item) => {
-        const active = item.isActive(pathname, base);
+        const active = item.key === "home" ? pathname === item.href : pathname.startsWith(item.href);
         return (
           <Link
             key={item.key}
-            href={item.href(base)}
+            href={item.href}
             aria-current={active ? "page" : undefined}
             title={collapsed ? item.label : undefined}
             className={cn(

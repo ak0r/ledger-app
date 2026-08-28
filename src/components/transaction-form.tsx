@@ -65,7 +65,6 @@ export function buildTransactionFormSchema(currencyScale: number) {
 type TransactionFormValues = z.infer<ReturnType<typeof buildTransactionFormSchema>>;
 
 interface TransactionFormProps {
-  profileId: string;
   accounts: { id: string; name: string; classification: string }[];
   currencySymbol: string;
   currencyScale: number;
@@ -101,7 +100,6 @@ interface TransactionFormProps {
 }
 
 export function TransactionForm({
-  profileId,
   accounts,
   currencySymbol,
   currencyScale,
@@ -220,7 +218,6 @@ export function TransactionForm({
     ];
 
     const payload = {
-      profileId,
       date: values.date,
       description: values.description,
       tags: tags.length > 0 ? tags : undefined,
@@ -229,8 +226,8 @@ export function TransactionForm({
 
     const result =
       mode === "create"
-        ? await createTransactionAction(profileId, payload)
-        : await editTransactionAction(profileId, { ...payload, transactionId: transaction!.id });
+        ? await createTransactionAction(payload)
+        : await editTransactionAction({ ...payload, transactionId: transaction!.id });
 
     if (!result.success) {
       setServerError(result.error);
@@ -239,7 +236,7 @@ export function TransactionForm({
     if (onSuccess) {
       onSuccess();
     } else {
-      router.push(cancelHref ?? `/p/${profileId}/transactions`);
+      router.push(cancelHref ?? "/transactions");
     }
     router.refresh();
   };
@@ -438,7 +435,7 @@ export function TransactionForm({
           </Button>
         ) : (
           <Link
-            href={cancelHref ?? `/p/${profileId}/transactions`}
+            href={cancelHref ?? "/transactions"}
             className={buttonVariants({ variant: "outline" })}
           >
             Cancel

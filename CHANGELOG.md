@@ -13,6 +13,22 @@ release is tagged. Until then, all work accumulates under `[Unreleased]`.
 
 ## [Unreleased]
 
+### Added — Recurring Transactions (Phase 1)
+
+- **Recurring Rules**: define a recurring transaction pattern (From/To
+  Account, Amount, Description) on a schedule (Daily/Weekly/Monthly/Yearly,
+  with a Start date and optional End date) from a new **Recurring** page.
+  Two entry points share one form: **+ Add New** for a blank rule, or
+  **Make recurring** on any non-split transaction's row menu, which
+  prefills the form from that transaction — editing the rule afterward
+  never touches the original transaction, and vice versa.
+- The Recurring page has two views over the same rules: **Rules** (a
+  compact list — Name/Next Due/Schedule/Amount, with Edit/Delete) and
+  **Calendar** (a month grid showing each rule's occurrences).
+- Phase 1 is definition-and-display only — creating a recurring rule never
+  creates a Transaction. Automatic transaction generation, transaction
+  matching, and reminders are explicitly deferred to a future phase.
+
 ### Changed — Product polish pass
 
 - **Tags are now simple opaque strings, not key/value pairs** — a real

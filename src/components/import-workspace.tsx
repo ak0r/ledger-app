@@ -1,0 +1,1771 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { TYPES_BY_CLASSIFICATION, type Classification, type ImportDirection, type InstrumentType } from "@/domain";
+import type { AccountChoice, AccountResolution } from "@/server/use-cases/imports";
+import { previewImportAction, commitImportAction } from "@/server/actions/imports";
+import { cn, formatDate, formatMoney, humanizeEnum } from "@/lib/utils";
+import { paginate } from "@/lib/pagination";
+import {
+  EMPTY_FILTER_STATE,
+  filterTransactions,
+  type TransactionFilterState,
+} from "@/lib/transaction-filter";
+import type { TransactionWithPostings } from "@/server/use-cases/transactions";
+import { AccountIcon } from "@/components/account-icon";
+import { TransactionFilterDrawer } from "@/components/transaction-filter-drawer";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, MoreVertical, X } from "lucide-react";
+
+const PAGE_SIZES = [20, 50] as const;
+const NEW_ACCOUNT = "__new__";
+
+interface AccountOption {
+  id: string;
+  name: string;
+  classification: Classification;
+  icon?: string | null;
+}
+
+type Counterpart =
+  | { type: "existing"; accountId: string }
+  | { type: "new"; key: string; name: string; classification: "EXPENSE" | "INCOME" };
+
+interface WorkspaceCandidate {
+  clientRowId: string;
+  fileKey: string;
+  date: string;
+  description: string;
+  amountMinor: number;
+  direction: ImportDirection;
+  // Account Resolution delta §3 — null defers to the file's own resolved/
+  // created account (finalized at commit); non-null is either that file's
+  // resolution already confirmed, or a per-row override. The source/known
+  // account is no longer a visible or editable per-row concept in the
+  // review table (it lives in the Identified Accounts cards above) — this
+  // field still carries the actual value forward to commit.
+  knownAccountId: string | null;
+  counterpart: Counterpart;
+}
+
+interface WorkspaceFile {
+  fileKey: string;
+  filename: string;
+  status: "success" | "failed";
+  // Only set when status is "failed" — the adapter/parse error message,
+  // shown on the file card instead of the count/range/flow lines. A failed
+  // file never gets any candidates, so it can't contribute to totals or the
+  // transaction preview no matter what.
+  errorMessage?: string;
+  source: string | null;
+  // The adapter-detected identifier + the server's original resolution
+  // guess — kept for display context (e.g. "Possible match" vs "Resolved")
+  // even after the user overrides `accountChoice` via the ⫶ menu. Null
+  // alongside `resolution`/`accountChoice` for a failed file.
+  identifier: string | null;
+  resolution: AccountResolution | null;
+  accountChoice: AccountChoice | null;
+}
+
+function isSuccessFile(
+  file: WorkspaceFile,
+): file is WorkspaceFile & { source: string; resolution: AccountResolution; accountChoice: AccountChoice } {
+  return file.status === "success";
+}
+
+// "Paid"/"Received" (spec: never show raw Dr/Cr) — debit is money the
+// statement's own account paid out, credit is money it received.
+function directionLabel(direction: string): string {
+  return direction === "debit" ? "Paid" : direction === "credit" ? "Received" : "";
+}
+
+function directionColor(direction: string): string {
+  return direction === "debit" ? "text-destructive" : "text-success";
+}
+
+function defaultAccountChoice(resolution: AccountResolution, accounts: AccountOption[]): AccountChoice {
+  if (resolution.status === "resolved" && resolution.resolvedAccountId) {
+    return { type: "existing", accountId: resolution.resolvedAccountId };
+  }
+  if (resolution.status === "possibleMatch" || resolution.status === "ambiguous") {
+    // A provisional guess, not a silent decision — the Identified Accounts
+    // section always stays visible with the full candidate list, and
+    // nothing commits until Approve (delta §13/§15).
+    return { type: "existing", accountId: resolution.candidates[0].accountId };
+  }
+  if (resolution.status === "new" && resolution.proposedName) {
+    return { type: "new", name: resolution.proposedName, classification: resolution.proposedClassification, instrumentType: resolution.proposedInstrumentType };
+  }
+  // "unidentified" (e.g. generic CSV) — no statement-derived identity at all.
+  return accounts[0]
+    ? { type: "existing", accountId: accounts[0].id }
+    : { type: "new", name: "", classification: "ASSET", instrumentType: "BANK" };
+}
+
+function accountChoiceKnownAccountId(choice: AccountChoice): string | null {
+  return choice.type === "existing" ? choice.accountId : null;
+}
+
+// Unified editing shape for the "Change Account" dialog, used for both
+// source-account cards (Asset/Liability + instrument type) and counterpart-
+// account cards (Expense/Income, no instrument type — rule #21). Converts
+// to/from the server's two distinct shapes (`AccountChoice`/`Counterpart`)
+// only at the edges (see the `*To*`/`*From*` helpers below).
+interface ResolutionChoice {
+  type: "existing" | "new";
+  accountId?: string;
+  name?: string;
+  classification?: Classification;
+  instrumentType?: InstrumentType;
+}
+
+function classificationLabel(classification: string): string {
+  switch (classification) {
+    case "LIABILITY":
+      return "Liability";
+    case "EXPENSE":
+      return "Expense";
+    case "INCOME":
+      return "Income";
+    default:
+      return "Asset";
+  }
+}
+
+// "01491750000077" -> "••••0077" — same masked convention the proposed
+// new-account name already uses (delta §16).
+function maskIdentifier(identifier: string): string {
+  return identifier.length <= 4 ? identifier : `••••${identifier.slice(-4)}`;
+}
+
+function accountChoiceToResolutionChoice(choice: AccountChoice): ResolutionChoice {
+  return choice.type === "existing"
+    ? { type: "existing", accountId: choice.accountId }
+    : { type: "new", name: choice.name, classification: choice.classification, instrumentType: choice.instrumentType };
+}
+
+function resolutionChoiceToAccountChoice(choice: ResolutionChoice): AccountChoice {
+  if (choice.type === "existing") return { type: "existing", accountId: choice.accountId ?? "" };
+  const classification = choice.classification === "LIABILITY" ? "LIABILITY" : "ASSET";
+  return { type: "new", name: choice.name ?? "", classification, instrumentType: choice.instrumentType ?? "BANK" };
+}
+
+function counterpartToResolutionChoice(counterpart: Counterpart): ResolutionChoice {
+  return counterpart.type === "existing"
+    ? { type: "existing", accountId: counterpart.accountId }
+    : { type: "new", name: counterpart.name, classification: counterpart.classification, instrumentType: counterpart.classification };
+}
+
+function resolutionChoiceToCounterpart(choice: ResolutionChoice): Counterpart {
+  if (choice.type === "existing") return { type: "existing", accountId: choice.accountId ?? "" };
+  const classification = choice.classification === "INCOME" ? "INCOME" : "EXPENSE";
+  const name = choice.name ?? "";
+  return { type: "new", key: `${classification}:${name.trim().toLowerCase()}`, name, classification };
+}
+
+function counterpartGroupKey(counterpart: Counterpart): string {
+  return counterpart.type === "existing" ? `existing:${counterpart.accountId}` : `new:${counterpart.key}`;
+}
+
+// A source account is identified by its resolved real account (existing) or
+// by the statement identifier it carries (new — falls back to the file's
+// own key when the adapter found no identifier at all) — two files
+// resolving to the same account collapse into one Identified Accounts card
+// with combined totals, rather than one card per file.
+function sourceGroupKey(file: WorkspaceFile & { accountChoice: AccountChoice }): string {
+  return file.accountChoice.type === "existing"
+    ? `existing:${file.accountChoice.accountId}`
+    : `new:${file.identifier ?? file.fileKey}`;
+}
+
+// Resolves a `Counterpart`/source `AccountChoice` into the shape `AccountLabel`
+// needs, for both real accounts (looked up by id) and not-yet-created
+// proposals (classification comes from the choice itself, no icon yet).
+function counterpartAccountView(
+  counterpart: Counterpart,
+  accountsById: Map<string, AccountOption>,
+): { name: string; classification: Classification; icon?: string | null; isNew: boolean } {
+  if (counterpart.type === "existing") {
+    const account = accountsById.get(counterpart.accountId);
+    return { name: account?.name ?? counterpart.accountId, classification: account?.classification ?? "EXPENSE", icon: account?.icon, isNew: false };
+  }
+  return { name: counterpart.name || "(unnamed)", classification: counterpart.classification, isNew: true };
+}
+
+function sourceAccountView(
+  choice: AccountChoice,
+  accountsById: Map<string, AccountOption>,
+): { name: string; classification: Classification; icon?: string | null; isNew: boolean } {
+  if (choice.type === "existing") {
+    const account = accountsById.get(choice.accountId);
+    return { name: account?.name ?? choice.accountId, classification: account?.classification ?? "ASSET", icon: account?.icon, isNew: false };
+  }
+  return { name: choice.name || "(unnamed)", classification: choice.classification, isNew: true };
+}
+
+async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+// Synthesizes a minimal `TransactionWithPostings`-shaped object per
+// candidate so the *real* `filterTransactions` (transaction-filter.ts) can
+// run unmodified against import rows — same filter engine the Transactions
+// page uses, not a second implementation. Posting sides mirror real
+// double-entry semantics: a "debit" row means the statement's own account
+// was credited (money left it) and the counterpart was debited (money
+// arrived there) — reversed for "credit". `accountsById` isn't read by the
+// evaluator today (see that file's own comment), so unresolved/"new"
+// accounts on either side just need a stable placeholder id, not a real one.
+function toFilterableTransaction(
+  candidate: WorkspaceCandidate,
+  sourceAccountId: string,
+): TransactionWithPostings {
+  const counterpartId =
+    candidate.counterpart.type === "existing" ? candidate.counterpart.accountId : candidate.counterpart.key;
+  const [creditAccountId, debitAccountId] =
+    candidate.direction === "debit" ? [sourceAccountId, counterpartId] : [counterpartId, sourceAccountId];
+  return {
+    id: candidate.clientRowId,
+    profileId: "",
+    date: candidate.date,
+    description: candidate.description,
+    tags: [],
+    importFileId: null,
+    createdAt: "",
+    updatedAt: "",
+    postings: [
+      { id: `${candidate.clientRowId}-credit`, transactionId: candidate.clientRowId, accountId: creditAccountId, debit: 0, credit: candidate.amountMinor, createdAt: "", updatedAt: "" },
+      { id: `${candidate.clientRowId}-debit`, transactionId: candidate.clientRowId, accountId: debitAccountId, debit: candidate.amountMinor, credit: 0, createdAt: "", updatedAt: "" },
+    ],
+  };
+}
+
+// Small helper used everywhere an account name needs the app's existing
+// classification color (account-icon.tsx's `AccountIcon`) applied to the
+// name text, not just the icon glyph — no other screen colors account name
+// text yet, so this stays local to Import rather than becoming a new
+// cross-app component.
+const CLASSIFICATION_TEXT_COLOR: Record<Classification, string> = {
+  ASSET: "text-category-asset",
+  LIABILITY: "text-category-liability",
+  INCOME: "text-category-income",
+  EXPENSE: "text-category-expense",
+  BALANCING: "text-category-balancing",
+};
+
+function AccountLabel({
+  name,
+  classification,
+  icon,
+  isNew,
+}: {
+  name: string;
+  classification: Classification;
+  icon?: string | null;
+  isNew?: boolean;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <AccountIcon classification={classification} icon={icon} />
+      <span className={CLASSIFICATION_TEXT_COLOR[classification]}>{name}</span>
+      {isNew && (
+        <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+          New
+        </Badge>
+      )}
+    </span>
+  );
+}
+
+// No persisted staging (Import Workflow delta §15) — everything below is
+// local component state for the length of one review session. Reloading
+// the page loses it, same as Phase 1's original single-file flow.
+export function ImportWorkspace({
+  accounts,
+  currencySymbol,
+  currencyScale,
+}: {
+  accounts: AccountOption[];
+  currencySymbol: string;
+  currencyScale: number;
+}) {
+  const router = useRouter();
+  const [isPending, setIsPending] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  // Password-protected import files (Federal Bank Account PDF adapter) —
+  // holds the file bytes only long enough to retry the preview call once
+  // the user supplies a password. The password itself never lands in this
+  // state; it's a local `useState` inside PasswordPromptDialog, which only
+  // mounts while this is non-null and unmounts (discarding it) the moment
+  // it's cleared below — never stored beyond that one retry.
+  const [pendingPasswordFile, setPendingPasswordFile] = useState<{
+    filename: string;
+    fileBase64: string;
+    fileKey: string;
+    incorrect: boolean;
+  } | null>(null);
+
+  const [files, setFiles] = useState<WorkspaceFile[]>([]);
+  const [candidates, setCandidates] = useState<WorkspaceCandidate[]>([]);
+  const [resolutionDialog, setResolutionDialog] = useState<
+    { kind: "source"; groupKey: string } | { kind: "counterpart"; groupKey: string } | null
+  >(null);
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [editingRowId, setEditingRowId] = useState<string | null>(null);
+  const [bulkDialog, setBulkDialog] = useState<"counterpart" | "direction" | null>(null);
+
+  const [filterState, setFilterState] = useState<TransactionFilterState>(EMPTY_FILTER_STATE);
+  const [sort, setSort] = useState<{ field: "date" | "amount"; direction: "asc" | "desc" } | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZES[0]);
+
+  const accountsById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
+  const filesByKey = useMemo(() => new Map(files.map((file) => [file.fileKey, file])), [files]);
+
+  // One card per distinct *resolved* source account, not one per uploaded
+  // file — two files resolving to the same account (e.g. two months of one
+  // HDFC statement) combine into a single card with summed totals.
+  const sourceGroups = useMemo(() => {
+    const byKey = new Map<
+      string,
+      { groupKey: string; fileKeys: string[]; filenames: string[]; accountChoice: AccountChoice; resolution: AccountResolution; identifier: string | null }
+    >();
+    for (const file of files) {
+      if (!isSuccessFile(file)) continue;
+      const groupKey = sourceGroupKey(file);
+      const entry = byKey.get(groupKey);
+      if (entry) {
+        entry.fileKeys.push(file.fileKey);
+        entry.filenames.push(file.filename);
+        if (!entry.identifier && file.identifier) entry.identifier = file.identifier;
+      } else {
+        byKey.set(groupKey, {
+          groupKey,
+          fileKeys: [file.fileKey],
+          filenames: [file.filename],
+          accountChoice: file.accountChoice,
+          resolution: file.resolution,
+          identifier: file.identifier,
+        });
+      }
+    }
+    return [...byKey.values()].map((group) => {
+      const groupCandidates = candidates.filter((c) => group.fileKeys.includes(c.fileKey));
+      const inflowMinor = groupCandidates.filter((c) => c.direction === "credit").reduce((s, c) => s + c.amountMinor, 0);
+      const outflowMinor = groupCandidates.filter((c) => c.direction === "debit").reduce((s, c) => s + c.amountMinor, 0);
+      return { ...group, transactionCount: groupCandidates.length, inflowMinor, outflowMinor };
+    });
+  }, [files, candidates]);
+
+  // One entry per distinct counterpart account actually referenced by any
+  // candidate right now — recomputed live from `candidates`, never from the
+  // original preview response, so editing a row's counterpart immediately
+  // re-groups it (Import Workflow delta §7/§8). Counterpart resolutions are
+  // account-resolution results just like the per-file source account —
+  // "Unknown (Expense)"/"Unknown (Income)" are proposed accounts, not a
+  // special temporary import bucket (Account Resolution delta).
+  const counterpartGroups = useMemo(() => {
+    const byGroupKey = new Map<
+      string,
+      { groupKey: string; counterpart: Counterpart; count: number; inflowMinor: number; outflowMinor: number }
+    >();
+    for (const candidate of candidates) {
+      const groupKey = counterpartGroupKey(candidate.counterpart);
+      // Mirror of the source account's own perspective: money that left the
+      // source (a "debit" row) is money the counterpart received.
+      const isInflow = candidate.direction === "debit";
+      const entry = byGroupKey.get(groupKey);
+      if (entry) {
+        entry.count += 1;
+        if (isInflow) entry.inflowMinor += candidate.amountMinor;
+        else entry.outflowMinor += candidate.amountMinor;
+      } else {
+        byGroupKey.set(groupKey, {
+          groupKey,
+          counterpart: candidate.counterpart,
+          count: 1,
+          inflowMinor: isInflow ? candidate.amountMinor : 0,
+          outflowMinor: isInflow ? 0 : candidate.amountMinor,
+        });
+      }
+    }
+    return [...byGroupKey.values()];
+  }, [candidates]);
+
+  const pendingNewAccounts = useMemo(
+    () =>
+      counterpartGroups
+        .filter((group): group is typeof group & { counterpart: Extract<Counterpart, { type: "new" }> } => group.counterpart.type === "new")
+        .map((group) => ({ key: group.counterpart.key, name: group.counterpart.name, classification: group.counterpart.classification })),
+    [counterpartGroups],
+  );
+
+  // Per-file stats for the file cards — date range/count/inflow/outflow are
+  // never computed server-side beyond the file-level transactionCount at
+  // preview time (see imports.ts's own comment), so this derives them from
+  // that file's own candidates, same math as the account-level aggregates.
+  const fileStatsByKey = useMemo(() => {
+    const map = new Map<string, { count: number; inflowMinor: number; outflowMinor: number; dateStart: string | null; dateEnd: string | null }>();
+    for (const file of files) {
+      const fileCandidates = candidates.filter((c) => c.fileKey === file.fileKey);
+      const inflowMinor = fileCandidates.filter((c) => c.direction === "credit").reduce((s, c) => s + c.amountMinor, 0);
+      const outflowMinor = fileCandidates.filter((c) => c.direction === "debit").reduce((s, c) => s + c.amountMinor, 0);
+      const dates = fileCandidates.map((c) => c.date).sort();
+      map.set(file.fileKey, { count: fileCandidates.length, inflowMinor, outflowMinor, dateStart: dates[0] ?? null, dateEnd: dates[dates.length - 1] ?? null });
+    }
+    return map;
+  }, [files, candidates]);
+
+  const summary = useMemo(() => {
+    const inflowMinor = candidates.filter((c) => c.direction === "credit").reduce((s, c) => s + c.amountMinor, 0);
+    const outflowMinor = candidates.filter((c) => c.direction === "debit").reduce((s, c) => s + c.amountMinor, 0);
+    return { fileCount: files.length, transactionCount: candidates.length, inflowMinor, outflowMinor };
+  }, [files, candidates]);
+
+  // Effective source account id per candidate — real id when resolved,
+  // else a stable per-file placeholder (only used for filtering identity,
+  // never sent to the server).
+  function effectiveSourceAccountId(candidate: WorkspaceCandidate): string {
+    if (candidate.knownAccountId) return candidate.knownAccountId;
+    const file = filesByKey.get(candidate.fileKey);
+    return `new-source:${file?.identifier ?? candidate.fileKey}`;
+  }
+
+  const visibleCandidates = useMemo(() => {
+    const filterable = candidates.map((c) => ({ candidate: c, tx: toFilterableTransaction(c, effectiveSourceAccountId(c)) }));
+    const matched = new Set(filterTransactions(filterable.map((f) => f.tx), new Map(), filterState).map((tx) => tx.id));
+    let result = candidates.filter((c) => matched.has(c.clientRowId));
+    if (sort) {
+      result = [...result].sort((a, b) => {
+        const va = sort.field === "date" ? a.date : a.amountMinor;
+        const vb = sort.field === "date" ? b.date : b.amountMinor;
+        const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+        return sort.direction === "asc" ? cmp : -cmp;
+      });
+    }
+    return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidates, filterState, sort, filesByKey]);
+
+  const paged = paginate(visibleCandidates, page, pageSize);
+
+  function toggleSort(field: "date" | "amount") {
+    setSort((prev) => {
+      if (!prev || prev.field !== field) return { field, direction: "asc" };
+      if (prev.direction === "asc") return { field, direction: "desc" };
+      return null;
+    });
+  }
+
+  function updateCandidate(clientRowId: string, patch: Partial<WorkspaceCandidate>) {
+    setCandidates((prev) => prev.map((c) => (c.clientRowId === clientRowId ? { ...c, ...patch } : c)));
+  }
+
+  function removeCandidates(ids: Set<string>) {
+    setCandidates((prev) => prev.filter((c) => !ids.has(c.clientRowId)));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) next.delete(id);
+      return next;
+    });
+  }
+
+  function removeFile(fileKey: string) {
+    setFiles((prev) => prev.filter((f) => f.fileKey !== fileKey));
+    removeCandidates(new Set(candidates.filter((c) => c.fileKey === fileKey).map((c) => c.clientRowId)));
+  }
+
+  // Applies a resolved choice to every file in a source group at once — a
+  // group can span more than one file (two statements, one account), and
+  // "Change Account" must move all of them together, not just the file the
+  // menu happened to be opened from.
+  function setSourceGroupChoice(fileKeys: string[], choice: AccountChoice, identifier: string | null) {
+    const fileKeySet = new Set(fileKeys);
+    setFiles((prev) => prev.map((f) => (fileKeySet.has(f.fileKey) ? { ...f, accountChoice: choice, identifier } : f)));
+    const knownAccountId = accountChoiceKnownAccountId(choice);
+    // Reflected immediately in the transaction preview below, not just on
+    // commit — every candidate for these files re-reads its Account cell
+    // from this same state.
+    setCandidates((prev) => prev.map((c) => (fileKeySet.has(c.fileKey) ? { ...c, knownAccountId } : c)));
+  }
+
+  // Retargets every candidate currently in this counterpart group at once —
+  // e.g. changing "Unknown (Expense)" to "Food Expense" moves every
+  // candidate that was pointing at Unknown, immediately visible in the
+  // transaction preview (same "reflect immediately" requirement as the
+  // source-account case above).
+  function setCounterpartGroupChoice(oldGroupKey: string, next: Counterpart) {
+    setCandidates((prev) =>
+      prev.map((c) => (counterpartGroupKey(c.counterpart) === oldGroupKey ? { ...c, counterpart: next } : c)),
+    );
+  }
+
+  async function handleFileUploaded(
+    filename: string,
+    fileBase64: string,
+    fileKey: string = crypto.randomUUID(),
+    password?: string,
+  ) {
+    setServerError(null);
+    setIsPending(true);
+    const result = await previewImportAction({ filename, fileBase64, fileKey, password });
+    setIsPending(false);
+    if (!result.success) {
+      if (result.code === "PASSWORD_REQUIRED" || result.code === "PASSWORD_INCORRECT") {
+        setPendingPasswordFile({ filename, fileBase64, fileKey, incorrect: result.code === "PASSWORD_INCORRECT" });
+        return;
+      }
+      // A parse/adapter failure still gets its own removable card (spec:
+      // "Parsing status: Success/Failed") — it just never contributes
+      // candidates, so it can't affect any total no matter what. The card
+      // itself already shows the error message, so no need for a second
+      // copy in the standalone banner below (that stays reserved for
+      // errors with no card of their own, e.g. a failed commit).
+      setFiles((prev) => [
+        ...prev,
+        { fileKey, filename, status: "failed", errorMessage: result.error, source: null, identifier: null, resolution: null, accountChoice: null },
+      ]);
+      return;
+    }
+    setPendingPasswordFile(null);
+
+    const { accountResolution } = result.data;
+    const accountChoice = defaultAccountChoice(accountResolution, accounts);
+    const knownAccountId = accountChoiceKnownAccountId(accountChoice);
+
+    const newAccountsByKey = new Map(result.data.newAccounts.map((a) => [a.key, a]));
+    const newCandidates: WorkspaceCandidate[] = result.data.candidates.map((candidate) => ({
+      clientRowId: crypto.randomUUID(),
+      fileKey: candidate.fileKey,
+      date: candidate.date,
+      description: candidate.description,
+      amountMinor: candidate.amountMinor,
+      direction: candidate.direction,
+      knownAccountId,
+      counterpart: candidate.counterAccountId
+        ? { type: "existing", accountId: candidate.counterAccountId }
+        : {
+            type: "new",
+            key: candidate.counterAccountKey,
+            name: newAccountsByKey.get(candidate.counterAccountKey)?.name ?? "Unknown",
+            classification: newAccountsByKey.get(candidate.counterAccountKey)?.classification ?? "EXPENSE",
+          },
+    }));
+
+    setFiles((prev) => [
+      ...prev,
+      { fileKey, filename, status: "success", source: result.data.source, identifier: accountResolution.identifier, resolution: accountResolution, accountChoice },
+    ]);
+    setCandidates((prev) => [...prev, ...newCandidates]);
+  }
+
+  async function handleCommit() {
+    if (candidates.length === 0) return;
+    const successFiles = files.filter(isSuccessFile);
+
+    const unnamed = successFiles.find((f) => f.accountChoice.type === "new" && !f.accountChoice.name.trim());
+    if (unnamed) {
+      setServerError(`Name the new account for "${unnamed.filename}" before importing.`);
+      return;
+    }
+
+    setServerError(null);
+    setIsPending(true);
+
+    const result = await commitImportAction({
+      files: successFiles.map((f) => ({
+        fileKey: f.fileKey,
+        filename: f.filename,
+        source: f.source,
+        identifier: f.identifier,
+        accountChoice: f.accountChoice,
+      })),
+      candidates: candidates.map((c) => ({
+        fileKey: c.fileKey,
+        date: c.date,
+        description: c.description,
+        amountMinor: c.amountMinor,
+        direction: c.direction,
+        knownAccountId: c.knownAccountId,
+        counterAccountId: c.counterpart.type === "existing" ? c.counterpart.accountId : null,
+        counterAccountKey: c.counterpart.type === "existing" ? `existing:${c.counterpart.accountId}` : c.counterpart.key,
+      })),
+      approvedNewAccounts: pendingNewAccounts,
+    });
+
+    setIsPending(false);
+    if (!result.success) {
+      setServerError(result.error);
+      return;
+    }
+    router.push("/imports");
+    router.refresh();
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Row 1 — every file currently in this import session, plus the
+          upload entry point as the trailing card in the same row. */}
+      <div className="flex flex-wrap gap-3">
+        {files.map((file) => (
+          <ImportFileCard
+            key={file.fileKey}
+            file={file}
+            stats={fileStatsByKey.get(file.fileKey)}
+            onRemove={() => removeFile(file.fileKey)}
+          />
+        ))}
+        <NewFileImportCard isPending={isPending} onUpload={handleFileUploaded} />
+      </div>
+
+      {pendingPasswordFile && (
+        <PasswordPromptDialog
+          filename={pendingPasswordFile.filename}
+          incorrect={pendingPasswordFile.incorrect}
+          isPending={isPending}
+          onSubmit={(password) =>
+            handleFileUploaded(
+              pendingPasswordFile.filename,
+              pendingPasswordFile.fileBase64,
+              pendingPasswordFile.fileKey,
+              password,
+            )
+          }
+          onCancel={() => setPendingPasswordFile(null)}
+        />
+      )}
+
+      {/* Row 2 — Identified Accounts is a list of account-resolution
+          results, not a "new accounts" summary — a proposed counterpart
+          account like Unknown (Expense) is exactly as much a proposed
+          account as the source account is (Account Resolution delta), so
+          both kinds of resolution get their own card here, each
+          independently changeable via the same "Change Account" dialog.
+          The Summary card (with the Import button) is the trailing card in
+          this same row. */}
+      {(sourceGroups.length > 0 || counterpartGroups.length > 0 || candidates.length > 0) && (
+        <div className="flex flex-wrap gap-3">
+          {sourceGroups.map((group) => {
+            const view = sourceAccountView(group.accountChoice, accountsById);
+            return (
+              <IdentifiedAccountCard
+                key={group.groupKey}
+                view={view}
+                identifier={group.identifier}
+                transactionCount={group.transactionCount}
+                inflowMinor={group.inflowMinor}
+                outflowMinor={group.outflowMinor}
+                currencySymbol={currencySymbol}
+                currencyScale={currencyScale}
+                onChange={() => setResolutionDialog({ kind: "source", groupKey: group.groupKey })}
+              />
+            );
+          })}
+          {counterpartGroups.map((group) => {
+            const view = counterpartAccountView(group.counterpart, accountsById);
+            return (
+              <IdentifiedAccountCard
+                key={group.groupKey}
+                view={view}
+                identifier={null}
+                transactionCount={group.count}
+                inflowMinor={group.inflowMinor}
+                outflowMinor={group.outflowMinor}
+                currencySymbol={currencySymbol}
+                currencyScale={currencyScale}
+                onChange={() => setResolutionDialog({ kind: "counterpart", groupKey: group.groupKey })}
+              />
+            );
+          })}
+          {candidates.length > 0 && (
+            <SummaryCard
+              fileCount={summary.fileCount}
+              transactionCount={summary.transactionCount}
+              inflowMinor={summary.inflowMinor}
+              outflowMinor={summary.outflowMinor}
+              currencySymbol={currencySymbol}
+              currencyScale={currencyScale}
+              isPending={isPending}
+              onImport={handleCommit}
+            />
+          )}
+        </div>
+      )}
+
+      {serverError && <p className="text-sm text-destructive">{serverError}</p>}
+
+      {/* Row 3 — the detailed review area: filters, the transaction table,
+          pagination. */}
+      {candidates.length > 0 && (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <TransactionFilterDrawer
+              accounts={accounts}
+              currency={{ symbol: currencySymbol, minorUnitScale: currencyScale }}
+              initialState={filterState}
+              onApply={(state) => {
+                setFilterState(state);
+                setPage(1);
+              }}
+            />
+          </div>
+
+          {selected.size > 0 && (
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/50 p-2">
+              <span className="text-sm text-muted-foreground">{selected.size} selected</span>
+              <Menu>
+                <MenuTrigger render={<Button type="button" variant="outline" size="sm" />}>Bulk Actions</MenuTrigger>
+                <MenuContent>
+                  <MenuItem onClick={() => setBulkDialog("counterpart")}>Change Account</MenuItem>
+                  <MenuItem onClick={() => setBulkDialog("direction")}>Change Transaction Type</MenuItem>
+                  <MenuItem onClick={() => removeCandidates(selected)}>Remove selected</MenuItem>
+                </MenuContent>
+              </Menu>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
+                Clear
+              </Button>
+            </div>
+          )}
+
+          {/* Desktop: a real table with Description as the one flexible
+              column (no width class — table-layout stays `auto`, so it
+              absorbs whatever width the fixed columns don't use) and every
+              other column pinned to a fixed width so they don't jitter as
+              content changes. Mobile: the existing card-list pattern
+              (transaction-table.tsx's MobileTransactionCard) instead of
+              squeezing this same table horizontally. */}
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8">
+                    <Checkbox
+                      aria-label="Select all on this page"
+                      checked={paged.items.length > 0 && paged.items.every((c) => selected.has(c.clientRowId))}
+                      onCheckedChange={(checked) =>
+                        setSelected((prev) => {
+                          const next = new Set(prev);
+                          for (const c of paged.items) {
+                            if (checked) next.add(c.clientRowId);
+                            else next.delete(c.clientRowId);
+                          }
+                          return next;
+                        })
+                      }
+                    />
+                  </TableHead>
+                  <TableHead className="w-28">
+                    <button type="button" onClick={() => toggleSort("date")} className="hover:text-foreground">
+                      Date
+                    </button>
+                  </TableHead>
+                  <TableHead className="w-24">Transaction Type</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead className="w-48">Account</TableHead>
+                  <TableHead className="w-28 text-right">
+                    <button type="button" onClick={() => toggleSort("amount")} className="hover:text-foreground">
+                      Amount
+                    </button>
+                  </TableHead>
+                  <TableHead className="w-24">Quick Edit</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paged.items.map((candidate) =>
+                  editingRowId === candidate.clientRowId ? (
+                    <EditableCandidateRow
+                      key={candidate.clientRowId}
+                      candidate={candidate}
+                      accounts={accounts}
+                      currencyScale={currencyScale}
+                      onSave={(patch) => {
+                        updateCandidate(candidate.clientRowId, patch);
+                        setEditingRowId(null);
+                      }}
+                      onCancel={() => setEditingRowId(null)}
+                    />
+                  ) : (
+                    <TableRow key={candidate.clientRowId}>
+                      <TableCell>
+                        <Checkbox
+                          aria-label="Select row"
+                          checked={selected.has(candidate.clientRowId)}
+                          onCheckedChange={(checked) =>
+                            setSelected((prev) => {
+                              const next = new Set(prev);
+                              if (checked) next.add(candidate.clientRowId);
+                              else next.delete(candidate.clientRowId);
+                              return next;
+                            })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">{formatDate(candidate.date)}</TableCell>
+                      <TableCell className={directionColor(candidate.direction)}>{directionLabel(candidate.direction)}</TableCell>
+                      <TableCell>{candidate.description}</TableCell>
+                      <TableCell>
+                        {(() => {
+                          const view = counterpartAccountView(candidate.counterpart, accountsById);
+                          return <AccountLabel {...view} />;
+                        })()}
+                      </TableCell>
+                      <TableCell className="text-right whitespace-nowrap font-mono tabular-nums">
+                        {formatMoney(candidate.amountMinor, currencySymbol, currencyScale)}
+                      </TableCell>
+                      <TableCell>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => setEditingRowId(candidate.clientRowId)}>
+                          Edit
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ),
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="flex flex-col gap-2 md:hidden">
+            {paged.items.map((candidate) =>
+              editingRowId === candidate.clientRowId ? (
+                <MobileEditableCandidateCard
+                  key={candidate.clientRowId}
+                  candidate={candidate}
+                  accounts={accounts}
+                  currencyScale={currencyScale}
+                  onSave={(patch) => {
+                    updateCandidate(candidate.clientRowId, patch);
+                    setEditingRowId(null);
+                  }}
+                  onCancel={() => setEditingRowId(null)}
+                />
+              ) : (
+                <MobileCandidateCard
+                  key={candidate.clientRowId}
+                  candidate={candidate}
+                  accountsById={accountsById}
+                  currencySymbol={currencySymbol}
+                  currencyScale={currencyScale}
+                  selected={selected.has(candidate.clientRowId)}
+                  onToggleSelect={() =>
+                    setSelected((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(candidate.clientRowId)) next.delete(candidate.clientRowId);
+                      else next.add(candidate.clientRowId);
+                      return next;
+                    })
+                  }
+                  onEdit={() => setEditingRowId(candidate.clientRowId)}
+                />
+              ),
+            )}
+          </div>
+
+          {/* Same visual language as TransactionPaginationControls
+              (transaction-pagination.tsx) — "Rows per page" + plain-number
+              Select, "Page X of Y" + icon-only First/Prev/Next/Last —
+              onClick instead of href since this workspace has no URL/page
+              round-trip, but the look stays identical. */}
+          <div className="flex flex-wrap items-center justify-between gap-3 p-2 text-sm">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <span>Rows per page</span>
+              <Select
+                value={String(pageSize)}
+                onValueChange={(v) => {
+                  setPageSize(Number(v));
+                  setPage(1);
+                }}
+                items={PAGE_SIZES.map((size) => ({ label: String(size), value: String(size) }))}
+              >
+                <SelectTrigger aria-label="Rows per page" className="h-7 w-16 px-2 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAGE_SIZES.map((size) => (
+                    <SelectItem key={size} value={String(size)}>
+                      {size}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <span className="mr-2 text-muted-foreground">
+                Page {paged.page} of {paged.totalPages}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                aria-label="First page"
+                disabled={paged.page <= 1}
+                onClick={() => setPage(1)}
+              >
+                <ChevronsLeft aria-hidden="true" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                aria-label="Previous page"
+                disabled={paged.page <= 1}
+                onClick={() => setPage((p) => p - 1)}
+              >
+                <ChevronLeft aria-hidden="true" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                aria-label="Next page"
+                disabled={paged.page >= paged.totalPages}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                <ChevronRight aria-hidden="true" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                aria-label="Last page"
+                disabled={paged.page >= paged.totalPages}
+                onClick={() => setPage(paged.totalPages)}
+              >
+                <ChevronsRight aria-hidden="true" />
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+
+      <BulkEditDialog
+        mode={bulkDialog}
+        accounts={accounts}
+        onClose={() => setBulkDialog(null)}
+        onApply={(patch) => {
+          setCandidates((prev) => prev.map((c) => (selected.has(c.clientRowId) ? { ...c, ...patch } : c)));
+          setBulkDialog(null);
+          setSelected(new Set());
+        }}
+      />
+
+      {resolutionDialog?.kind === "source" &&
+        (() => {
+          const group = sourceGroups.find((g) => g.groupKey === resolutionDialog.groupKey);
+          if (!group) return null;
+          const label = group.filenames.length === 1 ? group.filenames[0] : `these ${group.filenames.length} files`;
+          return (
+            <AccountResolutionDialog
+              description={`Which account should ${label}'s transactions post against?`}
+              scope="source"
+              accounts={accounts}
+              initialChoice={accountChoiceToResolutionChoice(group.accountChoice)}
+              identifier={group.identifier}
+              onClose={() => setResolutionDialog(null)}
+              onApply={(choice, identifier) => {
+                setSourceGroupChoice(group.fileKeys, resolutionChoiceToAccountChoice(choice), identifier);
+                setResolutionDialog(null);
+              }}
+            />
+          );
+        })()}
+
+      {resolutionDialog?.kind === "counterpart" &&
+        (() => {
+          const group = counterpartGroups.find((g) => g.groupKey === resolutionDialog.groupKey);
+          if (!group) return null;
+          return (
+            <AccountResolutionDialog
+              description="Which account should these transactions post against?"
+              scope="counterpart"
+              accounts={accounts}
+              initialChoice={counterpartToResolutionChoice(group.counterpart)}
+              identifier={null}
+              onClose={() => setResolutionDialog(null)}
+              onApply={(choice) => {
+                setCounterpartGroupChoice(group.groupKey, resolutionChoiceToCounterpart(choice));
+                setResolutionDialog(null);
+              }}
+            />
+          );
+        })()}
+    </div>
+  );
+}
+
+// One card per identified account (source or counterpart) — colored name +
+// icon (AccountLabel), identifier when available, transaction count, and
+// inflow/outflow in the app's existing semantic colors.
+function IdentifiedAccountCard({
+  view,
+  identifier,
+  transactionCount,
+  inflowMinor,
+  outflowMinor,
+  currencySymbol,
+  currencyScale,
+  onChange,
+}: {
+  view: { name: string; classification: Classification; icon?: string | null; isNew: boolean };
+  identifier: string | null;
+  transactionCount: number;
+  inflowMinor: number;
+  outflowMinor: number;
+  currencySymbol: string;
+  currencyScale: number;
+  onChange: () => void;
+}) {
+  return (
+    <div className="flex w-full flex-col gap-1.5 rounded-lg border border-border p-3 text-sm sm:w-64">
+      <div className="flex items-start justify-between gap-2">
+        <AccountLabel {...view} />
+        <Menu>
+          <MenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" aria-label="Account options" />}>
+            <MoreVertical />
+          </MenuTrigger>
+          <MenuContent>
+            <MenuItem onClick={onChange}>Change Account</MenuItem>
+          </MenuContent>
+        </Menu>
+      </div>
+      {identifier && <p className="text-muted-foreground">Identifier: {maskIdentifier(identifier)}</p>}
+      <p className="text-muted-foreground">
+        {transactionCount} transaction{transactionCount === 1 ? "" : "s"}
+      </p>
+      <div className="flex items-center gap-3">
+        <span className="text-success">+{formatMoney(inflowMinor, currencySymbol, currencyScale)}</span>
+        <span className="text-destructive">−{formatMoney(outflowMinor, currencySymbol, currencyScale)}</span>
+      </div>
+    </div>
+  );
+}
+
+// The session-wide totals + the single Import approval button — the
+// trailing card in the Identified Accounts row.
+function SummaryCard({
+  fileCount,
+  transactionCount,
+  inflowMinor,
+  outflowMinor,
+  currencySymbol,
+  currencyScale,
+  isPending,
+  onImport,
+}: {
+  fileCount: number;
+  transactionCount: number;
+  inflowMinor: number;
+  outflowMinor: number;
+  currencySymbol: string;
+  currencyScale: number;
+  isPending: boolean;
+  onImport: () => void;
+}) {
+  return (
+    <div className="flex w-full flex-col gap-1.5 rounded-lg border border-border bg-muted/30 p-3 text-sm sm:w-64">
+      <p className="font-medium">Summary</p>
+      <p className="text-muted-foreground">
+        {fileCount} file{fileCount === 1 ? "" : "s"} · {transactionCount} transaction{transactionCount === 1 ? "" : "s"}
+      </p>
+      <div className="flex items-center gap-3">
+        <span className="text-success">+{formatMoney(inflowMinor, currencySymbol, currencyScale)}</span>
+        <span className="text-destructive">−{formatMoney(outflowMinor, currencySymbol, currencyScale)}</span>
+      </div>
+      <Button type="button" onClick={onImport} disabled={isPending} className="mt-1">
+        {isPending ? "Importing…" : `Import ${transactionCount} transaction${transactionCount === 1 ? "" : "s"}`}
+      </Button>
+    </div>
+  );
+}
+
+// One card per file currently in the import session — Success shows the
+// same count/range/flow shape as an account card; Failed shows the error
+// instead and never contributed any candidates in the first place.
+function ImportFileCard({
+  file,
+  stats,
+  onRemove,
+}: {
+  file: WorkspaceFile;
+  stats?: { count: number; inflowMinor: number; outflowMinor: number; dateStart: string | null; dateEnd: string | null };
+  onRemove: () => void;
+}) {
+  return (
+    <div className="flex w-full flex-col gap-1.5 rounded-lg border border-border p-3 text-sm sm:w-64">
+      <div className="flex items-start justify-between gap-2">
+        <p className="truncate font-medium" title={file.filename}>
+          {file.filename}
+        </p>
+        <div className="flex items-center gap-1.5">
+          <Badge variant={file.status === "failed" ? "destructive" : "secondary"}>
+            {file.status === "failed" ? "Failed" : "Success"}
+          </Badge>
+          <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${file.filename}`} onClick={onRemove}>
+            <X className="size-3.5" aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
+      {file.status === "failed" ? (
+        <p className="text-destructive">{file.errorMessage}</p>
+      ) : (
+        <>
+          {stats && stats.dateStart && stats.dateEnd && (
+            <p className="text-muted-foreground">
+              {formatDate(stats.dateStart)} – {formatDate(stats.dateEnd)}
+            </p>
+          )}
+          <p className="text-muted-foreground">{stats?.count ?? 0} transaction{(stats?.count ?? 0) === 1 ? "" : "s"}</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+// The trailing card in the files row — the upload entry point, always
+// present rather than a toggled form.
+// Same upload entry point as before, now also a drop target — drag-and-
+// drop is an additional way to reach the identical `onUpload` call the file
+// picker already uses (one call per file, sequential), never a second
+// upload/processing path. `isDragging` only drives the border/background
+// highlight below; it doesn't gate or change what happens on drop.
+function NewFileImportCard({
+  isPending,
+  onUpload,
+}: {
+  isPending: boolean;
+  onUpload: (filename: string, fileBase64: string) => void;
+}) {
+  const [isDragging, setIsDragging] = useState(false);
+
+  function uploadFiles(fileList: FileList) {
+    for (const file of Array.from(fileList)) {
+      fileToBase64(file).then((base64) => onUpload(file.name, base64));
+    }
+  }
+
+  // Unchanged from before drag-and-drop — the picker stays single-file, the
+  // same "normal click-to-browse" behavior the spec says must keep working
+  // as-is. Only the drop handler below is new/multi-file.
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const fileInput = event.currentTarget.elements.namedItem("file") as HTMLInputElement;
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    fileToBase64(file).then((base64) => onUpload(file.name, base64));
+    fileInput.value = "";
+  }
+
+  function handleDragOver(event: React.DragEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsDragging(true);
+  }
+
+  // `dragleave` also fires when the pointer moves over a child element
+  // (Label/Input/Button) inside the card, not just when it truly leaves the
+  // card — only clear the highlight once the pointer has left the card's
+  // own boundary, or it'd flicker on/off while dragging across its content.
+  function handleDragLeave(event: React.DragEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setIsDragging(false);
+  }
+
+  function handleDrop(event: React.DragEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsDragging(false);
+    if (event.dataTransfer.files.length > 0) uploadFiles(event.dataTransfer.files);
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={cn(
+        "flex w-full flex-col justify-between gap-2 rounded-lg border border-dashed p-3 text-sm sm:w-64",
+        isDragging ? "border-primary bg-accent" : "border-border",
+      )}
+    >
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="file">New File Import</Label>
+        <Input
+          id="file"
+          name="file"
+          type="file"
+          accept=".csv,text/csv,.xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.pdf,application/pdf"
+          required
+        />
+        <p className="text-xs text-muted-foreground">or drag files here</p>
+      </div>
+      <Button type="submit" disabled={isPending}>
+        {isPending ? "Parsing…" : "Upload"}
+      </Button>
+    </form>
+  );
+}
+
+// Password-protected import files (Federal Bank Account PDF adapter) — the
+// password lives only in this component's own `useState`, for exactly as
+// long as this dialog is mounted. The parent only mounts it while a
+// password is actually needed and unmounts it the moment the retry
+// succeeds or the user cancels, discarding whatever was typed — never
+// stored anywhere beyond the single retry submission.
+function PasswordPromptDialog({
+  filename,
+  incorrect,
+  isPending,
+  onSubmit,
+  onCancel,
+}: {
+  filename: string;
+  incorrect: boolean;
+  isPending: boolean;
+  onSubmit: (password: string) => void;
+  onCancel: () => void;
+}) {
+  const [password, setPassword] = useState("");
+
+  return (
+    <Dialog open onOpenChange={(next) => !next && onCancel()}>
+      <DialogContent className="max-w-sm gap-3">
+        <DialogHeader>
+          <DialogTitle>Password required</DialogTitle>
+          <DialogDescription>
+            &ldquo;{filename}&rdquo; is password-protected. The password is used once to read this file and is
+            never stored.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit(password);
+          }}
+          className="flex flex-col gap-3"
+        >
+          <Input
+            type="password"
+            autoFocus
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="Statement password"
+          />
+          {incorrect && <p className="text-sm text-destructive">Incorrect password.</p>}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isPending || password.length === 0}>
+              {isPending ? "Checking…" : "Continue"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CounterpartPicker({
+  value,
+  accounts,
+  onChange,
+}: {
+  value: Counterpart;
+  accounts: AccountOption[];
+  onChange: (value: Counterpart) => void;
+}) {
+  const selectValue = value.type === "existing" ? value.accountId : NEW_ACCOUNT;
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Select
+        value={selectValue}
+        onValueChange={(v) => {
+          if (v === NEW_ACCOUNT) {
+            onChange({ type: "new", key: `EXPENSE:${crypto.randomUUID()}`, name: "", classification: "EXPENSE" });
+          } else {
+            onChange({ type: "existing", accountId: v as string });
+          }
+        }}
+      >
+        <SelectTrigger className="w-56">
+          <SelectValue placeholder="Counterpart">
+            {(v: string | null) => {
+              if (!v || v === NEW_ACCOUNT) return "Create new…";
+              const account = accountsById.get(v);
+              return account ? <AccountLabel name={account.name} classification={account.classification} icon={account.icon} /> : "";
+            }}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {accounts.map((account) => (
+            <SelectItem key={account.id} value={account.id}>
+              <AccountLabel name={account.name} classification={account.classification} icon={account.icon} />
+            </SelectItem>
+          ))}
+          <SelectItem value={NEW_ACCOUNT}>Create new…</SelectItem>
+        </SelectContent>
+      </Select>
+      {value.type === "new" && (
+        <div className="flex items-center gap-2">
+          <Input
+            placeholder="New account name"
+            value={value.name}
+            onChange={(e) =>
+              onChange({
+                ...value,
+                name: e.target.value,
+                key: `${value.classification}:${e.target.value.trim().toLowerCase()}`,
+              })
+            }
+            className="w-32"
+          />
+          <Select
+            value={value.classification}
+            onValueChange={(v) =>
+              onChange({ ...value, classification: v as "EXPENSE" | "INCOME", key: `${v}:${value.name.trim().toLowerCase()}` })
+            }
+          >
+            <SelectTrigger className="w-28">
+              <SelectValue>{(v: string | null) => (v === "INCOME" ? "Income" : "Expense")}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="EXPENSE">Expense</SelectItem>
+              <SelectItem value="INCOME">Income</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The "Change Account" interaction, generalized (Account Resolution delta):
+// one control offering "choose an existing account" or "create new account"
+// followed by whichever fields that choice needs — used for both source-
+// account cards (Asset/Liability + instrument type) and counterpart-account
+// cards (Expense/Income, no instrument type — rule #21). Note this only
+// edits the *proposed* resolution held in workspace state; the real
+// `accounts` row is created solely by `commitImport` on Approve, never from
+// here — keeps the whole import atomic (transient preview, one commit).
+function AccountResolutionPicker({
+  value,
+  accounts,
+  allowedClassifications,
+  showInstrumentType,
+  onChange,
+}: {
+  value: ResolutionChoice;
+  accounts: AccountOption[];
+  allowedClassifications: readonly Classification[];
+  showInstrumentType: boolean;
+  onChange: (value: ResolutionChoice) => void;
+}) {
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
+  const selectValue = value.type === "existing" ? (value.accountId ?? "") : NEW_ACCOUNT;
+  const classification = value.classification ?? allowedClassifications[0];
+  const typeOptions = showInstrumentType ? TYPES_BY_CLASSIFICATION[classification] ?? ["BANK"] : [];
+
+  function withClassification(nextClassification: Classification): ResolutionChoice {
+    const instrumentType: InstrumentType = showInstrumentType
+      ? (TYPES_BY_CLASSIFICATION[nextClassification] ?? ["BANK"])[0]
+      : (nextClassification as InstrumentType);
+    return { type: "new", name: value.name ?? "", classification: nextClassification, instrumentType };
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Select
+        value={selectValue}
+        onValueChange={(v) => {
+          if (v === NEW_ACCOUNT) onChange(withClassification(allowedClassifications[0]));
+          else onChange({ type: "existing", accountId: v as string });
+        }}
+      >
+        <SelectTrigger>
+          <SelectValue>
+            {(v: string | null) => {
+              if (!v || v === NEW_ACCOUNT) return "Create new account";
+              const account = accountsById.get(v);
+              return account ? <AccountLabel name={account.name} classification={account.classification} icon={account.icon} /> : "";
+            }}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {accounts.map((account) => (
+            <SelectItem key={account.id} value={account.id}>
+              <AccountLabel name={account.name} classification={account.classification} icon={account.icon} />
+            </SelectItem>
+          ))}
+          <SelectItem value={NEW_ACCOUNT}>Create new account</SelectItem>
+        </SelectContent>
+      </Select>
+      {value.type === "new" && (
+        <>
+          <Input
+            placeholder="Account name"
+            value={value.name ?? ""}
+            onChange={(e) => onChange({ ...value, name: e.target.value })}
+          />
+          <div className="flex gap-2">
+            <Select value={classification} onValueChange={(v) => onChange(withClassification(v as Classification))}>
+              <SelectTrigger className="w-32">
+                <SelectValue>{(v: string | null) => (v ? classificationLabel(v) : "")}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {allowedClassifications.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {classificationLabel(c)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {showInstrumentType && (
+              <Select value={value.instrumentType} onValueChange={(v) => onChange({ ...value, instrumentType: v as InstrumentType })}>
+                <SelectTrigger className="w-32">
+                  <SelectValue>{(v: string | null) => (v ? humanizeEnum(v) : "")}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {typeOptions.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {humanizeEnum(type)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function AccountResolutionDialog({
+  description,
+  scope,
+  accounts,
+  initialChoice,
+  identifier,
+  onClose,
+  onApply,
+}: {
+  description: string;
+  scope: "source" | "counterpart";
+  accounts: AccountOption[];
+  initialChoice: ResolutionChoice;
+  // The statement-detected identifier, editable here (§11/§12's "view/edit
+  // detected account identifiers") — null when this resolution has none
+  // (every counterpart card, or a source file whose adapter found none).
+  identifier: string | null;
+  onClose: () => void;
+  onApply: (choice: ResolutionChoice, identifier: string | null) => void;
+}) {
+  const [choice, setChoice] = useState<ResolutionChoice>(initialChoice);
+  const [identifierValue, setIdentifierValue] = useState(identifier ?? "");
+  const allowedClassifications: readonly Classification[] = scope === "source" ? ["ASSET", "LIABILITY"] : ["EXPENSE", "INCOME"];
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Change Account</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <AccountResolutionPicker
+          value={choice}
+          accounts={accounts}
+          allowedClassifications={allowedClassifications}
+          showInstrumentType={scope === "source"}
+          onChange={setChoice}
+        />
+        {identifier !== null && (
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="detected-identifier">Detected identifier</Label>
+            <Input id="detected-identifier" value={identifierValue} onChange={(e) => setIdentifierValue(e.target.value)} />
+          </div>
+        )}
+        <DialogFooter>
+          <Button type="button" onClick={() => onApply(choice, identifier !== null ? identifierValue.trim() || null : null)}>
+            Apply
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditableCandidateRow({
+  candidate,
+  accounts,
+  currencyScale,
+  onSave,
+  onCancel,
+}: {
+  candidate: WorkspaceCandidate;
+  accounts: AccountOption[];
+  currencyScale: number;
+  onSave: (patch: Partial<WorkspaceCandidate>) => void;
+  onCancel: () => void;
+}) {
+  const [date, setDate] = useState(candidate.date);
+  const [description, setDescription] = useState(candidate.description);
+  const [direction, setDirection] = useState<ImportDirection>(candidate.direction);
+  const [amount, setAmount] = useState(String(candidate.amountMinor / 10 ** currencyScale));
+  const [counterpart, setCounterpart] = useState<Counterpart>(candidate.counterpart);
+
+  function save() {
+    const parsedAmount = Number.parseFloat(amount);
+    onSave({
+      date,
+      description,
+      direction,
+      amountMinor: Number.isFinite(parsedAmount) ? Math.round(parsedAmount * 10 ** currencyScale) : candidate.amountMinor,
+      counterpart,
+    });
+  }
+
+  return (
+    <TableRow>
+      <TableCell />
+      <TableCell>
+        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-36" />
+      </TableCell>
+      <TableCell>
+        <Select value={direction} onValueChange={(v) => setDirection(v as ImportDirection)}>
+          <SelectTrigger className="w-28">
+            <SelectValue>{(v: string | null) => (v ? directionLabel(v) : "")}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="debit">Paid</SelectItem>
+            <SelectItem value="credit">Received</SelectItem>
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell>
+        <Input value={description} onChange={(e) => setDescription(e.target.value)} className="w-full" />
+      </TableCell>
+      <TableCell>
+        <CounterpartPicker value={counterpart} accounts={accounts} onChange={setCounterpart} />
+      </TableCell>
+      <TableCell className="text-right">
+        <Input
+          type="number"
+          step={1 / 10 ** currencyScale}
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          className="w-24 text-right"
+        />
+      </TableCell>
+      <TableCell>
+        <div className="flex gap-1">
+          <Button type="button" size="sm" onClick={save}>
+            Save
+          </Button>
+          <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+// Mobile card list — same pattern as transaction-table.tsx's
+// MobileTransactionCard: one card per candidate, no squeezed-horizontal
+// table. `hidden`/`md:hidden` on the two sibling containers (desktop table
+// vs. this) switches between them at the same breakpoint the rest of the
+// app already uses.
+function MobileCandidateCard({
+  candidate,
+  accountsById,
+  currencySymbol,
+  currencyScale,
+  selected,
+  onToggleSelect,
+  onEdit,
+}: {
+  candidate: WorkspaceCandidate;
+  accountsById: Map<string, AccountOption>;
+  currencySymbol: string;
+  currencyScale: number;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onEdit: () => void;
+}) {
+  const view = counterpartAccountView(candidate.counterpart, accountsById);
+  return (
+    <div className="rounded-xl bg-card p-3 ring-1 ring-foreground/10">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-start gap-2">
+          <div className="pt-0.5">
+            <Checkbox aria-label="Select row" checked={selected} onCheckedChange={onToggleSelect} />
+          </div>
+          <div className="flex flex-col">
+            <span className="text-xs text-muted-foreground">{formatDate(candidate.date)}</span>
+            <span className="font-medium">{candidate.description}</span>
+          </div>
+        </div>
+        <Button type="button" variant="ghost" size="sm" onClick={onEdit}>
+          Edit
+        </Button>
+      </div>
+      <div className="mt-2.5 flex flex-col gap-1 text-sm">
+        <div className="flex items-center justify-between gap-3">
+          <span className={directionColor(candidate.direction)}>{directionLabel(candidate.direction)}</span>
+          <span className="font-mono tabular-nums">{formatMoney(candidate.amountMinor, currencySymbol, currencyScale)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-muted-foreground">Account</span>
+          <AccountLabel {...view} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Mobile counterpart to `EditableCandidateRow` — same fields/state shape,
+// stacked in a card instead of laid out across table cells.
+function MobileEditableCandidateCard({
+  candidate,
+  accounts,
+  currencyScale,
+  onSave,
+  onCancel,
+}: {
+  candidate: WorkspaceCandidate;
+  accounts: AccountOption[];
+  currencyScale: number;
+  onSave: (patch: Partial<WorkspaceCandidate>) => void;
+  onCancel: () => void;
+}) {
+  const [date, setDate] = useState(candidate.date);
+  const [description, setDescription] = useState(candidate.description);
+  const [direction, setDirection] = useState<ImportDirection>(candidate.direction);
+  const [amount, setAmount] = useState(String(candidate.amountMinor / 10 ** currencyScale));
+  const [counterpart, setCounterpart] = useState<Counterpart>(candidate.counterpart);
+
+  function save() {
+    const parsedAmount = Number.parseFloat(amount);
+    onSave({
+      date,
+      description,
+      direction,
+      amountMinor: Number.isFinite(parsedAmount) ? Math.round(parsedAmount * 10 ** currencyScale) : candidate.amountMinor,
+      counterpart,
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-xl bg-card p-3 ring-1 ring-foreground/10">
+      <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+      <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" />
+      <div className="flex gap-2">
+        <Select value={direction} onValueChange={(v) => setDirection(v as ImportDirection)}>
+          <SelectTrigger className="w-32">
+            <SelectValue>{(v: string | null) => (v ? directionLabel(v) : "")}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="debit">Paid</SelectItem>
+            <SelectItem value="credit">Received</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input
+          type="number"
+          step={1 / 10 ** currencyScale}
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          className="flex-1"
+        />
+      </div>
+      <CounterpartPicker value={counterpart} accounts={accounts} onChange={setCounterpart} />
+      <div className="flex gap-2">
+        <Button type="button" size="sm" onClick={save}>
+          Save
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function BulkEditDialog({
+  mode,
+  accounts,
+  onClose,
+  onApply,
+}: {
+  mode: "counterpart" | "direction" | null;
+  accounts: AccountOption[];
+  onClose: () => void;
+  onApply: (patch: Partial<WorkspaceCandidate>) => void;
+}) {
+  const [direction, setDirection] = useState<ImportDirection>("debit");
+  const [counterpart, setCounterpart] = useState<Counterpart>({ type: "existing", accountId: accounts[0]?.id ?? "" });
+
+  return (
+    <Dialog open={mode !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {mode === "counterpart" && "Change Account"}
+            {mode === "direction" && "Change Transaction Type"}
+          </DialogTitle>
+          <DialogDescription>Applies to every selected transaction.</DialogDescription>
+        </DialogHeader>
+
+        {mode === "counterpart" && <CounterpartPicker value={counterpart} accounts={accounts} onChange={setCounterpart} />}
+
+        {mode === "direction" && (
+          <Select value={direction} onValueChange={(v) => setDirection(v as ImportDirection)}>
+            <SelectTrigger>
+              <SelectValue>{(v: string | null) => (v ? directionLabel(v) : "")}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="debit">Paid</SelectItem>
+              <SelectItem value="credit">Received</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+
+        <DialogFooter>
+          <Button
+            type="button"
+            onClick={() => {
+              if (mode === "counterpart") onApply({ counterpart });
+              if (mode === "direction") onApply({ direction });
+            }}
+          >
+            Apply
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

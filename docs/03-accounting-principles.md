@@ -12,7 +12,7 @@ Total Debits = Total Credits
 
 Every persisted Transaction:
 
-1. belongs to exactly one Member
+1. belongs to exactly one Profile
 2. has at least two Postings
 3. is complete
 4. is balanced
@@ -20,6 +20,7 @@ Every persisted Transaction:
 ## Posting invariant
 
 Each Posting:
+
 - belongs to exactly one Transaction
 - references exactly one Account
 - has non-negative debit and credit
@@ -29,11 +30,11 @@ Each Posting:
 
 ## Ownership
 
-Each Account belongs to exactly one Member.
+Each Account belongs to exactly one Profile.
 
-Each Transaction belongs to exactly one Member.
+Each Transaction belongs to exactly one Profile.
 
-Every Posting Account must belong to the same Member as its Transaction.
+Every Posting Account must belong to the same Profile as its Transaction.
 
 No shared Accounts in MVP.
 
@@ -122,6 +123,7 @@ No persisted draft status.
 Tags are inline metadata only.
 
 Changing tags never changes:
+
 - balances
 - postings
 - account classification

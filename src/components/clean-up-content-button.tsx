@@ -6,10 +6,9 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { cleanUpProfileContentAction } from "@/server/actions/cleanup";
 
-// Clean Up Content (docs/onboarding.md §11) — the primary use case is
-// leaving a demo Profile's sample data behind without losing the Profile
-// itself. Destructive (hard delete, rule #9) and Profile-wide — always
-// confirmed, unlike Archive.
+// Clean Up Content — the primary use case is leaving a demo Profile's
+// sample data behind without losing the Profile itself. Destructive (hard
+// delete, rule #9) and Profile-wide — always confirmed, unlike Archive.
 export function CleanUpContentButton({ profileId }: { profileId: string }) {
   const router = useRouter();
   const [done, setDone] = useState(false);

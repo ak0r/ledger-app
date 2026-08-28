@@ -23,13 +23,11 @@ import { bulkUpdateTagsAction } from "@/server/actions/transactions";
 export function BulkTagsDialog({
   open,
   onOpenChange,
-  profileId,
   transactionIds,
   existingTags,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  profileId: string;
   transactionIds: string[];
   existingTags: string[];
 }) {
@@ -51,12 +49,7 @@ export function BulkTagsDialog({
   const handleSave = async () => {
     setError(null);
     setIsSaving(true);
-    const result = await bulkUpdateTagsAction(profileId, {
-      profileId,
-      transactionIds,
-      addTags,
-      removeTags,
-    });
+    const result = await bulkUpdateTagsAction({ transactionIds, addTags, removeTags });
     setIsSaving(false);
     if (!result.success) {
       setError(result.error);

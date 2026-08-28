@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "../db/client";
-import { requireProfileAccess } from "../authz";
+import { requireActiveProfile } from "../authz";
 import type { AccountRow } from "../repositories/accounts";
 import {
   archiveAccountCore,
@@ -13,50 +13,36 @@ import {
 } from "./accounts.core";
 import type { ActionResult } from "./result";
 
-export async function createAccountAction(
-  profileId: string,
-  input: unknown,
-): Promise<ActionResult<AccountRow>> {
-  await requireProfileAccess(profileId);
-  return createAccountCore(db, input);
+export async function createAccountAction(input: unknown): Promise<ActionResult<AccountRow>> {
+  const { profile } = await requireActiveProfile();
+  return createAccountCore(db, { ...(input as object), profileId: profile.id });
 }
 
-export async function editAccountAction(
-  profileId: string,
-  input: unknown,
-): Promise<ActionResult<AccountRow>> {
-  await requireProfileAccess(profileId);
-  return editAccountCore(db, input);
+export async function editAccountAction(input: unknown): Promise<ActionResult<AccountRow>> {
+  const { profile } = await requireActiveProfile();
+  return editAccountCore(db, { ...(input as object), profileId: profile.id });
 }
 
-// Zero-JS: bind(null, profileId, accountId) from a plain <form> next to
-// each row in the accounts list — no client-side state needed for a
-// one-click action. Ownership is already re-checked inside
-// archiveAccountCore (rule #6); this only surfaces a truly unexpected
-// failure.
-export async function archiveAccountAction(profileId: string, accountId: string): Promise<void> {
-  await requireProfileAccess(profileId);
-  const result = archiveAccountCore(db, { profileId, accountId });
+// Zero-JS: bind(null, accountId) from a plain <form> next to each row in
+// the accounts list — no client-side state needed for a one-click action.
+// Ownership is already re-checked inside archiveAccountCore (rule #6);
+// this only surfaces a truly unexpected failure.
+export async function archiveAccountAction(accountId: string): Promise<void> {
+  const { profile } = await requireActiveProfile();
+  const result = archiveAccountCore(db, { profileId: profile.id, accountId });
   if (!result.success) throw new Error(result.error);
-  revalidatePath(`/p/${profileId}/accounts`);
+  revalidatePath("/accounts");
 }
 
-// Same two-arg (profileId, input) shape as the bulk Transaction actions —
-// called from a client component (AccountBulkActionBar) that does its own
-// `router.refresh()` on success, unlike the zero-JS single-row archive
-// action above.
-export async function bulkArchiveAccountsAction(
-  profileId: string,
-  input: unknown,
-): Promise<ActionResult<null>> {
-  await requireProfileAccess(profileId);
-  return bulkArchiveAccountsCore(db, input);
+// Same (input) shape as the bulk Transaction actions — called from a client
+// component (AccountBulkActionBar) that does its own `router.refresh()` on
+// success, unlike the zero-JS single-row archive action above.
+export async function bulkArchiveAccountsAction(input: unknown): Promise<ActionResult<null>> {
+  const { profile } = await requireActiveProfile();
+  return bulkArchiveAccountsCore(db, { ...(input as object), profileId: profile.id });
 }
 
-export async function bulkUpdateAccountTagsAction(
-  profileId: string,
-  input: unknown,
-): Promise<ActionResult<null>> {
-  await requireProfileAccess(profileId);
-  return bulkUpdateAccountTagsCore(db, input);
+export async function bulkUpdateAccountTagsAction(input: unknown): Promise<ActionResult<null>> {
+  const { profile } = await requireActiveProfile();
+  return bulkUpdateAccountTagsCore(db, { ...(input as object), profileId: profile.id });
 }

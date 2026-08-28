@@ -17,14 +17,12 @@ import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes-guard";
 // the row — no extra fetch when the Sheet opens.
 export function TransactionEditDrawer({
   rows,
-  profileId,
   accounts,
   currencySymbol,
   currencyScale,
   existingTags,
 }: {
   rows: TransactionTableRow[];
-  profileId: string;
   accounts: { id: string; name: string; classification: string }[];
   currencySymbol: string;
   currencyScale: number;
@@ -48,7 +46,6 @@ export function TransactionEditDrawer({
             <TransactionForm
               key={row.id}
               mode="edit"
-              profileId={profileId}
               accounts={accounts}
               currencySymbol={currencySymbol}
               currencyScale={currencyScale}

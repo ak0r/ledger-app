@@ -43,6 +43,7 @@ function transaction(
     date,
     description,
     tags,
+    importFileId: null,
     createdAt: "now",
     updatedAt: "now",
     postings: postings.map((posting, index) => ({

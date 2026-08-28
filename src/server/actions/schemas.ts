@@ -5,7 +5,7 @@
 // the DB and can only happen in the domain/use-case layer (Phase 3/4),
 // which every action still runs after this parse succeeds (rule #17).
 import { z } from "zod";
-import { CLASSIFICATIONS, CREATABLE_CLASSIFICATIONS, INSTRUMENT_TYPES } from "../db/schema";
+import { CLASSIFICATIONS, CREATABLE_CLASSIFICATIONS, INSTRUMENT_TYPES, RECURRING_FREQUENCIES } from "../db/schema";
 
 export const createProfileSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
@@ -150,4 +150,116 @@ export const bulkUpdateTagsSchema = z.object({
   transactionIds: z.array(z.string().min(1)).min(1, "Select at least one transaction"),
   addTags: z.array(z.string().trim().min(1)).default([]),
   removeTags: z.array(z.string().trim().min(1)).default([]),
+});
+
+// Recurring Transactions Phase 1 (docs/pending/2026-08-27-Recurring-
+// Transactions.md) — mirrors the domain invariants in domain/recurring.ts
+// that don't need a DB lookup; ownership is still enforced server-side in
+// use-cases/recurring.ts (rule #17).
+const recurringScheduleSchema = z
+  .object({
+    frequency: z.enum(RECURRING_FREQUENCIES),
+    interval: z.number().int().min(1),
+    byMonthDay: z.number().int().min(1).max(31).optional(),
+    byWeekday: z.number().int().min(0).max(6).optional(),
+    startDate: z.string().min(1),
+    endDate: z.string().min(1).optional(),
+  })
+  .refine((schedule) => (schedule.frequency === "MONTHLY" || schedule.frequency === "YEARLY" ? schedule.byMonthDay != null : true), {
+    message: "Day of month is required",
+    path: ["byMonthDay"],
+  })
+  .refine((schedule) => (schedule.frequency === "WEEKLY" ? schedule.byWeekday != null : true), {
+    message: "Day of week is required",
+    path: ["byWeekday"],
+  });
+
+const recurringRuleFieldsShape = {
+  profileId: z.string().min(1),
+  name: z.string().trim().min(1, "Name is required"),
+  fromAccountId: z.string().min(1),
+  toAccountId: z.string().min(1),
+  amountMinor: z.number().int().positive(),
+  description: z.string().trim().min(1, "Description is required"),
+  schedule: recurringScheduleSchema,
+};
+
+export const createRecurringRuleSchema = z.object(recurringRuleFieldsShape);
+
+export const editRecurringRuleSchema = z.object({
+  ...recurringRuleFieldsShape,
+  recurringRuleId: z.string().min(1),
+});
+
+export const deleteRecurringRuleSchema = z.object({
+  profileId: z.string().min(1),
+  recurringRuleId: z.string().min(1),
+});
+
+// Import Framework Phase 1 delta (2026-08-25) + Import Workflow delta
+// (2026-08-25, 0aa87019 — multi-file workspace) + Account Resolution delta
+// (2026-08-26, 0b62d94c — no upfront account selection). `previewImportSchema`
+// reads the uploaded file client-side (base64-encoded, uniform for text and
+// binary formats) and sends it — no FormData/native file upload plumbing in
+// this codebase (rule: mirror existing action conventions, see
+// actions/accounts.ts). Called once per uploaded file; `fileKey` is a
+// client-assigned opaque id used to merge this file's candidates into the
+// client's multi-file workspace state and group them back by file again at
+// commit. No `knownAccountId`/`sourceId` — the adapter and source account
+// are both detected from the file itself.
+export const previewImportSchema = z.object({
+  profileId: z.string().min(1),
+  filename: z.string().trim().min(1),
+  fileBase64: z.string().min(1, "File is empty"),
+  fileKey: z.string().min(1),
+  // Password-protected import files (Federal Bank Account PDF adapter) —
+  // used only for this one preview parse, never persisted (rule: never
+  // store a statement password). Absent for every non-encrypted adapter.
+  password: z.string().optional(),
+});
+
+const newAccountDescriptorSchema = z.object({
+  key: z.string().min(1),
+  classification: z.enum(["EXPENSE", "INCOME"]),
+  name: z.string().trim().min(1),
+});
+
+const previewCandidateSchema = z.object({
+  fileKey: z.string().min(1),
+  date: z.string().min(1),
+  description: z.string().trim().min(1),
+  amountMinor: z.number().int().positive(),
+  direction: z.enum(["debit", "credit"]),
+  reference: z.string().optional(),
+  knownAccountId: z.string().min(1).nullable(),
+  counterAccountId: z.string().min(1).nullable(),
+  counterAccountKey: z.string().min(1),
+});
+
+// The source-account resolution the user confirmed for one file (delta
+// §2's "Identified Accounts" section) — existing account, or a new one to
+// create atomically with the commit.
+const accountChoiceSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("existing"), accountId: z.string().min(1) }),
+  z.object({
+    type: z.literal("new"),
+    name: z.string().trim().min(1),
+    classification: z.enum(["ASSET", "LIABILITY"]),
+    instrumentType: z.enum(INSTRUMENT_TYPES),
+  }),
+]);
+
+const commitImportFileSchema = z.object({
+  fileKey: z.string().min(1),
+  filename: z.string().trim().min(1),
+  source: z.string().min(1),
+  identifier: z.string().min(1).nullable(),
+  accountChoice: accountChoiceSchema,
+});
+
+export const commitImportSchema = z.object({
+  profileId: z.string().min(1),
+  files: z.array(commitImportFileSchema).min(1, "No files to commit"),
+  candidates: z.array(previewCandidateSchema).min(1, "No candidates to commit"),
+  approvedNewAccounts: z.array(newAccountDescriptorSchema).default([]),
 });

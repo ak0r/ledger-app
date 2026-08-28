@@ -11,13 +11,11 @@ import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes-guard";
 // up. `/transactions/new` itself stays reachable (untouched), this is just
 // the primary entry point now.
 export function TransactionCreateDrawer({
-  profileId,
   accounts,
   currencySymbol,
   currencyScale,
   existingTags,
 }: {
-  profileId: string;
   accounts: { id: string; name: string; classification: string }[];
   currencySymbol: string;
   currencyScale: number;
@@ -37,7 +35,6 @@ export function TransactionCreateDrawer({
             <TransactionForm
               key={creatingTransaction ? "open" : "closed"}
               mode="create"
-              profileId={profileId}
               accounts={accounts}
               currencySymbol={currencySymbol}
               currencyScale={currencyScale}

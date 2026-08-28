@@ -183,8 +183,8 @@ function TransactionRow({
   row,
   rows,
   isFirst,
-  profileId,
   mergeCandidates,
+  accounts,
   accountsById,
   currencySymbol,
   currencyScale,
@@ -194,8 +194,11 @@ function TransactionRow({
   row: LegacyRow<TransactionTableRow>;
   rows: LegacyRow<TransactionTableRow>[];
   isFirst: boolean;
-  profileId: string;
   mergeCandidates: TransactionTableRow[];
+  // "Make recurring" (TransactionRowMenu) needs name/classification for its
+  // RecurringForm account picker — accountsById alone (currencyId only) is
+  // enough for Merge but not this.
+  accounts: { id: string; name: string; classification: string }[];
   accountsById: ReadonlyMap<string, { currencyId: string }>;
   currencySymbol: string;
   currencyScale: number;
@@ -368,9 +371,9 @@ function TransactionRow({
       {isFirstRow && (
         <TransactionRowMenu
           row={t}
-          profileId={profileId}
           onQuickEdit={setQuickEditRowId}
           mergeCandidates={mergeCandidates}
+          accounts={accounts}
           accountsById={accountsById}
           currencySymbol={currencySymbol}
           currencyScale={currencyScale}
@@ -520,15 +523,15 @@ function TransactionRow({
 // list is the natural equivalent).
 function MobileTransactionCard({
   row,
-  profileId,
   mergeCandidates,
+  accounts,
   accountsById,
   currencySymbol,
   currencyScale,
 }: {
   row: LegacyRow<TransactionTableRow>;
-  profileId: string;
   mergeCandidates: TransactionTableRow[];
+  accounts: { id: string; name: string; classification: string }[];
   accountsById: ReadonlyMap<string, { currencyId: string }>;
   currencySymbol: string;
   currencyScale: number;
@@ -570,8 +573,8 @@ function MobileTransactionCard({
         </div>
         <TransactionRowMenu
           row={t}
-          profileId={profileId}
           mergeCandidates={mergeCandidates}
+          accounts={accounts}
           accountsById={accountsById}
           currencySymbol={currencySymbol}
           currencyScale={currencyScale}
@@ -659,7 +662,6 @@ export interface TransactionTableRow {
 
 export function TransactionTable({
   rows,
-  profileId,
   accounts,
   currencySymbol,
   currencyScale,
@@ -671,7 +673,6 @@ export function TransactionTable({
   sortPreserve = {},
 }: {
   rows: TransactionTableRow[];
-  profileId: string;
   // Quick Edit's inline row (transaction-quick-edit-row.tsx) needs the same
   // account/currency/tag data Full Edit's Sheet does — threaded through
   // here rather than fetched again, same zero-extra-fetch posture as the
@@ -816,7 +817,6 @@ export function TransactionTable({
     <>
       <BulkActionBar
         rows={rows}
-        profileId={profileId}
         accountsById={accountsById}
         currencySymbol={currencySymbol}
         currencyScale={currencyScale}
@@ -874,7 +874,6 @@ export function TransactionTable({
                 <TransactionQuickEditRow
                   key={row.id}
                   row={row.original}
-                  profileId={profileId}
                   accounts={accounts}
                   currencySymbol={currencySymbol}
                   currencyScale={currencyScale}
@@ -887,8 +886,8 @@ export function TransactionTable({
                   row={row}
                   rows={table.getRowModel().rows}
                   isFirst={index === 0}
-                  profileId={profileId}
                   mergeCandidates={mergeCandidatesByRowId.get(row.original.id) ?? []}
+                  accounts={accounts}
                   accountsById={accountsById}
                   currencySymbol={currencySymbol}
                   currencyScale={currencyScale}
@@ -906,8 +905,8 @@ export function TransactionTable({
           <MobileTransactionCard
             key={row.id}
             row={row}
-            profileId={profileId}
             mergeCandidates={mergeCandidatesByRowId.get(row.original.id) ?? []}
+            accounts={accounts}
             accountsById={accountsById}
             currencySymbol={currencySymbol}
             currencyScale={currencyScale}

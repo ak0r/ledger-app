@@ -69,7 +69,6 @@ function SelectRowCheckbox({ id }: { id: string }) {
 
 export function AccountTable({
   accounts,
-  profileId,
   currencyCode,
   currencySymbol,
   currencyScale,
@@ -79,7 +78,6 @@ export function AccountTable({
   sortPreserve,
 }: {
   accounts: AccountWithBalance[];
-  profileId: string;
   currencyCode: string;
   currencySymbol: string;
   currencyScale: number;
@@ -139,7 +137,7 @@ export function AccountTable({
               </TableCell>
               <TableCell role="gridcell" className="py-2.5">
                 <Link
-                  href={`/p/${profileId}/accounts/${account.id}`}
+                  href={`/accounts/${account.id}`}
                   className="flex items-center gap-2 text-primary hover:underline"
                 >
                   <AccountIcon classification={account.classification} icon={account.icon} />
@@ -173,7 +171,6 @@ export function AccountTable({
                 <div className="flex justify-end gap-1.5">
                   <AccountFormSheet
                     mode="edit"
-                    profileId={profileId}
                     currencies={[]}
                     existingTags={existingTags}
                     account={{
@@ -200,11 +197,7 @@ export function AccountTable({
                   />
                   {!account.isArchived && (
                     <div className="opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100">
-                      <ArchiveAccountButton
-                        profileId={profileId}
-                        accountId={account.id}
-                        variant="ghost"
-                      />
+                      <ArchiveAccountButton accountId={account.id} variant="ghost" />
                     </div>
                   )}
                 </div>

@@ -24,7 +24,6 @@ import { mergeTransactionsAction } from "@/server/actions/transactions";
 export function MergeTransactionsDialog({
   open,
   onOpenChange,
-  profileId,
   rows,
   accountsById,
   currencySymbol,
@@ -32,7 +31,6 @@ export function MergeTransactionsDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  profileId: string;
   rows: TransactionTableRow[];
   accountsById: ReadonlyMap<string, MergeCandidateAccount>;
   currencySymbol: string;
@@ -71,10 +69,7 @@ export function MergeTransactionsDialog({
   const handleMerge = async () => {
     setError(null);
     setIsMerging(true);
-    const result = await mergeTransactionsAction(profileId, {
-      profileId,
-      transactionIds: [...selectedIds],
-    });
+    const result = await mergeTransactionsAction({ transactionIds: [...selectedIds] });
     setIsMerging(false);
     if (!result.success) {
       setError(result.error);

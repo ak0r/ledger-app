@@ -13,6 +13,6 @@ export async function cleanUpProfileContentAction(profileId: string): Promise<Ac
   } catch (error) {
     return fromThrown(error);
   }
-  revalidatePath(`/p/${profileId}`, "layout");
+  revalidatePath("/", "layout");
   return ok(undefined);
 }

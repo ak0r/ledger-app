@@ -7,8 +7,12 @@ import { cn, formatDate } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 
-const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"] as const
-const MONTH_LABELS = [
+// Exported for recurring-calendar.tsx's own month grid (Recurring
+// Transactions Phase 1, spec §7) — same calendar-math, not a coincidental
+// duplicate: sharing it keeps both grids' day/weekday numbering identical
+// by construction instead of by two hand-kept-in-sync implementations.
+export const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"] as const
+export const MONTH_LABELS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ] as const
@@ -17,11 +21,11 @@ function pad2(value: number): string {
   return String(value).padStart(2, "0")
 }
 
-function toIso(year: number, month: number, day: number): string {
+export function toIso(year: number, month: number, day: number): string {
   return `${year}-${pad2(month)}-${pad2(day)}`
 }
 
-function parseIso(iso: string): { year: number; month: number; day: number } {
+export function parseIso(iso: string): { year: number; month: number; day: number } {
   const [year, month, day] = iso.split("-").map(Number)
   return { year, month, day }
 }
@@ -32,15 +36,15 @@ function parseIso(iso: string): { year: number; month: number; day: number } {
 // back through local-timezone accessors can roll to the wrong day. Pure
 // calendar math, not a real moment in time, so UTC is just a stable
 // anchor, not a timezone claim.
-function daysInMonth(year: number, month: number): number {
+export function daysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate()
 }
 
-function firstWeekdayOfMonth(year: number, month: number): number {
+export function firstWeekdayOfMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month - 1, 1)).getUTCDay()
 }
 
-function todayIso(): string {
+export function todayIso(): string {
   const now = new Date()
   return toIso(now.getFullYear(), now.getMonth() + 1, now.getDate())
 }

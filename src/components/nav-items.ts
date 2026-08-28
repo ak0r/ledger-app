@@ -1,16 +1,23 @@
-import { ArrowLeftRight, House, Landmark, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, House, Landmark, Repeat, Settings, Upload, type LucideIcon } from "lucide-react";
 
 // Shared nav data consumed by both SidebarNav (desktop) and BottomNav
 // (mobile) — same destinations, different presentation (docs/design/
-// design.md §20). Deliberately limited to screens that exist: no Insights/
-// Settings entries, since neither has a screen yet and design.md §18 calls
-// out adding nav destinations with nothing behind them as an anti-pattern.
+// design.md §20). Deliberately limited to screens that exist: no Insights
+// entry, since it has no screen of its own yet and design.md §18 calls out
+// adding nav destinations with nothing behind them as an anti-pattern —
+// Settings is included because /settings/profiles is real, but it's
+// `primaryOnly` for the same reason (nothing else lives under Settings yet,
+// and only the Primary User can reach the one thing that does).
+//
+// Routes are static top-level paths (Profile is app-level context, not a
+// URL segment — see requireActiveProfile in src/server/authz.ts), so hrefs
+// need no per-request base to be built against.
 export interface NavItem {
   key: string;
   label: string;
   icon: LucideIcon;
-  href: (base: string) => string;
-  isActive: (pathname: string, base: string) => boolean;
+  href: string;
+  primaryOnly?: boolean;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -18,21 +25,37 @@ export const NAV_ITEMS: NavItem[] = [
     key: "home",
     label: "Home",
     icon: House,
-    href: (base) => base,
-    isActive: (pathname, base) => pathname === base,
+    href: "/",
   },
   {
     key: "accounts",
     label: "Accounts",
     icon: Landmark,
-    href: (base) => `${base}/accounts`,
-    isActive: (pathname, base) => pathname.startsWith(`${base}/accounts`),
+    href: "/accounts",
   },
   {
     key: "transactions",
     label: "Transactions",
     icon: ArrowLeftRight,
-    href: (base) => `${base}/transactions`,
-    isActive: (pathname, base) => pathname.startsWith(`${base}/transactions`),
+    href: "/transactions",
+  },
+  {
+    key: "imports",
+    label: "Imports",
+    icon: Upload,
+    href: "/imports",
+  },
+  {
+    key: "recurring",
+    label: "Recurring",
+    icon: Repeat,
+    href: "/recurring",
+  },
+  {
+    key: "settings",
+    label: "Settings",
+    icon: Settings,
+    href: "/settings/profiles",
+    primaryOnly: true,
   },
 ];

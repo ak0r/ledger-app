@@ -1,17 +1,42 @@
-// Conceptual MVP schema.
-// Final Drizzle implementation may evolve while preserving domain rules.
-// Money values are integer minor units.
+// Conceptual schema, kept in sync with the real Drizzle schema at
+// src/server/db/schema.ts (field-for-field, snake_case per ADR-017).
+// Money values are integer minor units. Timestamps/dates are ISO 8601
+// strings (SQLite has no native datetime type here).
+//
+// Renamed from the original `members`-only MVP schema by the 2026-08-20
+// User Simplification delta (ADR-029): `members` → `profiles`, plus a new
+// AppUser/Session identity layer above it. Extended by the 2026-08-21
+// Instrument Model delta Step 1 (`instruments`) and the 2026-08-25/26
+// Import Framework + Account Resolution deltas (`import_files`,
+// `account_identifiers`, `transactions.import_file_id`).
 
-Table members {
+Table app_users {
+  id text [pk]
+  email text [not null, unique]
+  password_hash text [not null]
+  is_primary boolean [not null, default: false, note: 'Set once at registration — the first-ever AppUser in this Hosted Instance. Never toggled again.']
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+Table sessions {
+  id text [pk]
+  app_user_id text [not null]
+  created_at datetime [not null]
+  expires_at datetime [not null]
+}
+
+Table profiles {
   id text [pk]
   name text [not null]
+  app_user_id text [unique, note: 'Nullable — a Profile can exist unlinked to any AppUser (created by the Primary User for someone who registers later).']
   created_at datetime [not null]
   updated_at datetime [not null]
 }
 
 Table currencies {
   id text [pk]
-  member_id text [not null]
+  profile_id text [not null]
   code text [not null]
   name text [not null]
   symbol text [not null]
@@ -20,16 +45,30 @@ Table currencies {
   updated_at datetime [not null]
 }
 
+// Shared reference data — NOT Profile-scoped, unlike every other table
+// here. An Instrument ("HDFC Bank the stock") is the same catalogue row
+// regardless of which Profile references it via accounts.instrument_id.
+// Instrument Model delta (2026-08-21) Step 1 only — no pricing/identifiers/
+// quantity yet (Steps 2-10 of that delta not started).
+Table instruments {
+  id text [pk]
+  type text [not null, note: 'MUTUAL_FUND | STOCK | COMMODITY']
+  name text [not null]
+  unit_label text [note: 'Free-text pricing-unit hint for commodities, e.g. "10g" — null for MUTUAL_FUND/STOCK.']
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
 Table accounts {
   id text [pk]
-  member_id text [not null]
+  profile_id text [not null]
   currency_id text [not null]
   name text [not null]
   classification text [not null, note: 'ASSET | LIABILITY | INCOME | EXPENSE | BALANCING']
-  instrument_type text [not null, note: 'BANK | CASH | CREDIT_CARD | LOAN | EXPENSE | INCOME | BALANCING']
-  instrument_id text
+  instrument_type text [not null, note: 'BANK | CASH | CREDIT_CARD | LOAN | EXPENSE | INCOME | BALANCING | MUTUAL_FUND | STOCK | COMMODITY (frozen, rule #11)']
+  instrument_id text [note: 'Free-text (ADR-016) — unrelated to the `instruments` catalogue or `account_identifiers`.']
   instrument_label text
-  tags text [note: 'JSON array: string[]']
+  tags text [note: 'JSON array: string[] (flat opaque strings, not key/value)']
   icon text
   is_archived boolean [not null, default: false]
   metadata text
@@ -37,12 +76,66 @@ Table accounts {
   updated_at datetime [not null]
 }
 
+// Account Resolution delta (2026-08-26) — a child entity, not a JSON/list
+// column on `accounts` (explicitly ruled out). One Account can have
+// multiple known representations (a full account number plus masked
+// variants observed across statements), each independently queryable.
+Table account_identifiers {
+  id text [pk]
+  account_id text [not null]
+  identifier text [not null]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+// Import Framework delta (2026-08-25) — one row per uploaded source file.
+// "Import" (the ephemeral, possibly multi-file review workspace) is never
+// itself persisted; this is the persisted provenance record. Phase 1 only
+// ever writes status "successful" (atomic commit) — "failed" is reserved
+// vocabulary, not yet reachable.
+Table import_files {
+  id text [pk]
+  profile_id text [not null]
+  filename text [not null]
+  source text [not null, note: 'Adapter id, e.g. "hdfc.account.xls" or "generic.any.csv"']
+  status text [not null, note: 'successful | failed (only "successful" is ever written today)']
+  account_id text [note: 'The resolved source Account this file posted against.']
+  new_account_count integer [not null, default: 0]
+  inflow_minor integer [not null, default: 0]
+  outflow_minor integer [not null, default: 0]
+  date_range_start datetime
+  date_range_end datetime
+  transaction_count integer [not null]
+  metadata text
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
 Table transactions {
   id text [pk]
-  member_id text [not null]
+  profile_id text [not null]
   date datetime [not null]
   description text [not null]
   tags text [note: 'JSON array: string[]']
+  import_file_id text [note: 'Nullable — permanent provenance for Transactions created by Import; null for manually-created Transactions.']
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+Table recurring_rules {
+  id text [pk]
+  profile_id text [not null]
+  name text [not null]
+  from_account_id text [not null]
+  to_account_id text [not null]
+  amount_minor integer [not null]
+  description text [not null]
+  frequency text [not null, note: 'DAILY | WEEKLY | MONTHLY | YEARLY']
+  interval integer [not null, default: 1]
+  by_month_day integer [note: 'MONTHLY/YEARLY only, 1-31, clamped to the target month length']
+  by_weekday integer [note: 'WEEKLY only, 0 (Sunday) - 6 (Saturday)']
+  start_date datetime [not null]
+  end_date datetime [note: 'null = Never']
   created_at datetime [not null]
   updated_at datetime [not null]
 }
@@ -57,11 +150,20 @@ Table postings {
   updated_at datetime [not null]
 }
 
-Ref: currencies.member_id > members.id
-Ref: accounts.member_id > members.id
+Ref: sessions.app_user_id > app_users.id
+Ref: profiles.app_user_id > app_users.id
+Ref: currencies.profile_id > profiles.id
+Ref: accounts.profile_id > profiles.id
 Ref: accounts.currency_id > currencies.id
-Ref: transactions.member_id > members.id
-Ref: postings.transaction_id > transactions.id
+Ref: account_identifiers.account_id > accounts.id
+Ref: import_files.profile_id > profiles.id
+Ref: import_files.account_id > accounts.id
+Ref: transactions.profile_id > profiles.id
+Ref: transactions.import_file_id > import_files.id
+Ref: recurring_rules.profile_id > profiles.id
+Ref: recurring_rules.from_account_id > accounts.id
+Ref: recurring_rules.to_account_id > accounts.id
+Ref: postings.transaction_id > transactions.id [delete: cascade]
 Ref: postings.account_id > accounts.id
 
 // Domain constraints not fully expressible in this conceptual DBML:
@@ -70,6 +172,14 @@ Ref: postings.account_id > accounts.id
 // 2. Posting must have exactly one positive side.
 // 3. debit and credit must be non-negative.
 // 4. SUM(debit) == SUM(credit) per transaction.
-// 5. posting.account.member_id == transaction.member_id.
+// 5. posting.account.profile_id == transaction.profile_id.
 // 6. MVP account currency is INR.
 // 7. Hard delete transaction aggregate atomically.
+// 8. An AppUser links to at most one Profile (unique); a Profile links to
+//    at most one AppUser (nullable) but can exist unlinked.
+// 9. An Account can have 0..N AccountIdentifiers; the same identifier must
+//    not resolve to more than one Account within a Profile (enforced at
+//    the application layer, not a DB constraint).
+// 10. import_files.account_id/new_account_count/inflow_minor/outflow_minor
+//     are always set for rows created by the current commit path; they
+//     predate the Account Resolution delta only in already-migrated rows.

@@ -31,28 +31,31 @@ versioned. If the database file is ever missing or out of date, re-run
 `pnpm db:migrate`; a "no such table" error at runtime is the symptom of a
 database that was never migrated.
 
-No authentication, no cloud dependency — this is a single local install
-(optionally with multiple Members, see below).
+No cloud dependency — this is a single self-hosted instance. Real
+authentication exists (AppUser registration/login); each AppUser is linked
+to exactly one Profile, and a Primary User (the first AppUser registered)
+can create/access additional Profiles for others.
 
 Core:
 - double-entry accounting
-- Members / local profiles
+- AppUser identity, Profile as financial identity (see below)
 - Accounts
 - Currencies
 - Transactions
 - Postings
 - Expense / Income / Balancing accounts
 - manual transaction entry
+- statement import (CSV, HDFC Account XLS) with account resolution + review before commit
 - balances
 - basic reports
-- inline key/value tags on Accounts and Transactions
+- inline tags (flat list of strings) on Accounts and Transactions
 
 ## MVP account model
 
 - `classification` defines accounting meaning.
 - `instrument_type` describes the nature of the account/instrument.
 - `instrument_id` and `instrument_label` are optional future-compatible fields.
-- Accounts belong to exactly one Member.
+- Accounts belong to exactly one Profile.
 - Each Account holds exactly one Currency.
 - MVP supports INR only.
 - Currency defines monetary scale/minor-unit precision.
@@ -69,34 +72,28 @@ INCOME
 BALANCING
 ```
 
-Future investment module may add:
+`MUTUAL_FUND`/`STOCK`/`COMMODITY` are frozen types (instrument-backed — see
+the separate Instrument catalogue entity), but full investment mechanics
+(quantity, pricing, valuation) aren't implemented yet.
 
-```text
-STOCK
-METAL
-MUTUAL_FUND
-ETF
-...
-```
+## Identity: AppUser and Profile
 
-Do not implement investment-specific mechanics in MVP.
+- AppUser is the real login identity (email/password, session-based).
+- Each AppUser is linked to exactly one Profile (the financial identity);
+  a Profile can also exist unlinked (created by the Primary User for
+  someone who registers later).
+- The Primary User (first AppUser ever registered) can access every
+  Profile in the instance via `/profiles`; a normal AppUser has exactly one.
+- Accounts, Transactions and Currencies are Profile-scoped.
+- No shared Accounts across Profiles.
 
-## MVP members
-
-One local installation can contain multiple Members/profiles.
-
-- no authentication
-- no registration
-- Members are local financial identities
-- active Member is selected in application state
-- Accounts, Transactions and Currencies are Member-scoped
-- no shared Accounts
+See `docs/completed/2026-08-20-User-Simplification.md` for the full model.
 
 ## MVP transaction rules
 
-- every persisted Transaction belongs to exactly one Member
+- every persisted Transaction belongs to exactly one Profile
 - every Transaction has at least two Postings
-- every Posting references an Account owned by the Transaction Member
+- every Posting references an Account owned by the Transaction's Profile
 - every Account uses INR in MVP
 - every persisted Transaction is complete and balanced
 - total debit equals total credit
@@ -107,28 +104,22 @@ One local installation can contain multiple Members/profiles.
 
 ## Tags
 
-Tags are inline metadata.
+Tags are an inline flat list of opaque strings — not key/value.
 
 ```ts
-type Tags = Record<string, string>;
+type Tags = string[];
 ```
 
 Account:
 
 ```json
-{
-  "purpose": "Primary",
-  "usage": "Salary"
-}
+["travel", "salary"]
 ```
 
 Transaction:
 
 ```json
-{
-  "trip": "Japan2026",
-  "payment": "UPILite"
-}
+["Japan2026", "UPILite"]
 ```
 
 No global Tag entity. No normalized tag tables. Tag changes affect only the record being edited.
@@ -147,15 +138,14 @@ Users do not need to understand debit/credit.
 - Spaces
 - expense sharing
 - settlements
-- imports
-- SMS/email
-- statements
+- Import Rules / Duplicate Detection plugins
+- import adapters beyond the five shipped (generic CSV, HDFC/Axis/IDFC FIRST/Federal Bank Account XLS/PDF)
+- SMS/email statement import
 - multi-currency/FX
-- investments
+- investment valuation/pricing/quantity
 - budgets
 - transaction history UI
 - AI
-- authentication/sharing
 - cloud sync
 
 Read all files in `docs/` before implementation.

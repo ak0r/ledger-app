@@ -81,6 +81,10 @@ export function createTransaction(
     date: input.date,
     description: input.description,
     tags: input.tags ?? null,
+    // Manual creation only, never carries Import provenance (delta §4) —
+    // import-committed transactions are built directly in
+    // use-cases/imports.ts, not through this function.
+    importFileId: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -199,6 +203,10 @@ export function mergeTransactions(
     date: targets[0].date,
     description: descriptions.join(" + "),
     tags: mergedTags.length > 0 ? mergedTags : null,
+    // Merging is a manual action; a merged transaction has no single Import
+    // to attribute to even if some inputs did (delta §4 doesn't define this
+    // case, and merge already isn't offered from the Import flow).
+    importFileId: null,
     createdAt: now,
     updatedAt: now,
   };

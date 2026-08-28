@@ -3,8 +3,8 @@
 ## Included
 
 ### Core
-- Member/profile
-- multiple local Members
+
+- AppUser identity / Profile (financial identity)
 - Currency
 - Account
 - Transaction
@@ -14,6 +14,7 @@
 - INR-only currency model
 
 ### Accounts
+
 - create/edit/archive
 - classification
 - MVP instrument type
@@ -34,6 +35,7 @@ BALANCING
 ```
 
 ### Transactions
+
 - create/edit
 - hard delete
 - income
@@ -46,6 +48,7 @@ BALANCING
 - filtering/search
 
 ### Transaction entry
+
 Two modes:
 
 1. Simple mode — standard two-leg transaction.
@@ -72,6 +75,7 @@ Receivable   ₹3,000
 The UI does not expose debit/credit terminology to ordinary users.
 
 ### Accounting
+
 - debit/credit
 - balance validation
 - minimum two postings
@@ -80,26 +84,43 @@ The UI does not expose debit/credit terminology to ordinary users.
 - account balances
 - atomic posting
 - integer minor-unit money storage
-- Member ownership validation
+- Profile ownership validation
 - INR-only validation
 
-### Members
-- create local Member
-- multiple Members in one local installation
-- active Member selection
-- Member-scoped Accounts, Transactions and Currencies
+### Identity
 
-No authentication.
+- AppUser registration/login (real authentication)
+- each AppUser linked to exactly one Profile; a Profile can also exist unlinked
+- Primary User (first AppUser) can create/access additional Profiles via `/profiles`
+- Profile-scoped Accounts, Transactions and Currencies
+
+### Imports
+
+- statement upload (generic CSV, HDFC Bank Account XLS, Axis Bank Account XLS, IDFC FIRST Bank Account XLS, Federal Bank Account PDF (password-protected))
+- adapter auto-detection, account resolution (exact/possible-match/ambiguous/new)
+- editable preview, explicit approval, atomic commit
+- permanent `import_file_id` provenance on committed Transactions
+- Rules and Duplicate Detection remain deferred plugins (not built)
+
+### Recurring Transactions
+
+- Recurring Rule definition (Name, From/To Account, Amount, Description, Schedule) — not a Transaction
+- Daily/Weekly/Monthly/Yearly schedules, Start date, optional End date
+- `+ Add New` (blank) and `Make recurring` on a transaction row (prefilled) — one shared form
+- Recurring page: Rules list (Name/Next Due/Schedule/Amount, Edit/Delete) and Calendar view
+- No automatic transaction generation, transaction matching, or reminders (Phase 1)
 
 ### Tags
-- inline key/value JSON on Accounts
-- inline key/value JSON on Transactions
+
+- inline `string[]` on Accounts
+- inline `string[]` on Transactions
 - tag chips
-- tag key/value search/filter
+- tag search/filter
 - per-record tag editing
 - no global Tag entity
 
 ### UI
+
 - dashboard
 - accounts
 - transaction list
@@ -114,19 +135,17 @@ No authentication.
 Spaces
 Expense sharing
 Settlements
-Imports
-SMS
-Email
-Statements
+Import Rules / Duplicate Detection plugins
+Import adapters beyond the five shipped (generic CSV, HDFC/Axis/IDFC FIRST/Federal Bank Account XLS/PDF)
+SMS / Email statement import
+Automatic transaction generation from Recurring Rules
+Recurring Rule transaction-matching / reminders
 Multi-currency
 FX
-Investments
-Stock accounts
-Metal accounts
+Investment valuation/pricing/quantity
 Budgets
 Transaction history
 AI
-Authentication
 Cloud sync
 ```
 

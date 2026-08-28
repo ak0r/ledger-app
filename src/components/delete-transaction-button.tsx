@@ -9,13 +9,7 @@ import { deleteTransactionAction } from "@/server/actions/transactions";
 // 2026-08-15, HANDOFF.md open decisions #4) — matches ADR-019/rule #9 as
 // already accepted: hard delete, no soft-delete field. ConfirmDialog is the
 // entire safety net; the delete itself is immediate and permanent.
-export function DeleteTransactionButton({
-  profileId,
-  transactionId,
-}: {
-  profileId: string;
-  transactionId: string;
-}) {
+export function DeleteTransactionButton({ transactionId }: { transactionId: string }) {
   const router = useRouter();
 
   return (
@@ -30,7 +24,7 @@ export function DeleteTransactionButton({
       confirmLabel="Delete"
       destructive
       onConfirm={async () => {
-        const result = await deleteTransactionAction(profileId, { profileId, transactionId });
+        const result = await deleteTransactionAction({ transactionId });
         if (result.success) router.refresh();
         return result;
       }}

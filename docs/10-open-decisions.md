@@ -7,6 +7,7 @@ This file contains only decisions intentionally deferred or requiring future des
 Accounting principle is fixed.
 
 UX can later determine whether opening balances are:
+
 - guided setup
 - account action
 - dedicated transaction type
@@ -24,6 +25,7 @@ No global Tag entity is planned.
 ## Investment model
 
 Future design required for:
+
 - STOCK
 - METAL
 - MUTUAL_FUND
@@ -38,6 +40,7 @@ Future design required for:
 ## Multi-currency / FX
 
 Future design required for:
+
 - additional currencies
 - FX rates
 - conversion
@@ -47,6 +50,7 @@ Future design required for:
 ## Spaces
 
 Future design required for:
+
 - PERSONAL / SHARED spaces
 - member participation
 - archived spaces
@@ -54,7 +58,8 @@ Future design required for:
 ## Expense sharing
 
 Future design required for:
-- expense allocation between Members
+
+- expense allocation between Profiles
 - receivables/payables
 - settlements
 - shared-space visibility
@@ -63,19 +68,42 @@ Accounting splits and expense sharing must remain separate concepts.
 
 ## Imports
 
-Future design required for:
+Decided and shipped (2026-08-25/26 deltas — see `docs/04-modules.md`):
+CSV/XLS/PDF via a real adapter (generic CSV, HDFC Bank Account XLS, Axis
+Bank Account XLS, IDFC FIRST Bank Account XLS, Federal Bank Account PDF),
+account resolution (`AccountIdentifier` matching), review workflow, atomic
+commit. Password-protected import files (ADR-034) — the password is
+prompted for in the UI, used once server-side to decrypt, and never
+persisted.
+
+Still future design required for:
+
 - email
 - SMS
-- PDF statements
-- CSV/XLS
-- raw source records
-- parser pipeline
-- duplicate detection
-- review workflow
+- PDF statements from any other institution
+- any adapter beyond the five shipped
+- Rules (auto-categorization) plugin
+- Duplicate Detection plugin
+
+## Recurring Transactions
+
+Decided and shipped (2026-08-28, Phase 1 — see `docs/04-modules.md` and
+ADR-035 in `docs/07-decisions.md`): Recurring Rule definition model,
+structured schedule (not RRULE), Rules list + Calendar view, `Add New` and
+`Make recurring` entry points sharing one form.
+
+Still future design required for:
+
+- automatic transaction generation/posting from a due occurrence
+- transaction matching/filtering (associating existing Transactions with a
+  Recurring Rule, FinBodhi's `transactionFilter` concept)
+- reminders / notifications
+- recurring rules from split transactions
 
 ## Transaction history
 
 Future design required for:
+
 - immutable versions
 - edit history
 - deletion history
@@ -86,13 +114,15 @@ MVP uses hard delete and has no history UI.
 
 ## Authentication / sharing
 
-Future design required if the local application becomes multi-user over a network.
-
-MVP Members are local financial profiles only.
+Resolved: real AppUser authentication exists (2026-08-20 delta) — see
+`docs/completed/2026-08-20-User-Simplification.md`. Still future design
+required: sharing one Profile's data with another AppUser (today, a Profile
+is linked to exactly one AppUser).
 
 ## AI / learning
 
 Future design required for:
+
 - categorisation
 - parser assistance
 - learning from corrections

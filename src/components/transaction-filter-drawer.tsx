@@ -106,9 +106,12 @@ export function TransactionFilterDrawer({
   initialState,
   lockedAccountId,
   sortState,
+  onApply,
 }: {
-  baseHref: string;
-  accounts: AccountRow[];
+  // Optional when `onApply` is given (Import's client-state usage has no
+  // URL to navigate to at all — see import-workspace.tsx).
+  baseHref?: string;
+  accounts: Pick<AccountRow, "id" | "name">[];
   currency: { symbol: string; minorUnitScale: number };
   initialState: TransactionFilterState;
   lockedAccountId?: string;
@@ -117,6 +120,11 @@ export function TransactionFilterDrawer({
   // navigated href, same as `page.tsx`'s own `pageHref` preserves it across
   // a page/pageSize change.
   sortState?: SortState | null;
+  // Client-state escape hatch (Import review workspace — no URL/searchParams
+  // round-trip there, everything lives in React state) — when given, Apply
+  // calls this instead of `router.push`. The Transactions/Account-Detail
+  // pages don't pass it and keep the original URL-driven behavior.
+  onApply?: (state: TransactionFilterState) => void;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -155,6 +163,11 @@ export function TransactionFilterDrawer({
 
   function apply() {
     const state: TransactionFilterState = { match, conditions };
+    if (onApply) {
+      onApply(state);
+      setOpen(false);
+      return;
+    }
     const params = new URLSearchParams();
     if (conditions.length > 0) params.set("filter", serializeTransactionFilter(state));
     if (sortState) {
@@ -162,7 +175,7 @@ export function TransactionFilterDrawer({
       params.set("dir", sortState.direction);
     }
     const query = params.toString();
-    router.push(query ? `${baseHref}?${query}` : baseHref);
+    router.push(query ? `${baseHref}?${query}` : (baseHref ?? ""));
     setOpen(false);
   }
 

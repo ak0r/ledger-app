@@ -11,7 +11,7 @@
 // 2026-08-20 User Simplification delta: trimmed to single-Profile scope —
 // the demo dataset used to build two Members (a household) inside one
 // Family; that container no longer exists, and demo data now seeds into
-// one already-existing Profile at /p/[profileId]/setup time, not a
+// one already-existing Profile at /setup time, not a
 // multi-person household.
 import { toMinorUnits, validateTransaction, type AccountRef, type Classification, type InstrumentType } from "@/domain";
 import type { CurrencyRow } from "../repositories/currencies";
@@ -131,6 +131,7 @@ class DatasetBuilder {
       date,
       description,
       tags,
+      importFileId: null,
       createdAt: this.now,
       updatedAt: this.now,
     });

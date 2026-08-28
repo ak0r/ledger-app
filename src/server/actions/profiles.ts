@@ -25,8 +25,8 @@ export async function renameProfileAction(
   await requireProfileAccess(profileId);
   const result = renameProfileCore(db, input);
   if (result.success) {
-    revalidatePath(`/p/${profileId}`, "layout");
-    revalidatePath("/profiles");
+    revalidatePath("/", "layout");
+    revalidatePath("/settings/profiles");
   }
   return result;
 }

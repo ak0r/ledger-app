@@ -3,6 +3,10 @@
 **Date:** 2026-08-21\
 **Status:** Ready for implementation
 
+> **Status note (2026-08-26):** Step 1 (Instrument entity, catalogue-only)
+> shipped 2026-08-22. Steps 2-10 (pricing, quantity, valuation, identifiers)
+> not started.
+
 ## 1. Context
 
 Ledger is a personal finance ledger based on double-entry accounting.
@@ -250,7 +254,7 @@ API-key providers may become available when an AppUser has configured a
 key.
 
 API keys are **AppUser-scoped**, not
-Family/Profile/Account/Instrument-scoped.
+Profile/Account/Instrument-scoped.
 
 Do not expose provider selection during Account creation/editing.
 
@@ -336,7 +340,7 @@ AppUser
     └── Provider credentials
 ```
 
-They are not stored against Family, Profile, Account, or Instrument.
+They are not stored against Profile, Account, or Instrument.
 
 API-key providers are a later implementation stage. Free providers come
 first.

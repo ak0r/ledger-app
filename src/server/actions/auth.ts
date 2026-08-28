@@ -5,7 +5,6 @@ import { redirect } from "next/navigation";
 import { db } from "../db/client";
 import { SESSION_COOKIE } from "../session";
 import { logoutAppUser } from "../use-cases/auth";
-import { getProfileByAppUserId } from "../use-cases/profiles";
 import type { SessionRow } from "../repositories/sessions";
 import { loginCore, registerCore } from "./auth.core";
 import type { ActionResult } from "./result";
@@ -25,7 +24,7 @@ export async function registerAction(input: unknown): Promise<ActionResult<void>
   if (!result.success) return result;
 
   await setSessionCookie(result.data.session);
-  redirect(`/p/${result.data.profile.id}/setup`);
+  redirect("/setup");
 }
 
 // `next` must be a same-origin relative path — never trust an arbitrary
@@ -36,11 +35,7 @@ export async function loginAction(input: unknown, next?: string): Promise<Action
 
   await setSessionCookie(result.data.session);
   if (next && next.startsWith("/")) redirect(next);
-
-  // Invariant: every AppUser has exactly one Profile (registration always
-  // creates/links one transactionally) — this lookup should never miss.
-  const profile = getProfileByAppUserId(db, result.data.appUser.id);
-  redirect(profile ? `/p/${profile.id}` : "/login");
+  redirect("/");
 }
 
 export async function logoutAction(): Promise<void> {
