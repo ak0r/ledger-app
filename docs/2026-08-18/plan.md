@@ -1,5 +1,14 @@
 # Delta 4: Expandable Split Transactions
 
+> **Status note (2026-08-28):** Shipped and re-verified against the
+> current `src/components/transaction-table.tsx`/`transaction-row-menu.tsx`
+> — `getExpandedRowModel`/`row.getIsExpanded()`/`row.toggleExpanded()`
+> wiring, collapsed-by-default split rows with a disclosure chevron
+> (`aria-expanded`, `ChevronRight`/`ChevronDown`), and the mobile card
+> redesign (From/To always separate rows) are all present exactly as
+> Phases P/Q below describe. Closes the "not re-verified" note carried
+> since the 2026-08-26 hand-off.
+
 ## Context
 
 Fourth delta spec today (`deltachange20260818transactionexpandablesplitrowsv2.md`).
