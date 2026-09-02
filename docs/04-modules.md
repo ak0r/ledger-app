@@ -134,7 +134,24 @@ and notifications.
 
 ## Budgets
 
-Consume ledger data. Calculated spend is not source of truth.
+Shipped 2026-09-02 — `docs/completed/2026-09-01-Budget-Framework.md`, ADR-036
+in `docs/07-decisions.md`. Consume ledger data; calculated spend is not
+source of truth (never persisted — always summed at read time from
+`postings`).
+
+A Budget (One-time or Recurring) tracks Expense activity only, through an
+effective account set — explicit Expense Accounts UNION accounts matched by
+a Budget-domain-specific condition filter (deliberately not the Transaction
+List's own filter type). A Recurring Budget's successive Budget Periods are
+never created silently: each requires explicit "Review & Create" approval,
+defaulted from the previous Period's targets but fully editable first. Each
+approved Period freezes its own scope snapshot — later edits to the Budget
+never rewrite a historical Period's configuration, only the current one.
+
+**Still deferred** (explicit future capability, not built): Goals, Plans,
+envelope budgeting, savings budgets, an FX conversion engine, and
+Budget-to-transaction ownership (a transaction may contribute to multiple
+Budgets; double-counting across Budgets is intentional).
 
 ## Investments
 

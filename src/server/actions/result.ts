@@ -1,5 +1,8 @@
 import type { ZodError } from "zod";
 import {
+  BudgetAllocationValidationError,
+  BudgetScopeValidationError,
+  BudgetValidationError,
   EmailAlreadyRegisteredError,
   InvalidCredentialsError,
   MergeIneligibleError,
@@ -42,6 +45,9 @@ export function fromThrown(error: unknown): ActionResult<never> {
   if (
     error instanceof TransactionValidationError ||
     error instanceof RecurringRuleValidationError ||
+    error instanceof BudgetValidationError ||
+    error instanceof BudgetScopeValidationError ||
+    error instanceof BudgetAllocationValidationError ||
     error instanceof NotFoundError ||
     error instanceof UnsupportedCurrencyError ||
     error instanceof MergeIneligibleError ||

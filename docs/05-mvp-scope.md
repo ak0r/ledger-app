@@ -110,6 +110,15 @@ The UI does not expose debit/credit terminology to ordinary users.
 - Recurring page: Rules list (Name/Next Due/Schedule/Amount, Edit/Delete) and Calendar view
 - No automatic transaction generation, transaction matching, or reminders (Phase 1)
 
+### Budgets
+
+- One-time and Recurring Budgets, Expense-only (Assets/Liabilities/Income/Equity/Savings out of scope)
+- Scope: explicit Expense Accounts and/or a Budget-domain condition filter (Expense Account/Date/Tags/Description), union'd
+- Budget Allocations (target per Expense Account); parent total always derived, never independently editable
+- Recurring Budget Periods require explicit "Review & Create" approval — never created silently; each approved Period freezes its own scope snapshot as permanent history
+- Actuals are never persisted — always summed at read time from `postings`
+- No Goals, Plans, envelope budgeting, savings budgets, or FX conversion engine (deferred)
+
 ### Tags
 
 - inline `string[]` on Accounts
@@ -143,7 +152,6 @@ Recurring Rule transaction-matching / reminders
 Multi-currency
 FX
 Investment valuation/pricing/quantity
-Budgets
 Transaction history
 AI
 Cloud sync

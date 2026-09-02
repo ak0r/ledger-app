@@ -380,3 +380,67 @@ a normal non-split, single-From transaction (spec §11/§13; same guard as
 the row menu's existing Split Transaction entry). The two objects stay
 independent after creation: editing the rule never modifies the source
 transaction, and vice versa.
+
+## ADR-036 — Budget scope/filter is Budget-domain specific; a Period's snapshot is mutable only while current
+
+Accepted (2026-09-02, Budget Framework —
+`docs/completed/2026-09-01-Budget-Framework.md`).
+
+Four related implementation decisions from that delta, none dictated
+unambiguously by its own text:
+
+**Budget's condition filter is a separate type from Transaction List's
+`TransactionFilterState`** (`src/lib/transaction-filter.ts`), per the
+delta's own explicit instruction (§7: "remain Budget-domain specific
+rather than directly coupling persistence to arbitrary Transaction List
+filter internals") — despite the row-editing UI looking similar.
+`BudgetFilterCondition`/`BudgetFilterState` (`src/domain/budget.ts`) cover
+only the four fields the delta scopes (Expense Account/Date/Tags/
+Description), add a third `NONE` match mode Transaction List's filter
+doesn't have, and `expenseAccount` resolution only ever looks at a
+transaction's EXPENSE-classified postings (`src/lib/budget-filter.ts`) —
+Budgets are expense-only (§14), so a transfer between two non-expense
+accounts can never match a Budget filter regardless of its conditions.
+
+**A Budget Period is a window (`start_date`/`end_date`), not a single
+occurrence date** — unlike a Recurring Rule's `nextOccurrence` (ADR-035),
+which asks "what date is the next transaction," a Budget Period asks "what
+date range does the Nth period span." `budgetPeriodWindowAt`/
+`currentOrNextBudgetPeriod`/`nextBudgetPeriodAfter`
+(`src/domain/budget.ts`) are a parallel forward-scan implementation, not a
+reuse of `domain/recurring.ts`'s point-in-time functions, even though both
+share the same DAY/WEEK/MONTH/YEAR-style clamping posture for month-end
+anchors. A ONE_TIME Budget's single Period always has null `start_date`/
+`end_date` — the delta is explicit (§4.1) that a one-time Budget requires
+no transaction date range, so actuals calculation skips date filtering
+entirely when both are null (`calculateBudgetActuals`,
+`src/server/use-cases/budgets.ts`).
+
+**Editing an active Budget's scope/allocations updates its current
+(latest, not-yet-superseded) Period's snapshot in place; only Periods
+other than the current one are ever frozen against later edits.** The
+delta's own warning copy (§10: "changing this Budget can change... current
+actual spending") only makes sense if the edit is live; §11.1's "must not
+rewrite historical Budget Period configuration" is read as protecting
+*closed* Periods specifically. `editBudget` therefore calls
+`updateBudgetPeriodSnapshot` on `findLatestBudgetPeriod`'s result;
+`approveBudgetPeriod` (the separate §5/§16 review flow) is the only path
+that ever creates a new, independently-frozen Period. The scope-change
+warning itself (§8.3/§10) is enforced client-side only
+(`src/components/budget-form.tsx`'s `ConfirmDialog` gate on the edit
+submit path) — the use-case layer applies the change unconditionally once
+called, same posture as every other confirm-before-mutate flow in this
+codebase (e.g. `DeleteBudgetButton`).
+
+**"Ending soon" (§16/§17) has no defined threshold in the delta — its
+mockups only ever show one example ("Ends in 5 days") without stating the
+window that copy should appear within.** `BUDGET_REVIEW_WINDOW_DAYS = 7`
+(`src/server/use-cases/budgets.ts`) is this implementation's own chosen
+cutoff: `listBudgetsWithSummary`'s `reviewDue` flag goes true once a
+RECURRING Budget's current Period has ended or is within 7 days of ending
+*and* a next Period actually exists to review (schedule not terminated).
+This only controls when the "Review Next Period" affordance appears on the
+Budgets landing page and Home dashboard — approval itself is always an
+explicit user action either way (§5), so a wrong threshold is a UX
+nit, not a correctness risk. Revisit if a real usage pattern calls for a
+different window or a user-configurable one.

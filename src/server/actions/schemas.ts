@@ -5,7 +5,15 @@
 // the DB and can only happen in the domain/use-case layer (Phase 3/4),
 // which every action still runs after this parse succeeds (rule #17).
 import { z } from "zod";
-import { CLASSIFICATIONS, CREATABLE_CLASSIFICATIONS, INSTRUMENT_TYPES, RECURRING_FREQUENCIES } from "../db/schema";
+import {
+  BUDGET_FILTER_MATCHES,
+  BUDGET_RECURRENCE_UNITS,
+  BUDGET_TYPES,
+  CLASSIFICATIONS,
+  CREATABLE_CLASSIFICATIONS,
+  INSTRUMENT_TYPES,
+  RECURRING_FREQUENCIES,
+} from "../db/schema";
 
 export const createProfileSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
@@ -262,4 +270,118 @@ export const commitImportSchema = z.object({
   files: z.array(commitImportFileSchema).min(1, "No files to commit"),
   candidates: z.array(previewCandidateSchema).min(1, "No candidates to commit"),
   approvedNewAccounts: z.array(newAccountDescriptorSchema).default([]),
+});
+
+// Budget Framework delta (docs/pending/2026-09-01-Budget-Framework.md) —
+// mirrors the domain invariants in domain/budget.ts that don't need a DB
+// lookup; scope/allocation account ownership + EXPENSE-only checks are
+// still enforced server-side in use-cases/budgets.ts (rule #17).
+// A plain union of one variant per field's own operator/value shape (spec
+// §7's operator table) rather than a single loosely-typed object + refine —
+// this way an invalid field/operator/value combination is a type error for
+// any caller building input in TS, not just a runtime rejection, and the
+// inferred type lines up with domain/budget.ts's BudgetFilterCondition
+// without a cast.
+const budgetFilterConditionSchema = z.union([
+  z.object({
+    id: z.string().min(1),
+    field: z.literal("expenseAccount"),
+    operator: z.enum(["is", "is-not"]),
+    value: z.string().min(1),
+  }),
+  z.object({
+    id: z.string().min(1),
+    field: z.literal("date"),
+    operator: z.enum(["before", "after"]),
+    value: z.string().min(1),
+  }),
+  z.object({
+    id: z.string().min(1),
+    field: z.literal("date"),
+    operator: z.literal("between"),
+    value: z.tuple([z.string().min(1), z.string().min(1)]),
+  }),
+  z.object({
+    id: z.string().min(1),
+    field: z.literal("tags"),
+    operator: z.enum(["contains", "not-contains"]),
+    value: z.string().min(1),
+  }),
+  z.object({
+    id: z.string().min(1),
+    field: z.literal("description"),
+    operator: z.enum(["contains", "is", "is-not"]),
+    value: z.string().min(1),
+  }),
+]);
+
+const budgetFilterStateSchema = z.object({
+  match: z.enum(BUDGET_FILTER_MATCHES),
+  conditions: z.array(budgetFilterConditionSchema),
+});
+
+const budgetScopeSchema = z.object({
+  explicitAccountIds: z.array(z.string().min(1)),
+  filter: budgetFilterStateSchema,
+});
+
+const budgetRecurrenceSchema = z
+  .object({
+    unit: z.enum(BUDGET_RECURRENCE_UNITS),
+    interval: z.number().int().min(1),
+    startDate: z.string().min(1),
+    endDate: z.string().min(1).optional(),
+    occurrences: z.number().int().min(1).optional(),
+  })
+  .refine((schedule) => !(schedule.endDate && schedule.occurrences != null), {
+    message: "Choose either an end date or a number of occurrences, not both",
+    path: ["endDate"],
+  });
+
+const budgetAllocationSchema = z.object({
+  expenseAccountId: z.string().min(1),
+  targetAmountMinor: z.number().int().positive(),
+});
+
+const budgetFieldsShape = {
+  profileId: z.string().min(1),
+  name: z.string().trim().min(1, "Name is required"),
+  type: z.enum(BUDGET_TYPES),
+  recurrence: budgetRecurrenceSchema.optional(),
+  scope: budgetScopeSchema,
+  allocations: z.array(budgetAllocationSchema).default([]),
+};
+
+function refineBudgetTypeRecurrence(data: { type: string; recurrence?: unknown }, ctx: z.RefinementCtx): void {
+  if (data.type === "RECURRING" && !data.recurrence) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Recurrence is required for a recurring budget", path: ["recurrence"] });
+  }
+  if (data.type === "ONE_TIME" && data.recurrence) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Recurrence is not allowed for a one-time budget", path: ["recurrence"] });
+  }
+}
+
+export const createBudgetSchema = z.object(budgetFieldsShape).superRefine(refineBudgetTypeRecurrence);
+
+export const editBudgetSchema = z
+  .object({ ...budgetFieldsShape, budgetId: z.string().min(1) })
+  .superRefine(refineBudgetTypeRecurrence);
+
+export const deleteBudgetSchema = z.object({
+  profileId: z.string().min(1),
+  budgetId: z.string().min(1),
+});
+
+export const previewNextBudgetPeriodSchema = z.object({
+  profileId: z.string().min(1),
+  budgetId: z.string().min(1),
+});
+
+export const approveBudgetPeriodSchema = z.object({
+  profileId: z.string().min(1),
+  budgetId: z.string().min(1),
+  startDate: z.string().min(1).nullable(),
+  endDate: z.string().min(1).nullable(),
+  scope: budgetScopeSchema,
+  allocations: z.array(budgetAllocationSchema).default([]),
 });

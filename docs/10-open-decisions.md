@@ -100,6 +100,25 @@ Still future design required for:
 - reminders / notifications
 - recurring rules from split transactions
 
+## Budgets
+
+Decided and shipped (2026-09-02 — see `docs/04-modules.md` and ADR-036 in
+`docs/07-decisions.md`): One-time/Recurring Budget model, explicit-account
++ filter scope (Budget-domain-specific filter type), Budget Allocations
+with a derived total, never-persisted actuals, explicit "Review & Create"
+approval per Recurring Budget Period with a frozen scope snapshot per
+Period, `BUDGET_REVIEW_WINDOW_DAYS = 7` "needs review" heuristic on the
+Budgets page and Home dashboard.
+
+Still future design required for:
+
+- Goals and Plans (this delta's own §2 distinguishes them from Budgets but
+  defers both)
+- envelope budgeting
+- savings budgets
+- an FX conversion engine for mixed-currency Budget scopes
+- Budget insights/trends
+
 ## Transaction history
 
 Future design required for:

@@ -82,6 +82,26 @@
       duplicate it per entry point.
     - "Next due" and every Calendar-tab occurrence are derived on read,
       never persisted or cached.
+28. Budgets (2026-09-02 Budget Framework delta, archived in
+    `docs/completed/`; see ADR-036 in `docs/07-decisions.md`):
+    - Budgets are expense-only. A Budget's scope is the effective account
+      set: explicit Expense Accounts UNION accounts matched by its own
+      condition filter — a Budget-domain type, never the Transaction
+      List's `TransactionFilterState`.
+    - Actual spending is never persisted — always summed at read time from
+      `postings` against the relevant Budget Period's own frozen scope
+      snapshot. No `budget_actual`/`budget_transaction`/`budget_posting`
+      table.
+    - A Recurring Budget's next Period is never created silently — only
+      through the explicit "Review & Create" flow
+      (`previewNextBudgetPeriod`/`approveBudgetPeriod`), defaulted from the
+      previous Period's targets but fully editable first.
+    - Each approved Budget Period freezes its own scope snapshot as
+      permanent history. Editing an active Budget's scope/allocations
+      updates only its current (latest) Period in place — never a
+      historical one.
+    - A transaction may contribute to multiple Budgets; double-counting
+      across Budgets is intentional, not a bug.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

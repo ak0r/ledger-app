@@ -43,6 +43,13 @@
       "when": 1787905501642,
       "tag": "0005_eminent_nicolaos",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1788280984210,
+      "tag": "0006_far_avengers",
+      "breakpoints": true
     }
   ]
 }

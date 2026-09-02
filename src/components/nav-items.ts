@@ -1,4 +1,4 @@
-import { ArrowLeftRight, House, Landmark, Repeat, Settings, Upload, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, House, Landmark, PiggyBank, Repeat, Settings, Upload, type LucideIcon } from "lucide-react";
 
 // Shared nav data consumed by both SidebarNav (desktop) and BottomNav
 // (mobile) — same destinations, different presentation (docs/design/
@@ -50,6 +50,12 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Recurring",
     icon: Repeat,
     href: "/recurring",
+  },
+  {
+    key: "budgets",
+    label: "Budgets",
+    icon: PiggyBank,
+    href: "/budgets",
   },
   {
     key: "settings",

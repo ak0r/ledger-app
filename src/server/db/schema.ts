@@ -13,6 +13,10 @@ import {
   INSTRUMENT_TYPES,
   INSTRUMENT_BACKED_TYPES,
   RECURRING_FREQUENCIES,
+  BUDGET_TYPES,
+  BUDGET_RECURRENCE_UNITS,
+  BUDGET_FILTER_FIELDS,
+  BUDGET_FILTER_MATCHES,
 } from "@/domain";
 import type {
   Classification,
@@ -20,10 +24,36 @@ import type {
   InstrumentBackedType,
   ImportStatus,
   RecurringFrequency,
+  BudgetType,
+  BudgetRecurrenceUnit,
+  BudgetFilterMatch,
+  BudgetFilterCondition,
+  BudgetScopeSnapshot,
 } from "@/domain";
 
-export { CLASSIFICATIONS, CREATABLE_CLASSIFICATIONS, INSTRUMENT_TYPES, INSTRUMENT_BACKED_TYPES, RECURRING_FREQUENCIES };
-export type { Classification, InstrumentType, InstrumentBackedType, ImportStatus, RecurringFrequency };
+export {
+  CLASSIFICATIONS,
+  CREATABLE_CLASSIFICATIONS,
+  INSTRUMENT_TYPES,
+  INSTRUMENT_BACKED_TYPES,
+  RECURRING_FREQUENCIES,
+  BUDGET_TYPES,
+  BUDGET_RECURRENCE_UNITS,
+  BUDGET_FILTER_FIELDS,
+  BUDGET_FILTER_MATCHES,
+};
+export type {
+  Classification,
+  InstrumentType,
+  InstrumentBackedType,
+  ImportStatus,
+  RecurringFrequency,
+  BudgetType,
+  BudgetRecurrenceUnit,
+  BudgetFilterMatch,
+  BudgetFilterCondition,
+  BudgetScopeSnapshot,
+};
 
 const id = () =>
   text("id")
@@ -226,6 +256,74 @@ export const recurringRules = sqliteTable("recurring_rules", {
   byWeekday: integer("by_weekday"),
   startDate: text("start_date").notNull(),
   endDate: text("end_date"),
+  ...timestamps,
+});
+
+// Budget Framework delta (docs/pending/2026-09-01-Budget-Framework.md) — a
+// Budget is a definition (Name + recurrence), never a Transaction (spec
+// §1/§9): actual spending is always derived at read time from `postings`,
+// never persisted here. `explicitAccountIds`/`filterMatch`/
+// `filterConditions` are the *live* scope (spec §6) — editable, and used
+// both to seed the next BudgetPeriod's defaults (§5) and, for an active
+// period, to update that period's own `scopeSnapshot` in place when edited
+// (§10's warning gate is an application-layer concern, not a schema one).
+// Recurrence columns are null for ONE_TIME budgets, same nullable-when-
+// inapplicable posture as `recurringRules`.
+export const budgets = sqliteTable("budgets", {
+  id: id(),
+  profileId: text("profile_id")
+    .notNull()
+    .references(() => profiles.id),
+  name: text("name").notNull(),
+  type: text("type").notNull().$type<BudgetType>(),
+  recurrenceUnit: text("recurrence_unit").$type<BudgetRecurrenceUnit>(),
+  recurrenceInterval: integer("recurrence_interval"),
+  recurrenceStartDate: text("recurrence_start_date"),
+  recurrenceEndDate: text("recurrence_end_date"),
+  recurrenceOccurrences: integer("recurrence_occurrences"),
+  explicitAccountIds: text("explicit_account_ids", { mode: "json" }).$type<string[]>(),
+  filterMatch: text("filter_match").$type<BudgetFilterMatch>(),
+  filterConditions: text("filter_conditions", { mode: "json" }).$type<BudgetFilterCondition[]>(),
+  ...timestamps,
+});
+
+// One approved occurrence/window of a Budget (spec §3/§11) — created only
+// on explicit user approval (spec §5/§16), never silently. No `profileId`
+// column: scope derives via the `budgetId` join, same convention as
+// `postings`/`accountIdentifiers` deriving scope via their parent join.
+// `startDate`/`endDate` are both null for a ONE_TIME budget's single period
+// (spec §4.1 — no transaction date range required). `scopeSnapshot` is the
+// frozen copy of the Budget's scope at approval time — authoritative for
+// evaluating that period even after the parent Budget's live scope changes
+// later (spec §11.1); implementation keeps it as one JSON column rather
+// than normalizing into child tables, since nothing here needs it
+// independently queryable (contrast `accountIdentifiers`, which does).
+export const budgetPeriods = sqliteTable("budget_periods", {
+  id: id(),
+  budgetId: text("budget_id")
+    .notNull()
+    .references(() => budgets.id),
+  startDate: text("start_date"),
+  endDate: text("end_date"),
+  scopeSnapshot: text("scope_snapshot", { mode: "json" }).notNull().$type<BudgetScopeSnapshot>(),
+  ...timestamps,
+});
+
+// A target amount against one Expense Account within one BudgetPeriod
+// (spec §8) — not a child Budget (spec §19 "Budget rows are allocations,
+// not child Budgets"). No `profileId` column, scope derives via
+// `budgetPeriodId` -> `budgetId` -> `profileId`, same convention as above.
+// The parent Budget/Period total is always SUM(targetAmountMinor), never
+// independently stored (spec §8.1).
+export const budgetAllocations = sqliteTable("budget_allocations", {
+  id: id(),
+  budgetPeriodId: text("budget_period_id")
+    .notNull()
+    .references(() => budgetPeriods.id),
+  expenseAccountId: text("expense_account_id")
+    .notNull()
+    .references(() => accounts.id),
+  targetAmountMinor: integer("target_amount_minor").notNull(),
   ...timestamps,
 });
 

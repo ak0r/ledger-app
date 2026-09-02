@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { db } from "@/server/db/client";
 import { requireActiveProfile } from "@/server/authz";
+import { listAccounts } from "@/server/use-cases/accounts";
 import { listCurrencies } from "@/server/use-cases/currencies";
 import { getDashboardSummary } from "@/server/use-cases/dashboard";
-import { formatMoney, humanizeEnum } from "@/lib/utils";
-import { buttonVariants } from "@/components/ui/button";
+import { listBudgetsWithSummary } from "@/server/use-cases/budgets";
+import { formatDate, formatMoney, humanizeEnum } from "@/lib/utils";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { TagChips } from "@/components/tag-chips";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { BudgetPeriodReviewSheet } from "@/components/budget-period-review-sheet";
 
 // SQLite is a live local resource — never statically prerender a route that
 // reads it (docs/06-architecture.md).
@@ -40,6 +43,16 @@ export default async function DashboardPage() {
   const summary = getDashboardSummary(db, profile.id);
   const accountNameById = new Map(summary.accountBalances.map((a) => [a.id, a.name]));
 
+  // Spec §17 — surfaces Recurring Budgets whose current Period has ended or
+  // is within the review window (listBudgetsWithSummary's `reviewDue`,
+  // use-cases/budgets.ts), so a gap never opens silently while still
+  // requiring explicit approval (spec §5). Omitted entirely when nothing
+  // needs attention, rather than an always-present empty state.
+  const budgetsNeedingReview = listBudgetsWithSummary(db, profile.id).filter((s) => s.reviewDue);
+  const expenseAccounts = listAccounts(db, profile.id)
+    .filter((account) => account.classification === "EXPENSE")
+    .map((account) => ({ id: account.id, name: account.name }));
+
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-lg font-semibold">Dashboard</h1>
@@ -54,6 +67,38 @@ export default async function DashboardPage() {
           <CardTitle className="font-mono text-2xl tabular-nums">{money(summary.netPosition)}</CardTitle>
         </CardHeader>
       </Card>
+
+      {budgetsNeedingReview.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Budgets needing review</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {budgetsNeedingReview.map(({ budget, actuals }) => (
+              <div key={budget.id} className="flex items-center justify-between gap-3 text-sm">
+                <div>
+                  <p className="font-medium">{budget.name}</p>
+                  <p className="text-muted-foreground">
+                    {actuals?.period.endDate ? <>Ends {formatDate(actuals.period.endDate)}</> : "Ready for review"}
+                  </p>
+                </div>
+                <BudgetPeriodReviewSheet
+                  budgetId={budget.id}
+                  budgetName={budget.name}
+                  expenseAccounts={expenseAccounts}
+                  currencySymbol={currency.symbol}
+                  currencyScale={currency.minorUnitScale}
+                  trigger={
+                    <Button type="button" size="sm">
+                      Review
+                    </Button>
+                  }
+                />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-3 gap-3">
         <Card size="sm">

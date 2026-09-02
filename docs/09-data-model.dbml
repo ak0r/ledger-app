@@ -150,6 +150,42 @@ Table postings {
   updated_at datetime [not null]
 }
 
+Table budgets {
+  id text [pk]
+  profile_id text [not null]
+  name text [not null]
+  type text [not null, note: 'ONE_TIME | RECURRING']
+  recurrence_unit text [note: 'RECURRING only: DAY | WEEK | MONTH | YEAR']
+  recurrence_interval integer [note: 'RECURRING only']
+  recurrence_start_date datetime [note: 'RECURRING only']
+  recurrence_end_date datetime [note: 'null = Never, mutually exclusive with recurrence_occurrences']
+  recurrence_occurrences integer [note: 'null = Never, mutually exclusive with recurrence_end_date']
+  explicit_account_ids text [note: 'JSON array: string[] — the live/current scope, editable']
+  filter_match text [note: 'ALL | ANY | NONE — the live/current scope, editable']
+  filter_conditions text [note: 'JSON array of {id, field, operator, value} — the live/current scope, editable']
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+Table budget_periods {
+  id text [pk]
+  budget_id text [not null]
+  start_date datetime [note: 'null for a ONE_TIME Budget\'s single Period — no transaction date range required']
+  end_date datetime [note: 'null for a ONE_TIME Budget\'s single Period']
+  scope_snapshot text [not null, note: 'JSON: frozen {explicitAccountIds, filter} at approval time — authoritative for this Period even after the Budget\'s live scope later changes']
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+Table budget_allocations {
+  id text [pk]
+  budget_period_id text [not null]
+  expense_account_id text [not null]
+  target_amount_minor integer [not null]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
 Ref: sessions.app_user_id > app_users.id
 Ref: profiles.app_user_id > app_users.id
 Ref: currencies.profile_id > profiles.id
@@ -165,6 +201,10 @@ Ref: recurring_rules.from_account_id > accounts.id
 Ref: recurring_rules.to_account_id > accounts.id
 Ref: postings.transaction_id > transactions.id [delete: cascade]
 Ref: postings.account_id > accounts.id
+Ref: budgets.profile_id > profiles.id
+Ref: budget_periods.budget_id > budgets.id
+Ref: budget_allocations.budget_period_id > budget_periods.id
+Ref: budget_allocations.expense_account_id > accounts.id
 
 // Domain constraints not fully expressible in this conceptual DBML:
 //
@@ -183,3 +223,13 @@ Ref: postings.account_id > accounts.id
 // 10. import_files.account_id/new_account_count/inflow_minor/outflow_minor
 //     are always set for rows created by the current commit path; they
 //     predate the Account Resolution delta only in already-migrated rows.
+// 11. budget_allocations.expense_account_id must reference an Account with
+//     classification EXPENSE, owned by the same Profile as the parent
+//     Budget (via budget_period -> budget -> profile).
+// 12. budgets.explicit_account_ids entries must likewise be EXPENSE
+//     Accounts owned by the same Profile.
+// 13. Budget actuals are never persisted — always summed at read time from
+//     postings, scoped by the relevant budget_period's own scope_snapshot.
+// 14. budget_periods/budget_allocations are never deleted individually —
+//     only cascaded (manually, in application code) when the parent Budget
+//     itself is deleted; otherwise Periods accumulate as permanent history.

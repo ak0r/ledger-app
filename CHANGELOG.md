@@ -64,6 +64,26 @@ release is tagged. Until then, all work accumulates under `[Unreleased]`.
   Transaction. Automatic generation, transaction matching, and reminders
   are explicitly deferred.
 
+### Budgets
+
+- One-time and Recurring Budgets on a new **Budgets** page — track Expense
+  activity only (never Income/Assets/Liabilities/savings). Scope is an
+  explicit set of Expense Accounts and/or a condition filter (Expense
+  Account/Date/Tags/Description, Match All/Any/None), unioned together.
+- Budget Allocations set a target per Expense Account; the Budget total is
+  always derived, never independently editable. An account with real
+  spend but no target still shows up rather than getting an invented one.
+- Actual spending is never stored — always summed live from Ledger
+  transactions against the relevant period's own frozen scope.
+- A Recurring Budget's next period is never created silently: a "Review &
+  Create" step shows the upcoming date range with the previous period's
+  targets as editable defaults. Once approved, that period's configuration
+  is permanent history — later edits to the Budget only ever affect its
+  current period, not past ones.
+- The Budgets page and Home dashboard surface periods that have ended or
+  are ending soon with a one-click Review action, without ever creating
+  anything automatically.
+
 ### Imports
 
 - Upload a bank/card statement (generic CSV, HDFC/Axis/IDFC FIRST Bank

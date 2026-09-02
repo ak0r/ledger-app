@@ -1,4 +1,10 @@
-import type { RecurringRuleViolation, TransactionViolation } from "@/domain";
+import type {
+  BudgetAllocationViolation,
+  BudgetScopeViolation,
+  BudgetViolation,
+  RecurringRuleViolation,
+  TransactionViolation,
+} from "@/domain";
 
 export class NotFoundError extends Error {
   constructor(message: string) {
@@ -18,6 +24,27 @@ export class RecurringRuleValidationError extends Error {
   constructor(public readonly violations: readonly RecurringRuleViolation[]) {
     super("Recurring rule failed domain validation");
     this.name = "RecurringRuleValidationError";
+  }
+}
+
+export class BudgetValidationError extends Error {
+  constructor(public readonly violations: readonly BudgetViolation[]) {
+    super("Budget failed domain validation");
+    this.name = "BudgetValidationError";
+  }
+}
+
+export class BudgetScopeValidationError extends Error {
+  constructor(public readonly violations: readonly BudgetScopeViolation[]) {
+    super("Budget scope failed domain validation");
+    this.name = "BudgetScopeValidationError";
+  }
+}
+
+export class BudgetAllocationValidationError extends Error {
+  constructor(public readonly violations: readonly BudgetAllocationViolation[]) {
+    super("Budget allocation failed domain validation");
+    this.name = "BudgetAllocationValidationError";
   }
 }
 
