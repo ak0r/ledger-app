@@ -4,10 +4,11 @@ import { ArrowLeftRight, House, Landmark, PiggyBank, Repeat, Settings, Upload, t
 // (mobile) — same destinations, different presentation (docs/design/
 // design.md §20). Deliberately limited to screens that exist: no Insights
 // entry, since it has no screen of its own yet and design.md §18 calls out
-// adding nav destinations with nothing behind them as an anti-pattern —
-// Settings is included because /settings/profiles is real, but it's
-// `primaryOnly` for the same reason (nothing else lives under Settings yet,
-// and only the Primary User can reach the one thing that does).
+// adding nav destinations with nothing behind them as an anti-pattern.
+// Settings dropped `primaryOnly` (2026-09-03 Settings/Backup/Data
+// Management delta) — it's now a real flat IA every AppUser can reach
+// (/settings), not just the Primary-only Profiles roster it used to point
+// at directly.
 //
 // Routes are static top-level paths (Profile is app-level context, not a
 // URL segment — see requireActiveProfile in src/server/authz.ts), so hrefs
@@ -61,7 +62,6 @@ export const NAV_ITEMS: NavItem[] = [
     key: "settings",
     label: "Settings",
     icon: Settings,
-    href: "/settings/profiles",
-    primaryOnly: true,
+    href: "/settings",
   },
 ];

@@ -21,3 +21,12 @@ export function findAppUserById(db: DbOrTx, id: string): AppUserRow | undefined 
 export function hasAnyAppUser(db: DbOrTx): boolean {
   return db.select({ id: appUsers.id }).from(appUsers).limit(1).get() !== undefined;
 }
+
+export function updateAppUserPasswordHash(
+  db: DbOrTx,
+  id: string,
+  passwordHash: string,
+  updatedAt: string,
+): void {
+  db.update(appUsers).set({ passwordHash, updatedAt }).where(eq(appUsers.id, id)).run();
+}

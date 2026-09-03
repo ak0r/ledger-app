@@ -153,6 +153,30 @@ envelope budgeting, savings budgets, an FX conversion engine, and
 Budget-to-transaction ownership (a transaction may contribute to multiple
 Budgets; double-counting across Budgets is intentional).
 
+## Dashboard and Panels
+
+Shipped 2026-09-02 — `docs/completed/2026-09-02-Dashboard-and-Panels.md`,
+ADR-037 in `docs/07-decisions.md`. The Homepage is the default Dashboard
+for the active Profile — it owns no separate financial summary model, it
+only renders the Dashboard's Panels.
+
+A Dashboard Panel persists identity (`key`), configuration, and (x, y)
+placement only — never balances, totals, or any other derived financial
+fact; width/height are always registry-supplied, never persisted. Every
+new Profile gets a Starter Dashboard automatically (Net Worth/Assets/
+Liabilities cards, Balances/Recent Expenses/Recent Transactions lists). A
+7th panel, Budgets Needing Review, is catalogue-only (not part of the
+starter set, added via "+ Add Panel") — it carries over the Home page's
+own prior hardcoded "Budgets needing review" card. Panels are movable via
+drag-and-drop on a fixed-size Bento grid (`@dnd-kit/core`), addable,
+configurable, and removable (immediately, no confirmation) — never
+resizable.
+
+**Still deferred** (explicit future capability, not built): multiple
+Dashboards per Profile, a Charts panel category, Investment-dependent
+panels (Recent Investments/Portfolio Value/Portfolio NAV — not even as
+placeholders), user-resizable panels, separate mobile layouts.
+
 ## Investments
 
 Foundations only: an `Instrument` catalogue entity exists (shared reference

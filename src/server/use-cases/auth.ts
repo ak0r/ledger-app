@@ -1,10 +1,18 @@
 import type { Db, DbOrTx } from "../db/client";
-import { findAppUserByEmail, hasAnyAppUser, insertAppUser, type AppUserRow } from "../repositories/app-users";
+import {
+  findAppUserByEmail,
+  findAppUserById,
+  hasAnyAppUser,
+  insertAppUser,
+  updateAppUserPasswordHash,
+  type AppUserRow,
+} from "../repositories/app-users";
 import { insertSession, deleteSessionById, type SessionRow } from "../repositories/sessions";
 import { findProfileById, insertProfile, setProfileAppUserId, type ProfileRow } from "../repositories/profiles";
 import { hashPassword, verifyPassword } from "../security/password";
 import { SESSION_TTL_MS } from "../session";
-import { EmailAlreadyRegisteredError, InvalidCredentialsError } from "./errors";
+import { createStarterDashboard } from "./dashboards";
+import { EmailAlreadyRegisteredError, IncorrectCurrentPasswordError, InvalidCredentialsError, NotFoundError } from "./errors";
 
 export interface RegisterInput {
   email: string;
@@ -85,10 +93,16 @@ export function registerAppUser(
         id: crypto.randomUUID(),
         name: input.name || deriveDefaultProfileName(input.email),
         appUserId: appUser.id,
+        primaryCurrencyId: null,
         createdAt: now,
         updatedAt: now,
       };
       insertProfile(tx, profile);
+      // Only the brand-new-Profile branch — a `linkTarget` Profile already
+      // got its Starter Dashboard when the Primary User originally created
+      // it (use-cases/profiles.ts's createProfile), so creating one here
+      // too would leave it with two rows both marked `isDefault` (spec §5).
+      createStarterDashboard(tx, profile.id);
     }
 
     result = { appUser, session: createSession(tx, appUser.id), profile };
@@ -111,4 +125,23 @@ export function loginAppUser(
 
 export function logoutAppUser(db: Db, sessionId: string): void {
   deleteSessionById(db, sessionId);
+}
+
+export interface UpdatePasswordInput {
+  appUserId: string;
+  currentPassword: string;
+  newPassword: string;
+}
+
+// Manage Account "Update Password" (2026-09-03 Settings/Backup/Data
+// Management delta §3) — reuses the existing scrypt hashing, no new auth
+// model. Sessions are left alone (not a "log out everywhere" flow).
+export function updatePassword(db: Db, input: UpdatePasswordInput): void {
+  const appUser = findAppUserById(db, input.appUserId);
+  if (!appUser) throw new NotFoundError(`AppUser ${input.appUserId} not found`);
+  if (!verifyPassword(input.currentPassword, appUser.passwordHash)) {
+    throw new IncorrectCurrentPasswordError();
+  }
+
+  updateAppUserPasswordHash(db, appUser.id, hashPassword(input.newPassword), new Date().toISOString());
 }

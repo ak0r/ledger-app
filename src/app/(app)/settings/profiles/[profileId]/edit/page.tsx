@@ -4,7 +4,9 @@ import { ArrowLeft } from "lucide-react";
 import { db } from "@/server/db/client";
 import { requirePrimaryUser } from "@/server/authz";
 import { getProfile } from "@/server/use-cases/profiles";
+import { listCurrencies } from "@/server/use-cases/currencies";
 import { ProfileForm } from "@/components/profile-form";
+import { PrimaryCurrencyForm } from "@/components/primary-currency-form";
 import { CleanUpContentButton } from "@/components/clean-up-content-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -25,6 +27,7 @@ export default async function EditProfilePage(props: PageProps<"/settings/profil
   const { profileId } = await props.params;
   const profile = getProfile(db, profileId);
   if (!profile) notFound();
+  const currencies = listCurrencies(db, profileId);
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 p-4">
@@ -42,6 +45,22 @@ export default async function EditProfilePage(props: PageProps<"/settings/profil
         </CardHeader>
         <CardContent>
           <ProfileForm submitLabel="Save" mode="edit" profile={{ id: profile.id, name: profile.name }} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Primary Currency</CardTitle>
+          <CardDescription>
+            Default currency for new Accounts in this Profile. Does not change existing Accounts.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <PrimaryCurrencyForm
+            profileId={profile.id}
+            currencies={currencies.map((c) => ({ id: c.id, code: c.code, symbol: c.symbol }))}
+            primaryCurrencyId={profile.primaryCurrencyId}
+          />
         </CardContent>
       </Card>
 

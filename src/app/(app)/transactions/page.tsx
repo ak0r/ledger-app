@@ -83,14 +83,21 @@ export default async function TransactionsPage(props: PageProps<"/transactions">
   const transactions = applySort(filtered, accountsById, sortState);
   const { items: pageItems, total, totalPages } = paginate(transactions, page, pageSize);
 
-  const rows = buildTransactionTableRows(pageItems, accountsById, currency);
+  const currenciesById = new Map(currencies.map((c) => [c.id, c]));
+  const rows = buildTransactionTableRows(pageItems, accountsById, currency, currenciesById);
   const existingTags = listDistinctTags(db, profile.id);
-  const accountOptions = accounts.map((account) => ({
-    id: account.id,
-    name: account.name,
-    classification: account.classification,
-    currencyId: account.currencyId,
-  }));
+  const accountOptions = accounts.map((account) => {
+    const accountCurrency = currenciesById.get(account.currencyId);
+    return {
+      id: account.id,
+      name: account.name,
+      classification: account.classification,
+      icon: account.icon,
+      currencyId: account.currencyId,
+      currencySymbol: accountCurrency?.symbol ?? currency.symbol,
+      currencyScale: accountCurrency?.minorUnitScale ?? currency.minorUnitScale,
+    };
+  });
 
   const baseHref = "/transactions";
   const pageHref = (targetPage: number, targetPageSize: number = pageSize) => {
@@ -199,8 +206,6 @@ export default async function TransactionsPage(props: PageProps<"/transactions">
             <TransactionEditDrawer
               rows={rows}
               accounts={accountOptions}
-              currencySymbol={currency.symbol}
-              currencyScale={currency.minorUnitScale}
               existingTags={existingTags}
             />
           </>
@@ -208,8 +213,6 @@ export default async function TransactionsPage(props: PageProps<"/transactions">
         {canCreateTransaction && (
           <TransactionCreateDrawer
             accounts={accountOptions}
-            currencySymbol={currency.symbol}
-            currencyScale={currency.minorUnitScale}
             existingTags={existingTags}
           />
         )}

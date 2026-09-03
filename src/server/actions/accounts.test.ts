@@ -119,6 +119,7 @@ describe("editAccountCore", () => {
     const result = editAccountCore(db, {
       profileId: profile.id,
       accountId: created.data.id,
+      currencyId: currency.id,
       name: "HDFC Bank — Salary",
       classification: "ASSET",
       instrumentType: "BANK",
@@ -147,6 +148,7 @@ describe("editAccountCore", () => {
     const result = editAccountCore(db, {
       profileId: profile.id,
       accountId: balancing.data.id,
+      currencyId: currency.id,
       name: "Opening Balance — renamed",
       classification: "BALANCING",
       instrumentType: "BALANCING",

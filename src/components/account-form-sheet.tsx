@@ -23,12 +23,14 @@ import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes-guard";
 export function AccountFormSheet({
   trigger,
   currencies,
+  defaultCurrencyId,
   mode,
   existingTags,
   account,
 }: {
   trigger: React.ReactElement;
   currencies: { id: string; code: string; symbol: string; minorUnitScale: number }[];
+  defaultCurrencyId?: string;
   mode: "create" | "edit";
   existingTags?: string[];
   account?: {
@@ -65,6 +67,7 @@ export function AccountFormSheet({
           {open && (
             <AccountForm
               currencies={currencies}
+              defaultCurrencyId={defaultCurrencyId}
               mode={mode}
               existingTags={existingTags}
               account={account}

@@ -2,6 +2,7 @@ import type { Db } from "../db/client";
 import { deleteAllTransactions } from "../repositories/transactions";
 import { deleteAllAccounts } from "../repositories/accounts";
 import { deleteAllCurrencies } from "../repositories/currencies";
+import { clearProfilePrimaryCurrencyId, findProfileById } from "../repositories/profiles";
 
 // Clean Up Content (docs/onboarding.md §11) — deletes all of one Profile's
 // financial content (Transactions, cascaded Postings, Accounts,
@@ -21,6 +22,14 @@ export function cleanUpProfileContent(db: Db, profileId: string): void {
   db.transaction((tx) => {
     deleteAllTransactions(tx, profileId);
     deleteAllAccounts(tx, profileId);
+    // Must run before deleteAllCurrencies — primaryCurrencyId is a real FK
+    // into `currencies` (Currency Catalogue delta, 2026-09-03). Guarded on
+    // actually having one set so a Profile with no Currency yet stays a
+    // true no-op (no needless `updatedAt` bump).
+    const profile = findProfileById(tx, profileId);
+    if (profile?.primaryCurrencyId) {
+      clearProfilePrimaryCurrencyId(tx, profileId, new Date().toISOString());
+    }
     deleteAllCurrencies(tx, profileId);
   });
 }

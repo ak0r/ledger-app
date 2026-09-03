@@ -31,21 +31,24 @@ export default async function AccountsPage(props: PageProps<"/accounts">) {
 
   // Currency creation is a separate step from Profile creation (resolved
   // 2026-08-15, HANDOFF.md open decisions #1) — an Account needs a Currency
-  // to exist first, so gate account creation on it. MVP is INR-only, so
-  // there's nothing to choose here — just one button.
+  // to exist first, so gate account creation on it. ₹ INR stays the fast
+  // path (still the overwhelmingly common case); Settings > Currencies
+  // (2026-09-03 delta §6) is where any other Currency Catalogue code gets
+  // picked instead.
   if (currencies.length === 0) {
     return (
       <Card>
         <CardHeader>
           <CardTitle as="h1">Set up a Currency first</CardTitle>
-          <CardDescription>
-            MVP supports INR only (rule #7). Add it once, then create Accounts.
-          </CardDescription>
+          <CardDescription>Add a Currency once, then create Accounts.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex items-center gap-3">
           <form action={createInrCurrencyAction}>
             <Button type="submit">Set up ₹ INR</Button>
           </form>
+          <Link href="/settings/currencies" className={buttonVariants({ variant: "outline" })}>
+            Choose a different currency
+          </Link>
         </CardContent>
       </Card>
     );
@@ -74,6 +77,9 @@ export default async function AccountsPage(props: PageProps<"/accounts">) {
     symbol: c.symbol,
     minorUnitScale: c.minorUnitScale,
   }));
+  const defaultCurrencyId = currencies.some((c) => c.id === profile.primaryCurrencyId)
+    ? (profile.primaryCurrencyId ?? undefined)
+    : undefined;
 
   const baseHref = "/accounts";
   const clearFiltersHref = (() => {
@@ -90,6 +96,7 @@ export default async function AccountsPage(props: PageProps<"/accounts">) {
         <AccountFormSheet
           mode="create"
           currencies={currencyOptions}
+          defaultCurrencyId={defaultCurrencyId}
           existingTags={existingTags}
           trigger={<Button type="button">New Account</Button>}
         />

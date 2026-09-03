@@ -1,7 +1,7 @@
 "use client";
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { TransactionForm } from "@/components/transaction-form";
+import { TransactionForm, type TransactionFormAccount } from "@/components/transaction-form";
 import { useTransactionWorkspace } from "@/components/transaction-workspace";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes-guard";
@@ -12,13 +12,9 @@ import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes-guard";
 // the primary entry point now.
 export function TransactionCreateDrawer({
   accounts,
-  currencySymbol,
-  currencyScale,
   existingTags,
 }: {
-  accounts: { id: string; name: string; classification: string }[];
-  currencySymbol: string;
-  currencyScale: number;
+  accounts: TransactionFormAccount[];
   existingTags: string[];
 }) {
   const { creatingTransaction, closeCreateTransaction } = useTransactionWorkspace();
@@ -36,8 +32,6 @@ export function TransactionCreateDrawer({
               key={creatingTransaction ? "open" : "closed"}
               mode="create"
               accounts={accounts}
-              currencySymbol={currencySymbol}
-              currencyScale={currencyScale}
               existingTags={existingTags}
               onCancel={() => guard.requestClose()}
               onSuccess={closeCreateTransaction}

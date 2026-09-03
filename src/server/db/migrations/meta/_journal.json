@@ -50,6 +50,27 @@
       "when": 1788280984210,
       "tag": "0006_far_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1788329746764,
+      "tag": "0007_glamorous_gorilla_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788412111716,
+      "tag": "0008_fuzzy_matthew_murdock",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1788414985057,
+      "tag": "0009_cuddly_argent",
+      "breakpoints": true
     }
   ]
 }

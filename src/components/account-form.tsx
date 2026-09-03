@@ -52,6 +52,12 @@ function defaultInstrumentTypeFor(classification: Classification): InstrumentTyp
 
 interface AccountFormProps {
   currencies: { id: string; code: string; symbol: string; minorUnitScale: number }[];
+  // Create mode only — the active Profile's Primary Currency, preselected
+  // instead of just "whichever currency sorts first" (Currency Catalogue
+  // delta, 2026-09-03: "Account currency defaults to the Profile Primary
+  // Currency when creating an account"). Falls back to `currencies[0]` when
+  // absent (Profile has no Primary Currency set yet).
+  defaultCurrencyId?: string;
   mode: "create" | "edit";
   existingTags?: string[];
   account?: {
@@ -80,6 +86,7 @@ interface AccountFormProps {
 
 export function AccountForm({
   currencies,
+  defaultCurrencyId,
   mode,
   existingTags = [],
   account,
@@ -121,7 +128,7 @@ export function AccountForm({
         }
       : {
           name: "",
-          currencyId: currencies[0]?.id ?? "",
+          currencyId: defaultCurrencyId ?? currencies[0]?.id ?? "",
           classification: "ASSET",
           instrumentType: defaultInstrumentTypeFor("ASSET"),
         },
@@ -159,6 +166,7 @@ export function AccountForm({
           })
         : await editAccountAction({
             accountId: account?.id,
+            currencyId: values.currencyId,
             name: values.name,
             classification: values.classification,
             instrumentType: values.instrumentType,

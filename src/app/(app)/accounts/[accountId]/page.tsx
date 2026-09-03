@@ -32,7 +32,8 @@ export default async function AccountTransactionsPage(props: PageProps<"/account
   const account = getAccountBalances(db, profile.id).find((a) => a.id === accountId);
   if (!account) notFound();
 
-  const currency = listCurrencies(db, profile.id)[0];
+  const currencies = listCurrencies(db, profile.id);
+  const currency = currencies[0];
   if (!currency) notFound();
 
   const accounts = listAccounts(db, profile.id);
@@ -56,14 +57,21 @@ export default async function AccountTransactionsPage(props: PageProps<"/account
   );
   const filtered = applySort(scoped, accountsById, sortState);
   const { items: pageItems, total, totalPages } = paginate(filtered, page, pageSize);
-  const rows = buildTransactionTableRows(pageItems, accountsById, currency);
+  const currenciesById = new Map(currencies.map((c) => [c.id, c]));
+  const rows = buildTransactionTableRows(pageItems, accountsById, currency, currenciesById);
   const existingTags = listDistinctTags(db, profile.id);
-  const accountOptions = accounts.map((a) => ({
-    id: a.id,
-    name: a.name,
-    classification: a.classification,
-    currencyId: a.currencyId,
-  }));
+  const accountOptions = accounts.map((a) => {
+    const accountCurrency = currenciesById.get(a.currencyId);
+    return {
+      id: a.id,
+      name: a.name,
+      classification: a.classification,
+      icon: a.icon,
+      currencyId: a.currencyId,
+      currencySymbol: accountCurrency?.symbol ?? currency.symbol,
+      currencyScale: accountCurrency?.minorUnitScale ?? currency.minorUnitScale,
+    };
+  });
 
   const base = `/accounts/${accountId}`;
   const pageHref = (targetPage: number, targetPageSize: number = pageSize) => {
@@ -136,8 +144,6 @@ export default async function AccountTransactionsPage(props: PageProps<"/account
           <TransactionEditDrawer
             rows={rows}
             accounts={accountOptions}
-            currencySymbol={currency.symbol}
-            currencyScale={currency.minorUnitScale}
             existingTags={existingTags}
           />
         </TransactionWorkspaceProvider>

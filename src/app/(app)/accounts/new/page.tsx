@@ -14,6 +14,9 @@ export default async function NewAccountPage() {
   const { profile } = await requireActiveProfile();
   const currencies = listCurrencies(db, profile.id);
   if (currencies.length === 0) redirect("/accounts");
+  const defaultCurrencyId = currencies.some((c) => c.id === profile.primaryCurrencyId)
+    ? (profile.primaryCurrencyId ?? undefined)
+    : undefined;
 
   return (
     <Card className="mx-auto max-w-md">
@@ -29,6 +32,7 @@ export default async function NewAccountPage() {
             symbol: c.symbol,
             minorUnitScale: c.minorUnitScale,
           }))}
+          defaultCurrencyId={defaultCurrencyId}
           existingTags={listDistinctTags(db, profile.id)}
         />
       </CardContent>

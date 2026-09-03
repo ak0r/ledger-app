@@ -57,6 +57,7 @@ export type EditableAccountFields = Pick<
   | "tags"
   | "icon"
   | "metadata"
+  | "currencyId"
   | "updatedAt"
 >;
 

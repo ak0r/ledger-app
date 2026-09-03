@@ -119,6 +119,28 @@ Still future design required for:
 - an FX conversion engine for mixed-currency Budget scopes
 - Budget insights/trends
 
+## Dashboards and Panels
+
+Decided and shipped (2026-09-02 — see `docs/04-modules.md` and ADR-037 in
+`docs/07-decisions.md`): Homepage-is-the-default-Dashboard model, Starter
+Dashboard auto-created per Profile (Net Worth/Assets/Liabilities/Balances/
+Recent Expenses/Recent Transactions), a 7th catalogue-only panel (Budgets
+Needing Review), a two-file Panel Registry (client-safe metadata in
+`domain/dashboard.ts`, server-only rendering in `src/lib/panel-registry.tsx`),
+fixed 1x1/2x2 Bento grid with `@dnd-kit/core` drag-and-drop and a narrow
+swap-or-reject placement heuristic (`resolveDrop`,
+`src/lib/dashboard-grid-layout.ts`), immediate no-confirm panel removal.
+
+Still future design required for:
+
+- multiple Dashboards per Profile (the data model already allows it —
+  `dashboards.is_default` — but there's no UI to manage more than one)
+- a Charts panel category
+- Investment-dependent panels (Recent Investments/Portfolio Value/
+  Portfolio NAV), gated on the Instrument/Valuation model
+- user-resizable panels
+- separate mobile layouts / touch-friendly hover-control fallback
+
 ## Transaction history
 
 Future design required for:

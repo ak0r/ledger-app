@@ -1,6 +1,8 @@
-import { db } from "@/server/db/client";
+import { after } from "next/server";
+import { db, sqlite } from "@/server/db/client";
 import { requireActiveProfile } from "@/server/authz";
 import { listProfiles } from "@/server/use-cases/profiles";
+import { runBackupIfDue } from "@/server/use-cases/backups";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { BottomNav } from "@/components/bottom-nav";
 import { AppHeader } from "@/components/app-header";
@@ -14,6 +16,12 @@ export const dynamic = "force-dynamic";
 // context (a cookie), not a URL segment, so there's no params to trust.
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { appUser, profile } = await requireActiveProfile();
+
+  // Best-effort Automatic Backup (Local Backup §10.2) — runs after the
+  // response is sent (next/server's `after`), so a once-a-day backup copy
+  // never adds latency to whichever request happens to trigger it. No
+  // background timer (use-cases/backups.ts explains why).
+  after(() => runBackupIfDue(db, sqlite));
 
   // Only the Primary User gets a switcher — a Normal AppUser has exactly
   // one Profile (registration invariant) and nothing to switch between.

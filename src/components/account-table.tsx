@@ -150,9 +150,15 @@ export function AccountTable({
                 )}
               </TableCell>
               {/* Deliberately plain text, not colored per classification
-                  (design-audit decision, 2026-08-20) — category color lives
-                  on the icon above, not the label, so lists don't turn into
-                  confetti. Don't add per-classification text color here. */}
+                  (design-audit decision, 2026-08-20, refined 2026-09-02) —
+                  the rule isn't "color only lives on icons," it's that color
+                  shouldn't repeat across dense, scannable rows where it
+                  becomes noise. This is a list: names/values stay neutral,
+                  color stays on the icon. A single hero figure (a summary
+                  Card, e.g. dashboard-panels/card-panel-figure.tsx) is the
+                  opposite case — one number, nothing to compete with, color
+                  reinforces meaning instead of adding noise. Don't add
+                  per-classification text color to this list. */}
               <TableCell role="gridcell" className="py-2.5">
                 {humanizeEnum(account.classification)}
               </TableCell>

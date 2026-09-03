@@ -119,6 +119,14 @@ The UI does not expose debit/credit terminology to ordinary users.
 - Actuals are never persisted — always summed at read time from `postings`
 - No Goals, Plans, envelope budgeting, savings budgets, or FX conversion engine (deferred)
 
+### Dashboard and Panels
+
+- The Homepage is the default Dashboard for the active Profile, auto-created (Starter Dashboard) for every new Profile
+- Panels persist identity/configuration/placement only — balances, totals, and transaction results are always runtime-derived
+- Initial catalogue: Net Worth/Assets/Liabilities (Cards), Balances/Recent Expenses/Recent Transactions/Budgets Needing Review (Lists)
+- Add/configure/remove panels; drag-and-drop on a fixed-size Bento grid — no resizing, one layout per Profile (no separate mobile layouts)
+- No multiple Dashboards per Profile, Charts panels, or Investment-dependent panels this phase (deferred)
+
 ### Tags
 
 - inline `string[]` on Accounts
@@ -149,8 +157,10 @@ Import adapters beyond the five shipped (generic CSV, HDFC/Axis/IDFC FIRST/Feder
 SMS / Email statement import
 Automatic transaction generation from Recurring Rules
 Recurring Rule transaction-matching / reminders
-Multi-currency
-FX
+Multi-currency conversion, cross-currency aggregation, FX (2026-09-03
+Settings/Backup/Data Management delta lifted the earlier INR-only freeze —
+a Currency Catalogue, Profile primary currency, and per-Account currency
+now exist; there is still no conversion/rate/aggregation of any kind)
 Investment valuation/pricing/quantity
 Transaction history
 AI

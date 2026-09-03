@@ -146,6 +146,7 @@ describe("editAccount", () => {
     const edited = editAccount(db, {
       accountId: account.id,
       profileId: profile.id,
+      currencyId: currency.id,
       name: "HDFC Bank — Salary",
       classification: "ASSET",
       instrumentType: "BANK",
@@ -173,6 +174,7 @@ describe("editAccount", () => {
     const edited = editAccount(db, {
       accountId: account.id,
       profileId: profile.id,
+      currencyId: currency.id,
       name: account.name,
       classification: account.classification,
       instrumentType: account.instrumentType,
@@ -199,6 +201,7 @@ describe("editAccount", () => {
       editAccount(db, {
         accountId: account.id,
         profileId: otherProfile.id,
+        currencyId: currency.id,
         name: "Hijacked",
         classification: "ASSET",
         instrumentType: "BANK",

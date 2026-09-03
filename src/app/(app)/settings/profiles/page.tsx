@@ -2,7 +2,9 @@ import Link from "next/link";
 import { db } from "@/server/db/client";
 import { requirePrimaryUser } from "@/server/authz";
 import { listProfiles } from "@/server/use-cases/profiles";
+import { listAccounts } from "@/server/use-cases/accounts";
 import { activateProfileAction } from "@/server/actions/activeProfile";
+import { loadDemoDataForProfileAction } from "@/server/actions/demo";
 import { readActiveProfileIdCookie } from "@/server/activeProfile";
 import { ProfileForm } from "@/components/profile-form";
 import { ProfilesModal } from "@/components/profiles-modal";
@@ -20,6 +22,13 @@ export const dynamic = "force-dynamic";
 // isolation anymore, just a list of Profiles in the one shared database).
 // A Normal AppUser never sees this — they land straight back on `/`
 // (requirePrimaryUser handles that redirect).
+//
+// "Load Demo Data" (Manage Profiles' Demo Setup entry, 2026-09-03 Settings/
+// Backup/Data Management delta §5) renders per-row rather than as one
+// ambiguous page-level button — only for a Profile with zero Accounts,
+// same additive-only precondition /setup already enforces for the active
+// Profile (docs/onboarding.md §3, "Existing Profiles never receive
+// demo-data choice").
 export default async function ProfilesPage() {
   await requirePrimaryUser();
 
@@ -38,7 +47,7 @@ export default async function ProfilesPage() {
       {profiles.length > 0 && (
         <ul className="flex flex-col gap-2">
           {profiles.map((profile) => (
-            <li key={profile.id} className="flex items-center gap-2">
+            <li key={profile.id} className="flex flex-wrap items-center gap-2">
               <form action={activateProfileAction.bind(null, profile.id)} className="flex-1">
                 <Button
                   type="submit"
@@ -69,6 +78,13 @@ export default async function ProfilesPage() {
                 >
                   Registration link
                 </Link>
+              )}
+              {listAccounts(db, profile.id).length === 0 && (
+                <form action={loadDemoDataForProfileAction.bind(null, profile.id)}>
+                  <Button type="submit" variant="ghost" size="sm">
+                    Load Demo Data
+                  </Button>
+                </form>
               )}
               <Link
                 href={`/settings/profiles/${profile.id}/edit`}

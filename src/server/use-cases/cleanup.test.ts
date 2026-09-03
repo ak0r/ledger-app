@@ -49,7 +49,17 @@ describe("cleanUpProfileContent", () => {
 
     cleanUpProfileContent(db, profile.id);
 
-    expect(getProfile(db, profile.id)).toEqual(profile);
+    // Not a full `.toEqual(profile)` — a Profile's first Currency becomes
+    // its Primary Currency automatically (Currency Catalogue delta,
+    // 2026-09-03), so `seedProfileData`'s `createCurrency` call already
+    // bumped `primaryCurrencyId`/`updatedAt` past the `profile` snapshot
+    // captured before it. Clean Up Content clears `primaryCurrencyId` back
+    // to null (it must, to delete the Currency it pointed at) but that's a
+    // real, expected mutation, not a preservation failure.
+    const afterCleanup = getProfile(db, profile.id);
+    expect(afterCleanup?.id).toBe(profile.id);
+    expect(afterCleanup?.name).toBe(profile.name);
+    expect(afterCleanup?.primaryCurrencyId).toBeNull();
     expect(listAccounts(db, profile.id)).toHaveLength(0);
     expect(listTransactions(db, profile.id)).toHaveLength(0);
     expect(findCurrenciesByProfile(db, profile.id)).toHaveLength(0);

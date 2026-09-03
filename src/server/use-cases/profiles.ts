@@ -6,24 +6,37 @@ import {
   insertProfile,
   setProfileAppUserId,
   setProfileName,
+  setProfilePrimaryCurrencyId,
   type ProfileRow,
 } from "../repositories/profiles";
+import { findCurrencyById } from "../repositories/currencies";
+import { createStarterDashboard } from "./dashboards";
 import { NotFoundError, ProfileAlreadyLinkedError } from "./errors";
 
 export interface CreateProfileInput {
   name: string;
 }
 
-export function createProfile(db: DbOrTx, input: CreateProfileInput): ProfileRow {
+// A new Profile always gets its Starter Dashboard in the same transaction
+// (spec §5) — this is the Primary User's "create a Profile for someone
+// else" path; the other Profile-creation path (registerAppUser,
+// use-cases/auth.ts) does the same inside its own transaction. `db: Db`
+// rather than `DbOrTx` — needs its own transaction() call, so it can't
+// itself be called from inside a caller's already-open one.
+export function createProfile(db: Db, input: CreateProfileInput): ProfileRow {
   const now = new Date().toISOString();
   const profile: ProfileRow = {
     id: crypto.randomUUID(),
     name: input.name,
     appUserId: null,
+    primaryCurrencyId: null,
     createdAt: now,
     updatedAt: now,
   };
-  insertProfile(db, profile);
+  db.transaction((tx) => {
+    insertProfile(tx, profile);
+    createStarterDashboard(tx, profile.id);
+  });
   return profile;
 }
 
@@ -65,4 +78,20 @@ export function renameProfile(db: DbOrTx, profileId: string, name: string): Prof
   const updatedAt = new Date().toISOString();
   setProfileName(db, profileId, name, updatedAt);
   return { ...profile, name, updatedAt };
+}
+
+// Default for newly created Accounts (Currency Catalogue delta,
+// 2026-09-03) — changeable, never retroactive: existing Accounts keep
+// whatever currency they already have. `currencyId` must belong to this
+// same Profile (findCurrencyById is itself Profile-scoped, rule #6) — a
+// Profile can only be primary'd on a currency it has actually instantiated.
+export function setProfilePrimaryCurrency(db: DbOrTx, profileId: string, currencyId: string): ProfileRow {
+  const profile = findProfileById(db, profileId);
+  if (!profile) throw new NotFoundError(`Profile not found: ${profileId}`);
+  const currency = findCurrencyById(db, currencyId, profileId);
+  if (!currency) throw new NotFoundError(`Currency ${currencyId} not found for profile ${profileId}`);
+
+  const updatedAt = new Date().toISOString();
+  setProfilePrimaryCurrencyId(db, profileId, currencyId, updatedAt);
+  return { ...profile, primaryCurrencyId: currencyId, updatedAt };
 }

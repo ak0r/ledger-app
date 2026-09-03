@@ -6,7 +6,7 @@
 // compat subpath — the classic data/columns/getCoreRowModel shape — is
 // the right fit, not the new API's added complexity.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowLeftRight, ArrowRight, ChevronDown, ChevronRight } from "lucide-react";
 import { flexRender } from "@tanstack/react-table";
 import {
   getCoreRowModel,
@@ -35,6 +35,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -420,12 +421,28 @@ function TransactionRow({
   if (!isSplit) {
     const fromLine = t.fromLines[0];
     const toLine = t.toLines[0];
+    // Currency Conversion marker (2026-09-03 delta) — only ever reachable
+    // here: a Conversion is always exactly one From/one To posting
+    // (domain/transaction.ts's isConversionShape), so a split row never
+    // needs this. Icon + destination currency code, not a raw "⇄" glyph —
+    // matches the rest of the app's icon-based visual language rather
+    // than relying on an emoji rendering consistently across platforms.
+    const isConversion = !!toLine && toLine.currencyCode !== t.fromCurrencyCode;
     return (
       <TableRow role="row" {...focusProps}>
         {transactionLevelCells(true)}
         {accountCell(fromLine)}
         {amountCell(fromLine?.amount, "from")}
-        {accountCell(toLine, undefined, "to")}
+        {accountCell(
+          toLine,
+          isConversion && (
+            <Badge variant="outline" className="gap-1 font-normal text-muted-foreground">
+              <ArrowLeftRight className="size-3" aria-hidden="true" />
+              {toLine.currencyCode}
+            </Badge>
+          ),
+          "to",
+        )}
         {amountCell(toLine?.amount, "to")}
         {actionsCell(true)}
       </TableRow>
@@ -647,9 +664,19 @@ export interface TransactionTableRow {
   id: string;
   date: string;
   description: string;
+  // The From leg's Currency code — see transaction-rows.ts for why this is
+  // unambiguous even for a multi-From Merge row. Compared against each
+  // toLine's own `currencyCode` to flag a Currency Conversion in the UI.
+  fromCurrencyCode: string;
   fromLines: { account: string; classification?: Classification; icon?: string | null; amount: string }[];
   fromAmount: string;
-  toLines: { account: string; classification?: Classification; icon?: string | null; amount: string }[];
+  toLines: {
+    account: string;
+    classification?: Classification;
+    icon?: string | null;
+    amount: string;
+    currencyCode: string;
+  }[];
   tags: string[] | null;
   // Raw editable values for Full Edit's Sheet overlay (transaction-edit-
   // drawer.tsx) — see transaction-rows.ts for how these are derived.

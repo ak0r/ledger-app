@@ -10,7 +10,7 @@ import type { Db } from "../db/client";
 
 const MIGRATIONS_DIR = path.resolve(import.meta.dirname, "../db/migrations");
 
-export function createTestDb(): Db {
+function createMigratedSqlite(): InstanceType<typeof Database> {
   const sqlite = new Database(":memory:");
   sqlite.pragma("foreign_keys = ON");
 
@@ -21,5 +21,18 @@ export function createTestDb(): Db {
     sqlite.exec(readFileSync(path.join(MIGRATIONS_DIR, file), "utf8"));
   }
 
-  return drizzle(sqlite, { schema });
+  return sqlite;
+}
+
+export function createTestDb(): Db {
+  return drizzle(createMigratedSqlite(), { schema });
+}
+
+// Same in-memory database, raw handle and Drizzle wrapper both — for the
+// handful of use-cases (reset.ts, backups.ts) that need the raw
+// better-sqlite3 client alongside `Db` and must operate on the exact same
+// connection (e.g. toggling a pragma the deletes then rely on).
+export function createTestDbWithRaw(): { db: Db; sqlite: InstanceType<typeof Database> } {
+  const sqlite = createMigratedSqlite();
+  return { db: drizzle(sqlite, { schema }), sqlite };
 }

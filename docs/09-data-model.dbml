@@ -186,6 +186,27 @@ Table budget_allocations {
   updated_at datetime [not null]
 }
 
+Table dashboards {
+  id text [pk]
+  profile_id text [not null]
+  name text [not null]
+  is_default boolean [not null, default: true, note: 'Phase 1 is always true — one Dashboard per Profile. No DB-level uniqueness constraint; enforced at the application layer.']
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+Table dashboard_panels {
+  id text [pk]
+  dashboard_id text [not null]
+  key text [not null, note: 'NET_WORTH | ASSETS | LIABILITIES | BALANCES | RECENT_EXPENSES | RECENT_TRANSACTIONS | BUDGETS_NEEDING_REVIEW — resolved against the application-level Panel Registry']
+  configuration text [not null, note: 'JSON, shape depends on key — e.g. Balances: {scope, accountIds[]}']
+  x integer [not null]
+  y integer [not null]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+  Note: 'width/height are never stored — always supplied by the Panel Registry, never user-editable'
+}
+
 Ref: sessions.app_user_id > app_users.id
 Ref: profiles.app_user_id > app_users.id
 Ref: currencies.profile_id > profiles.id
@@ -205,6 +226,8 @@ Ref: budgets.profile_id > profiles.id
 Ref: budget_periods.budget_id > budgets.id
 Ref: budget_allocations.budget_period_id > budget_periods.id
 Ref: budget_allocations.expense_account_id > accounts.id
+Ref: dashboards.profile_id > profiles.id
+Ref: dashboard_panels.dashboard_id > dashboards.id
 
 // Domain constraints not fully expressible in this conceptual DBML:
 //
@@ -233,3 +256,13 @@ Ref: budget_allocations.expense_account_id > accounts.id
 // 14. budget_periods/budget_allocations are never deleted individually —
 //     only cascaded (manually, in application code) when the parent Budget
 //     itself is deleted; otherwise Periods accumulate as permanent history.
+// 15. dashboard_panels.key must be a key the application-level Panel
+//     Registry recognizes; configuration shape must match that key's own
+//     schema (enforced at the application layer, not a DB constraint).
+// 16. A Balances dashboard_panel's configuration.accountIds entries must
+//     reference Accounts owned by the same Profile as the parent
+//     Dashboard (via dashboard_panel -> dashboard -> profile) — any
+//     classification, not Expense-only (unlike Budget scope).
+// 17. Every new Profile receives exactly one dashboards row (is_default =
+//     true) at creation time; predates-this-delta Profiles receive one
+//     lazily, the first time their default Dashboard is read.

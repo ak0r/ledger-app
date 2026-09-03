@@ -444,3 +444,53 @@ Budgets landing page and Home dashboard — approval itself is always an
 explicit user action either way (§5), so a wrong threshold is a UX
 nit, not a correctness risk. Revisit if a real usage pattern calls for a
 different window or a user-configurable one.
+
+## ADR-037 — Panel Registry splits data from rendering; drop placement is a narrow swap-or-reject heuristic
+
+Accepted (2026-09-02, Dashboard and Panels —
+`docs/completed/2026-09-02-Dashboard-and-Panels.md`).
+
+Three implementation decisions from that delta, none dictated
+unambiguously by its own text:
+
+**The Panel Registry (spec §8) is two files, not one.** Its "rendering
+component" field can't live next to its data-shaped fields (name/
+description/category/dimensions/configuration schema) — domain must not
+depend on React (`docs/06-architecture.md`), and every panel component
+reads the database directly via `db` from `src/server/db/client.ts`, which
+bundles `better-sqlite3` and cannot be imported into client code.
+`domain/dashboard.ts` holds the client-safe half (`PANEL_NAME_BY_KEY`,
+`PANEL_DESCRIPTION_BY_KEY`, `PANEL_CATEGORY_BY_KEY`,
+`PANEL_DIMENSIONS_BY_KEY`, `CONFIGURABLE_PANEL_KEYS`) —
+`src/components/dashboard-grid.tsx` (a Client Component, for hover
+controls and drag-and-drop) reads this half directly. `src/lib/panel-
+registry.tsx` holds the server-only rendering half (a `renderPanelContent`
+switch over `PanelKey`) and must only ever be imported from a Server
+Component (today: `src/app/(app)/page.tsx`) — importing it from a Client
+Component would attempt to bundle the database driver for the browser.
+
+**Drag-and-drop needed a new dependency** — no drag/collision/placement
+library existed anywhere in this codebase already. `@dnd-kit/core` (+
+its `@dnd-kit/utilities` companion for the CSS transform helper) was
+added: small, accessible-first (keyboard sensor support out of the box),
+headless, fitting this codebase's existing Base UI/headless-component
+style. The actual placement *rule* is deliberately kept out of dnd-kit
+entirely, in a pure function (`resolveDrop`,
+`src/lib/dashboard-grid-layout.ts`) unit-tested without a DOM: an empty
+drop target always succeeds; a target fully covered by exactly one
+same-dimensions panel swaps the two; anything else (partial overlap,
+multiple panels in the way, mismatched dimensions) is rejected outright
+and the drag snaps back with no action call at all. The spec never
+specifies collision behavior beyond "panels are movable" (§13) — a full
+bin-packing/reflow algorithm was considered and rejected as
+disproportionate for Phase 1's fixed 1x1/2x2 dimension set; the narrow
+heuristic covers every case the Starter Dashboard's own layout and any
+reasonable rearrangement of it can produce.
+
+**`useDraggable` is called exactly once per panel**, in the outer
+draggable container, not a second time in a separate drag-handle
+component — an early draft called it twice (once per component instance)
+for the same id, which fights over dnd-kit's internal registry. The fix:
+call the hook once, pass its `attributes`/`listeners` down as props to the
+grip-handle button, and apply `setNodeRef`/the transform style to the
+outer container. Caught during Phase D implementation, not shipped.

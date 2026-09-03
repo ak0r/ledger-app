@@ -84,6 +84,25 @@ release is tagged. Until then, all work accumulates under `[Unreleased]`.
   are ending soon with a one-click Review action, without ever creating
   anything automatically.
 
+### Dashboard and Panels
+
+- The Home page is now a configurable Dashboard instead of a fixed
+  layout. Every Profile gets a Starter Dashboard automatically: Net
+  Worth/Assets/Liabilities cards, and Balances/Recent Expenses/Recent
+  Transactions lists.
+- **+ Add Panel** opens a catalogue grouped by Cards/Lists — a 7th panel,
+  Budgets Needing Review, carries over the previous "needs review" card
+  as a real panel. Panels can be moved via drag-and-drop on a fixed-size
+  grid, configured (Balances: all accounts or a specific selection, never
+  silently defaulted; Recent Expenses: a time period; Recent
+  Transactions: how many to show), and removed instantly (no
+  confirmation — nothing about the Ledger itself is affected).
+- Panels never store balances, totals, or transaction results — every
+  number is summed live from Ledger data on each view, same posture as
+  Budgets' own actuals.
+- An empty panel (no accounts selected, nothing to show) stays visible
+  with an explanatory message rather than disappearing.
+
 ### Imports
 
 - Upload a bank/card statement (generic CSV, HDFC/Axis/IDFC FIRST Bank

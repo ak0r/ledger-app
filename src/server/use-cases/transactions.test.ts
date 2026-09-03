@@ -87,6 +87,40 @@ describe("createTransaction", () => {
     expect(db.select().from(postings).all()).toEqual([]);
   });
 
+  it("persists a Currency Conversion — two unequal, independent leg amounts, end to end", () => {
+    const db = createTestDb();
+    const { profile, bank } = setUpLedger(db);
+    const jpy = createCurrency(db, {
+      profileId: profile.id,
+      code: "JPY",
+      name: "Japanese Yen",
+      symbol: "¥",
+      minorUnitScale: 0,
+    });
+    const jpyCash = createAccount(db, {
+      profileId: profile.id,
+      currencyId: jpy.id,
+      name: "JPY in Hand",
+      classification: "ASSET",
+      instrumentType: "CASH",
+    });
+
+    const transaction = createTransaction(db, {
+      profileId: profile.id,
+      date: "2026-09-03",
+      description: "Convert Cash",
+      postings: [
+        { accountId: bank.id, debit: 0, credit: 1000000 }, // ₹10,000 out
+        { accountId: jpyCash.id, debit: 15000, credit: 0 }, // ¥15,000 in
+      ],
+    });
+
+    const persistedPostings = findPostingsByTransaction(db, transaction.id);
+    expect(persistedPostings).toHaveLength(2);
+    expect(persistedPostings.find((p) => p.accountId === bank.id)?.credit).toBe(1000000);
+    expect(persistedPostings.find((p) => p.accountId === jpyCash.id)?.debit).toBe(15000);
+  });
+
   it("rejects a posting against another Profile's account (ownership invariant)", () => {
     const db = createTestDb();
     const { profile, food } = setUpLedger(db);

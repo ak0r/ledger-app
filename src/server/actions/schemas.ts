@@ -6,12 +6,15 @@
 // which every action still runs after this parse succeeds (rule #17).
 import { z } from "zod";
 import {
+  BALANCES_ACCOUNT_SCOPES,
   BUDGET_FILTER_MATCHES,
   BUDGET_RECURRENCE_UNITS,
   BUDGET_TYPES,
   CLASSIFICATIONS,
   CREATABLE_CLASSIFICATIONS,
   INSTRUMENT_TYPES,
+  PANEL_KEYS,
+  RECENT_EXPENSES_PERIODS,
   RECURRING_FREQUENCIES,
 } from "../db/schema";
 
@@ -22,6 +25,11 @@ export const createProfileSchema = z.object({
 export const renameProfileSchema = z.object({
   profileId: z.string().min(1),
   name: z.string().trim().min(1, "Name is required"),
+});
+
+export const setProfilePrimaryCurrencySchema = z.object({
+  profileId: z.string().min(1),
+  currencyId: z.string().min(1),
 });
 
 export const registerAppUserSchema = z.object({
@@ -42,12 +50,23 @@ export const loginAppUserSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+export const updatePasswordSchema = z.object({
+  appUserId: z.string().min(1),
+  currentPassword: z.string().min(1, "Current password is required"),
+  newPassword: z.string().min(8, "Password must be at least 8 characters"),
+});
+
 export const createCurrencySchema = z.object({
   profileId: z.string().min(1),
   code: z.string().length(3, "Currency code must be 3 letters"),
   name: z.string().trim().min(1),
   symbol: z.string().trim().min(1),
   minorUnitScale: z.number().int().min(0),
+});
+
+export const addCurrencySchema = z.object({
+  profileId: z.string().min(1),
+  code: z.string().length(3, "Currency code must be 3 letters"),
 });
 
 // Simple opaque tags — a flat list, not key/value (rule #13/#14). Each tag
@@ -77,6 +96,7 @@ export const createAccountSchema = z.object({
 export const editAccountSchema = z.object({
   profileId: z.string().min(1),
   accountId: z.string().min(1),
+  currencyId: z.string().min(1),
   name: z.string().trim().min(1),
   classification: z.enum(CLASSIFICATIONS),
   instrumentType: z.enum(INSTRUMENT_TYPES),
@@ -122,7 +142,25 @@ const transactionFieldsSchema = z.object({
   postings: z.array(postingSchema).min(2, "A transaction needs at least two postings"),
 });
 
+// Shape-only mirror of domain/transaction.ts's isConversionShape check —
+// this schema layer never sees Account rows (rule #17's own boundary:
+// "Ownership and currency-support checks need Account rows from the DB
+// and can only happen in the domain/use-case layer"), so it can't confirm
+// the two postings actually resolve to different currencies the way the
+// domain layer can. Exempting the raw shape here isn't a hole: a
+// same-currency 2-posting mismatch that slips past this fast check is
+// still caught by the domain layer's own (currency-aware) balance rule —
+// this only defers *where* it's caught, never *whether*.
+function isPossibleConversionShape(transaction: z.infer<typeof transactionFieldsSchema>): boolean {
+  return (
+    transaction.postings.length === 2 &&
+    transaction.postings.filter((posting) => posting.debit > 0).length === 1 &&
+    transaction.postings.filter((posting) => posting.credit > 0).length === 1
+  );
+}
+
 function isBalanced(transaction: z.infer<typeof transactionFieldsSchema>): boolean {
+  if (isPossibleConversionShape(transaction)) return true;
   const totalDebit = transaction.postings.reduce((sum, posting) => sum + posting.debit, 0);
   const totalCredit = transaction.postings.reduce((sum, posting) => sum + posting.credit, 0);
   return totalDebit === totalCredit;
@@ -272,7 +310,7 @@ export const commitImportSchema = z.object({
   approvedNewAccounts: z.array(newAccountDescriptorSchema).default([]),
 });
 
-// Budget Framework delta (docs/pending/2026-09-01-Budget-Framework.md) —
+// Budget Framework delta (docs/completed/2026-09-01-Budget-Framework.md) —
 // mirrors the domain invariants in domain/budget.ts that don't need a DB
 // lookup; scope/allocation account ownership + EXPENSE-only checks are
 // still enforced server-side in use-cases/budgets.ts (rule #17).
@@ -384,4 +422,70 @@ export const approveBudgetPeriodSchema = z.object({
   endDate: z.string().min(1).nullable(),
   scope: budgetScopeSchema,
   allocations: z.array(budgetAllocationSchema).default([]),
+});
+
+// Dashboard and Panels delta (docs/completed/2026-09-02-Dashboard-and-Panels.md)
+// — mirrors the domain invariants in domain/dashboard.ts that don't need a
+// DB lookup; account-ownership checks for Balances still run server-side
+// in use-cases/dashboards.ts (rule #17).
+export const addPanelSchema = z.object({
+  profileId: z.string().min(1),
+  dashboardId: z.string().min(1),
+  key: z.enum(PANEL_KEYS),
+});
+
+export const removePanelSchema = z.object({
+  profileId: z.string().min(1),
+  panelId: z.string().min(1),
+});
+
+export const movePanelSchema = z.object({
+  profileId: z.string().min(1),
+  panelId: z.string().min(1),
+  x: z.number().int().min(0),
+  y: z.number().int().min(0),
+});
+
+// A discriminated union on `key` — same reasoning as createBudgetSchema's
+// filter condition union: keeps each branch's `configuration` shape
+// precisely typed (so it lines up with domain/dashboard.ts's
+// PanelConfigByKey without a cast) instead of one loosely-typed object.
+// The server always re-derives the panel's real key from its own DB row
+// for authority (use-cases/dashboards.ts's updatePanelConfiguration) — the
+// client-supplied `key` here only drives which branch this schema
+// validates against.
+const noPanelConfigSchema = z.object({});
+
+export const updatePanelConfigurationSchema = z
+  .object({ profileId: z.string().min(1), panelId: z.string().min(1) })
+  .and(
+    z.union([
+      z.object({ key: z.literal("NET_WORTH"), configuration: noPanelConfigSchema }),
+      z.object({ key: z.literal("ASSETS"), configuration: noPanelConfigSchema }),
+      z.object({ key: z.literal("LIABILITIES"), configuration: noPanelConfigSchema }),
+      z.object({ key: z.literal("BUDGETS_NEEDING_REVIEW"), configuration: noPanelConfigSchema }),
+      z.object({
+        key: z.literal("BALANCES"),
+        configuration: z.object({
+          scope: z.enum(BALANCES_ACCOUNT_SCOPES),
+          accountIds: z.array(z.string().min(1)),
+        }),
+      }),
+      z.object({
+        key: z.literal("RECENT_EXPENSES"),
+        configuration: z.object({ period: z.enum(RECENT_EXPENSES_PERIODS) }),
+      }),
+      z.object({
+        key: z.literal("RECENT_TRANSACTIONS"),
+        configuration: z.object({ limit: z.number().int().min(1).max(100) }),
+      }),
+    ]),
+  );
+
+export const setAutomaticBackupEnabledSchema = z.object({
+  enabled: z.boolean(),
+});
+
+export const resetLedgerSchema = z.object({
+  confirmation: z.literal("RESET", { message: 'Type "RESET" to continue' }),
 });

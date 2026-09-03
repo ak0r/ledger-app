@@ -95,6 +95,7 @@ export function getAccountBalances(db: Db, profileId: string): AccountWithBalanc
 export interface EditAccountInput {
   accountId: string;
   profileId: string;
+  currencyId: string;
   name: string;
   classification: Classification;
   instrumentType: InstrumentType;
@@ -105,11 +106,22 @@ export interface EditAccountInput {
   metadata?: string;
 }
 
+// Account.Currency is authoritative and changeable (Currency Catalogue
+// delta, 2026-09-03) — not retroactively snapshotted. Since Transactions
+// never store a currency (always derived from their Account), changing it
+// here immediately changes how every existing and future Transaction on
+// this Account is interpreted. No conversion happens.
 export function editAccount(db: Db, input: EditAccountInput): AccountRow {
   const existing = findAccountById(db, input.accountId, input.profileId);
   if (!existing) {
     throw new NotFoundError(
       `Account ${input.accountId} not found for profile ${input.profileId}`,
+    );
+  }
+  const currency = findCurrencyById(db, input.currencyId, input.profileId);
+  if (!currency) {
+    throw new NotFoundError(
+      `Currency ${input.currencyId} not found for profile ${input.profileId}`,
     );
   }
 
@@ -123,6 +135,7 @@ export function editAccount(db: Db, input: EditAccountInput): AccountRow {
     tags: input.tags ?? null,
     icon: input.icon ?? null,
     metadata: input.metadata ?? null,
+    currencyId: input.currencyId,
     updatedAt: now,
   };
   updateAccountFields(db, input.accountId, input.profileId, fields);
@@ -218,6 +231,7 @@ export function bulkUpdateAccountTags(db: Db, input: BulkUpdateAccountTagsInput)
         tags: merged.length > 0 ? merged : null,
         icon: target.icon,
         metadata: target.metadata,
+        currencyId: target.currencyId,
         updatedAt: now,
       });
     }

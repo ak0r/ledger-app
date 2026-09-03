@@ -82,7 +82,7 @@ export function AppHeader({
     <header className="flex items-center justify-between border-b border-border px-3 py-2.5 sm:px-4 sm:py-3">
       <Link href="/" className="flex flex-col leading-tight">
         <span className="font-heading text-sm font-semibold sm:text-base">Ledger</span>
-        <span className="text-[10px] text-muted-foreground sm:text-xs">v0.1.0</span>
+        <span className="text-[10px] text-muted-foreground sm:text-xs">v0.3.0</span>
       </Link>
 
       {/* Desktop: Profile switcher (Primary only), appearance — Normal

@@ -35,21 +35,21 @@ describe("createCurrencyCore", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects a well-formed but unsupported currency at the domain layer (ADR-020)", () => {
+  it("rejects a well-formed but unsupported currency at the domain layer (Currency Catalogue)", () => {
     const db = createTestDb();
     const profile = createProfile(db, { name: "Amit" });
 
-    // Shape-valid (3 letters) but not INR — Zod can't catch this, only the
-    // domain layer knows the MVP-only currency list.
+    // Shape-valid (3 letters) but not in the Currency Catalogue — Zod can't
+    // catch this, only the domain layer knows the supported currency list.
     const result = createCurrencyCore(db, {
       profileId: profile.id,
-      code: "JPY",
-      name: "Japanese Yen",
-      symbol: "¥",
-      minorUnitScale: 0,
+      code: "ZZZ",
+      name: "Not A Real Currency",
+      symbol: "?",
+      minorUnitScale: 2,
     });
 
     expect(result.success).toBe(false);
-    if (!result.success) expect(result.error).toMatch(/INR/);
+    if (!result.success) expect(result.error).toMatch(/Catalogue/);
   });
 });

@@ -20,7 +20,8 @@ export default async function NewTransactionPage(props: PageProps<"/transactions
     redirect("/transactions");
   }
 
-  const currency = currencies[0];
+  const currenciesById = new Map(currencies.map((c) => [c.id, c]));
+  const fallbackCurrency = currencies[0];
   const accountIdParam = Array.isArray(searchParams.accountId)
     ? searchParams.accountId[0]
     : searchParams.accountId;
@@ -35,13 +36,18 @@ export default async function NewTransactionPage(props: PageProps<"/transactions
       </CardHeader>
       <CardContent>
         <TransactionForm
-          accounts={accounts.map((account) => ({
-            id: account.id,
-            name: account.name,
-            classification: account.classification,
-          }))}
-          currencySymbol={currency.symbol}
-          currencyScale={currency.minorUnitScale}
+          accounts={accounts.map((account) => {
+            const accountCurrency = currenciesById.get(account.currencyId);
+            return {
+              id: account.id,
+              name: account.name,
+              classification: account.classification,
+              icon: account.icon,
+              currencyId: account.currencyId,
+              currencySymbol: accountCurrency?.symbol ?? fallbackCurrency.symbol,
+              currencyScale: accountCurrency?.minorUnitScale ?? fallbackCurrency.minorUnitScale,
+            };
+          })}
           existingTags={listDistinctTags(db, profile.id)}
           defaultFromAccountId={defaultFromAccountId}
           cancelHref={defaultFromAccountId ? `/accounts/${defaultFromAccountId}` : undefined}

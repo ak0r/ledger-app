@@ -78,4 +78,23 @@ describe("buildDemoDataset", () => {
     expect(a.transactions.length).toBe(b.transactions.length);
     expect(a.transactions.map((t) => t.description)).toEqual(b.transactions.map((t) => t.description));
   });
+
+  it("includes Recurring Rules scoped to the Profile, never posting to the Ledger themselves", () => {
+    const dataset = buildDemoDataset(PROFILE_ID);
+    expect(dataset.recurringRules.length).toBeGreaterThan(0);
+    expect(dataset.recurringRules.every((r) => r.profileId === PROFILE_ID)).toBe(true);
+  });
+
+  it("includes a Recurring Budget with a current Period and Allocations, actuals never persisted", () => {
+    const dataset = buildDemoDataset(PROFILE_ID);
+    expect(dataset.budgets).toHaveLength(1);
+    expect(dataset.budgets[0].profileId).toBe(PROFILE_ID);
+    expect(dataset.budgets[0].type).toBe("RECURRING");
+
+    expect(dataset.budgetPeriods).toHaveLength(1);
+    expect(dataset.budgetPeriods[0].budgetId).toBe(dataset.budgets[0].id);
+
+    expect(dataset.budgetAllocations.length).toBeGreaterThan(0);
+    expect(dataset.budgetAllocations.every((a) => a.budgetPeriodId === dataset.budgetPeriods[0].id)).toBe(true);
+  });
 });

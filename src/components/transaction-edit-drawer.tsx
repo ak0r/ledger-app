@@ -1,7 +1,7 @@
 "use client";
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { TransactionForm } from "@/components/transaction-form";
+import { TransactionForm, type TransactionFormAccount } from "@/components/transaction-form";
 import { useTransactionWorkspace } from "@/components/transaction-workspace";
 import type { TransactionTableRow } from "@/components/transaction-table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -18,14 +18,10 @@ import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes-guard";
 export function TransactionEditDrawer({
   rows,
   accounts,
-  currencySymbol,
-  currencyScale,
   existingTags,
 }: {
   rows: TransactionTableRow[];
-  accounts: { id: string; name: string; classification: string }[];
-  currencySymbol: string;
-  currencyScale: number;
+  accounts: TransactionFormAccount[];
   existingTags: string[];
 }) {
   const { editingTransactionId, editingInitialSplit, closeEditTransaction } = useTransactionWorkspace();
@@ -47,8 +43,6 @@ export function TransactionEditDrawer({
               key={row.id}
               mode="edit"
               accounts={accounts}
-              currencySymbol={currencySymbol}
-              currencyScale={currencyScale}
               existingTags={existingTags}
               initialSplit={editingInitialSplit}
               transaction={{

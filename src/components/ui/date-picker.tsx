@@ -67,6 +67,7 @@ export function DatePicker({
   "aria-invalid": ariaInvalid,
   disabled,
   className,
+  maxDate,
 }: {
   id?: string
   value: string
@@ -76,6 +77,12 @@ export function DatePicker({
   "aria-invalid"?: boolean
   disabled?: boolean
   className?: string
+  // ISO date string, inclusive — opt-in (undefined = no constraint), since
+  // most callers (recurring-form.tsx's schedule dates, budget-form.tsx's
+  // period dates) legitimately need future dates. Only transaction-form.tsx
+  // passes today's date: a Transaction records something that already
+  // happened.
+  maxDate?: string
 }) {
   const [open, setOpen] = React.useState(false)
   const selected = value ? parseIso(value) : null
@@ -116,6 +123,11 @@ export function DatePicker({
   const total = daysInMonth(viewYear, viewMonth)
   const leadingBlanks = firstWeekdayOfMonth(viewYear, viewMonth)
   const days = Array.from({ length: total }, (_, index) => index + 1)
+  // ISO "YYYY-MM-DD" strings compare lexicographically the same as the
+  // dates they represent — no Date parsing needed.
+  const viewMonthIso = toIso(viewYear, viewMonth, 1)
+  const maxMonthIso = maxDate ? toIso(parseIso(maxDate).year, parseIso(maxDate).month, 1) : null
+  const nextMonthDisabled = maxMonthIso !== null && viewMonthIso >= maxMonthIso
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -164,6 +176,7 @@ export function DatePicker({
             size="icon-xs"
             aria-label="Next month"
             onClick={goToNextMonth}
+            disabled={nextMonthDisabled}
           >
             <ChevronRight className="size-3.5" aria-hidden="true" />
           </Button>
@@ -184,12 +197,14 @@ export function DatePicker({
             const iso = toIso(viewYear, viewMonth, day)
             const isSelected = value === iso
             const isToday = today === iso
+            const isDisabled = maxDate !== undefined && iso > maxDate
             return (
               <button
                 key={iso}
                 type="button"
                 aria-current={isToday ? "date" : undefined}
                 aria-pressed={isSelected}
+                disabled={isDisabled}
                 onClick={() => {
                   onChange(iso)
                   setOpen(false)
@@ -199,6 +214,7 @@ export function DatePicker({
                   "flex size-7 items-center justify-center rounded-lg text-sm tabular-nums transition-colors hover:bg-accent hover:text-accent-foreground",
                   isSelected && "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
                   isToday && !isSelected && "font-semibold text-ring",
+                  isDisabled && "pointer-events-none opacity-30 hover:bg-transparent",
                 )}
               >
                 {day}

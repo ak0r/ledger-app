@@ -2,8 +2,8 @@ import type { Db } from "../db/client";
 import type { AppUserRow } from "../repositories/app-users";
 import type { SessionRow } from "../repositories/sessions";
 import type { ProfileRow } from "../repositories/profiles";
-import { loginAppUser, registerAppUser } from "../use-cases/auth";
-import { loginAppUserSchema, registerAppUserSchema } from "./schemas";
+import { loginAppUser, registerAppUser, updatePassword } from "../use-cases/auth";
+import { loginAppUserSchema, registerAppUserSchema, updatePasswordSchema } from "./schemas";
 import { fromThrown, invalidInput, ok, type ActionResult } from "./result";
 
 export function registerCore(
@@ -29,6 +29,18 @@ export function loginCore(
 
   try {
     return ok(loginAppUser(db, parsed.data));
+  } catch (error) {
+    return fromThrown(error);
+  }
+}
+
+export function updatePasswordCore(db: Db, input: unknown): ActionResult<void> {
+  const parsed = updatePasswordSchema.safeParse(input);
+  if (!parsed.success) return invalidInput(parsed.error);
+
+  try {
+    updatePassword(db, parsed.data);
+    return ok(undefined);
   } catch (error) {
     return fromThrown(error);
   }

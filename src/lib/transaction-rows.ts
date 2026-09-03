@@ -24,34 +24,60 @@ import { formatMoney } from "@/lib/utils";
 export function buildTransactionTableRows(
   transactions: readonly TransactionWithPostings[],
   accountsById: ReadonlyMap<string, AccountRow>,
-  currency: { symbol: string; minorUnitScale: number },
+  currency: { code: string; symbol: string; minorUnitScale: number },
+  currenciesById: ReadonlyMap<string, { code: string; symbol: string; minorUnitScale: number }> = new Map(),
 ): TransactionTableRow[] {
+  // Each posting's own Account's Currency, not the one shared `currency`
+  // default (Currency Catalogue delta, 2026-09-03) — Accounts can have
+  // independently different currencies now, and a Currency Conversion's
+  // whole point is a To leg in a *different* currency from the From leg.
+  // `currency` stays the fallback for an unresolvable account/currency
+  // (matches the existing `?? "—"` posture for a missing account name).
+  const currencyFor = (accountId: string) => {
+    const account = accountsById.get(accountId);
+    return (account && currenciesById.get(account.currencyId)) || currency;
+  };
+
   return transactions.map((transaction) => {
     const toPostings = transaction.postings.filter((posting) => posting.debit > 0);
     const fromPostings = transaction.postings.filter((posting) => posting.credit > 0);
+    // Safe to sum raw minor units directly: a multi-posting `fromPostings`
+    // (Merge's "common From" case) is only reachable for a same-currency
+    // N-posting transaction — a Currency Conversion is always exactly one
+    // From posting (domain/transaction.ts's isConversionShape), so there's
+    // never more than one currency to sum across here.
     const totalFromAmount = fromPostings.reduce((sum, posting) => sum + posting.credit, 0);
+    const fromCurrency = currencyFor(fromPostings[0]?.accountId ?? "");
 
     return {
       id: transaction.id,
       date: transaction.date,
       description: transaction.description,
+      // The From leg's Currency code — a Currency Conversion is always
+      // exactly one From posting (domain/transaction.ts's
+      // isConversionShape), so this is unambiguous even though `fromLines`
+      // itself supports Merge's multi-From case.
+      fromCurrencyCode: fromCurrency.code,
       fromLines: fromPostings.map((posting) => {
         const account = accountsById.get(posting.accountId);
+        const postingCurrency = currencyFor(posting.accountId);
         return {
           account: account?.name ?? "—",
           classification: account?.classification,
           icon: account?.icon,
-          amount: formatMoney(posting.credit, currency.symbol, currency.minorUnitScale),
+          amount: formatMoney(posting.credit, postingCurrency.symbol, postingCurrency.minorUnitScale),
         };
       }),
-      fromAmount: formatMoney(totalFromAmount, currency.symbol, currency.minorUnitScale),
+      fromAmount: formatMoney(totalFromAmount, fromCurrency.symbol, fromCurrency.minorUnitScale),
       toLines: toPostings.map((posting) => {
         const account = accountsById.get(posting.accountId);
+        const postingCurrency = currencyFor(posting.accountId);
         return {
           account: account?.name ?? "—",
           classification: account?.classification,
           icon: account?.icon,
-          amount: formatMoney(posting.debit, currency.symbol, currency.minorUnitScale),
+          amount: formatMoney(posting.debit, postingCurrency.symbol, postingCurrency.minorUnitScale),
+          currencyCode: postingCurrency.code,
         };
       }),
       tags: transaction.tags,
@@ -65,11 +91,14 @@ export function buildTransactionTableRows(
       // stays non-optional rather than requiring every reader to null-check.
       edit: {
         fromAccountId: fromPostings[0]?.accountId ?? "",
-        amount: fromMinorUnits(fromPostings[0]?.credit ?? 0, currency.minorUnitScale),
-        toLines: toPostings.map((posting) => ({
-          accountId: posting.accountId,
-          amount: fromMinorUnits(posting.debit, currency.minorUnitScale),
-        })),
+        amount: fromMinorUnits(fromPostings[0]?.credit ?? 0, fromCurrency.minorUnitScale),
+        toLines: toPostings.map((posting) => {
+          const postingCurrency = currencyFor(posting.accountId);
+          return {
+            accountId: posting.accountId,
+            amount: fromMinorUnits(posting.debit, postingCurrency.minorUnitScale),
+          };
+        }),
       },
     };
   });

@@ -1,13 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { isSupportedCurrencyCode } from "./currency";
+import { isSupportedCurrencyCode, findCurrencyDefinition, CURRENCY_CATALOG } from "./currency";
 
 describe("isSupportedCurrencyCode", () => {
-  it("accepts INR", () => {
-    expect(isSupportedCurrencyCode("INR")).toBe(true);
+  it("accepts every code in the Currency Catalogue", () => {
+    for (const currency of CURRENCY_CATALOG) {
+      expect(isSupportedCurrencyCode(currency.code)).toBe(true);
+    }
   });
 
-  it("rejects any other currency (MVP-only, ADR-020)", () => {
-    expect(isSupportedCurrencyCode("JPY")).toBe(false);
-    expect(isSupportedCurrencyCode("USD")).toBe(false);
+  it("rejects a code not in the Currency Catalogue", () => {
+    expect(isSupportedCurrencyCode("ZZZ")).toBe(false);
+  });
+});
+
+describe("findCurrencyDefinition", () => {
+  it("returns the definition for a supported code", () => {
+    expect(findCurrencyDefinition("INR")).toEqual({
+      code: "INR",
+      name: "Indian Rupee",
+      symbol: "₹",
+      minorUnitScale: 2,
+    });
+  });
+
+  it("returns undefined for an unsupported code", () => {
+    expect(findCurrencyDefinition("ZZZ")).toBeUndefined();
   });
 });

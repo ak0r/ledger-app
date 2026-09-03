@@ -6,7 +6,7 @@
 // dates are ISO 8601 strings. Classification/instrument-type enums are
 // validated by the domain layer (rule #17) — this file only pins their TS
 // shape via `.$type<...>()`; SQLite stores them as plain text.
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import {
   CLASSIFICATIONS,
   CREATABLE_CLASSIFICATIONS,
@@ -17,6 +17,9 @@ import {
   BUDGET_RECURRENCE_UNITS,
   BUDGET_FILTER_FIELDS,
   BUDGET_FILTER_MATCHES,
+  PANEL_KEYS,
+  BALANCES_ACCOUNT_SCOPES,
+  RECENT_EXPENSES_PERIODS,
 } from "@/domain";
 import type {
   Classification,
@@ -29,6 +32,8 @@ import type {
   BudgetFilterMatch,
   BudgetFilterCondition,
   BudgetScopeSnapshot,
+  PanelKey,
+  PanelConfigByKey,
 } from "@/domain";
 
 export {
@@ -41,6 +46,9 @@ export {
   BUDGET_RECURRENCE_UNITS,
   BUDGET_FILTER_FIELDS,
   BUDGET_FILTER_MATCHES,
+  PANEL_KEYS,
+  BALANCES_ACCOUNT_SCOPES,
+  RECENT_EXPENSES_PERIODS,
 };
 export type {
   Classification,
@@ -53,6 +61,7 @@ export type {
   BudgetFilterMatch,
   BudgetFilterCondition,
   BudgetScopeSnapshot,
+  PanelKey,
 };
 
 const id = () =>
@@ -102,6 +111,12 @@ export const profiles = sqliteTable("profiles", {
   appUserId: text("app_user_id")
     .references(() => appUsers.id)
     .unique(),
+  // Default currency for newly created Accounts (Currency Catalogue delta,
+  // 2026-09-03). Changing it is not retroactive: existing Accounts keep
+  // whatever currency they already have. Nullable — a Profile can exist
+  // before any Currency has been created for it (currency creation stays a
+  // separate step, HANDOFF.md open decisions #1).
+  primaryCurrencyId: text("primary_currency_id").references((): AnySQLiteColumn => currencies.id),
   ...timestamps,
 });
 
@@ -259,7 +274,7 @@ export const recurringRules = sqliteTable("recurring_rules", {
   ...timestamps,
 });
 
-// Budget Framework delta (docs/pending/2026-09-01-Budget-Framework.md) — a
+// Budget Framework delta (docs/completed/2026-09-01-Budget-Framework.md) — a
 // Budget is a definition (Name + recurrence), never a Transaction (spec
 // §1/§9): actual spending is always derived at read time from `postings`,
 // never persisted here. `explicitAccountIds`/`filterMatch`/
@@ -338,4 +353,62 @@ export const postings = sqliteTable("postings", {
   debit: integer("debit").notNull().default(0),
   credit: integer("credit").notNull().default(0),
   ...timestamps,
+});
+
+// Dashboard and Panels delta (docs/completed/2026-09-02-Dashboard-and-Panels.md)
+// §27 — a UI composition layer, not a financial data store. Phase 1 is one
+// default Dashboard per Profile (`isDefault` always true today), but the
+// model allows more later (spec §4) — no uniqueness constraint on
+// `isDefault` at the schema level, enforced at the application layer
+// instead (same posture as every other cross-row invariant in this file).
+export const dashboards = sqliteTable("dashboards", {
+  id: id(),
+  profileId: text("profile_id")
+    .notNull()
+    .references(() => profiles.id),
+  name: text("name").notNull(),
+  isDefault: integer("is_default", { mode: "boolean" }).notNull().default(true),
+  ...timestamps,
+});
+
+// A persisted Panel instance — identity/type (`key`, resolved against the
+// application-level Panel Registry, src/lib/panel-registry.tsx),
+// configuration, and actual (x, y) placement only (spec §6). No
+// `profileId` column, scope derives via the `dashboardId` join, same
+// convention as `budget_periods`/`account_identifiers`. Width/height are
+// never stored here — always supplied by the registry
+// (domain/dashboard.ts's `PANEL_DIMENSIONS_BY_KEY`, spec §14/§26).
+export const dashboardPanels = sqliteTable("dashboard_panels", {
+  id: id(),
+  dashboardId: text("dashboard_id")
+    .notNull()
+    .references(() => dashboards.id),
+  key: text("key").notNull().$type<PanelKey>(),
+  configuration: text("configuration", { mode: "json" }).notNull().$type<PanelConfigByKey[PanelKey]>(),
+  x: integer("x").notNull(),
+  y: integer("y").notNull(),
+  ...timestamps,
+});
+
+export type BackupStatus = "completed" | "failed";
+
+// Local Backup history (2026-09-03 Settings/Backup/Data Management delta
+// §7-10) — deliberately NOT Profile-scoped (rule #6's documented exemption,
+// same posture as `instruments`): a Backup snapshots the whole Ledger
+// Instance's single database file, never one Profile's data specifically.
+export const backups = sqliteTable("backups", {
+  id: id(),
+  filePath: text("file_path").notNull(),
+  sizeBytes: integer("size_bytes"),
+  status: text("status").notNull().$type<BackupStatus>(),
+  errorMessage: text("error_message"),
+  createdAt: text("created_at").notNull(),
+});
+
+// Singleton row (fixed id "singleton") — the one instance-level Automatic
+// Backup preference. Not Profile-scoped for the same reason as `backups`.
+export const backupSettings = sqliteTable("backup_settings", {
+  id: text("id").primaryKey(),
+  automaticBackupEnabled: integer("automatic_backup_enabled", { mode: "boolean" }).notNull().default(true),
+  updatedAt: text("updated_at").notNull(),
 });

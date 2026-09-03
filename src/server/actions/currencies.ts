@@ -4,12 +4,22 @@ import { revalidatePath } from "next/cache";
 import { db } from "../db/client";
 import { requireActiveProfile } from "../authz";
 import type { CurrencyRow } from "../repositories/currencies";
-import { createCurrencyCore } from "./currencies.core";
+import { addCurrencyCore, createCurrencyCore } from "./currencies.core";
 import type { ActionResult } from "./result";
 
 export async function createCurrencyAction(input: unknown): Promise<ActionResult<CurrencyRow>> {
   const { profile } = await requireActiveProfile();
   return createCurrencyCore(db, { ...(input as object), profileId: profile.id });
+}
+
+export async function addCurrencyAction(input: unknown): Promise<ActionResult<CurrencyRow>> {
+  const { profile } = await requireActiveProfile();
+  const result = addCurrencyCore(db, { ...(input as object), profileId: profile.id });
+  if (result.success) {
+    revalidatePath("/settings/currencies");
+    revalidatePath("/settings/profiles");
+  }
+  return result;
 }
 
 // Zero-JS: bind-free plain <form>. MVP is INR-only (rule #7, ADR-020), so

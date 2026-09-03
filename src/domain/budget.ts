@@ -1,7 +1,7 @@
 import type { Classification } from "./account";
 import { isNonNegativeInteger } from "./money";
 
-// Budget Framework delta (docs/pending/2026-09-01-Budget-Framework.md).
+// Budget Framework delta (docs/completed/2026-09-01-Budget-Framework.md).
 // A Budget is a definition + recurrence, same posture as a Recurring Rule
 // (domain/recurring.ts) — it never posts to the Ledger and actuals are
 // never persisted (spec §9). Unlike a Recurring Rule, a Budget Period is a

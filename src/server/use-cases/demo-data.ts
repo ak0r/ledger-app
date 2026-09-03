@@ -2,6 +2,11 @@ import type { Db } from "../db/client";
 import { insertCurrency } from "../repositories/currencies";
 import { insertAccount } from "../repositories/accounts";
 import { insertTransaction, insertPostings } from "../repositories/transactions";
+import { insertRecurringRule } from "../repositories/recurringRules";
+import { insertBudget } from "../repositories/budgets";
+import { insertBudgetPeriod } from "../repositories/budgetPeriods";
+import { insertBudgetAllocations } from "../repositories/budgetAllocations";
+import { findProfileById, setProfilePrimaryCurrencyId } from "../repositories/profiles";
 import { buildDemoDataset, validateDataset } from "../demo/dataset";
 
 // Copies the native demo dataset into an already-existing (empty) Profile
@@ -21,10 +26,23 @@ export function createDemoProfileData(db: Db, profileId: string): void {
 
   db.transaction((tx) => {
     for (const currency of dataset.currencies) insertCurrency(tx, currency);
+    // Seeded Currencies bypass createCurrency's own "first Currency becomes
+    // Primary" auto-set (use-cases/currencies.ts) — this is that same rule
+    // applied here, so a demo-seeded Profile isn't left with a Currency but
+    // no Primary Currency set.
+    const profile = findProfileById(tx, profileId);
+    const [firstCurrency] = dataset.currencies;
+    if (profile && !profile.primaryCurrencyId && firstCurrency) {
+      setProfilePrimaryCurrencyId(tx, profileId, firstCurrency.id, new Date().toISOString());
+    }
     for (const account of dataset.accounts) insertAccount(tx, account);
     for (const transaction of dataset.transactions) insertTransaction(tx, transaction);
     for (let i = 0; i < dataset.postings.length; i += POSTING_CHUNK_SIZE) {
       insertPostings(tx, dataset.postings.slice(i, i + POSTING_CHUNK_SIZE));
     }
+    for (const rule of dataset.recurringRules) insertRecurringRule(tx, rule);
+    for (const budget of dataset.budgets) insertBudget(tx, budget);
+    for (const period of dataset.budgetPeriods) insertBudgetPeriod(tx, period);
+    insertBudgetAllocations(tx, dataset.budgetAllocations);
   });
 }

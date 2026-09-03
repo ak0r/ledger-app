@@ -26,6 +26,12 @@ sqlite.pragma("foreign_keys = ON");
 
 export const db = drizzle(sqlite, { schema });
 
+// Raw connection + paths, exported for Local Backup only (use-cases/
+// backups.ts) — `better-sqlite3`'s native `.backup()` needs the underlying
+// Database handle, not the Drizzle wrapper. Nothing else should touch
+// `sqlite` directly; go through `db`.
+export { sqlite, DATA_DIR, DB_PATH };
+
 // Deliberately no in-process migrate() call — `next build`'s ~15 parallel
 // page-data-collection workers race an eager top-level migrate() against
 // the same file (reproduced via a real `pnpm build` failure and reverted

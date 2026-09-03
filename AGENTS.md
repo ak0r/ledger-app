@@ -6,7 +6,17 @@
 4. Every transaction belongs to one Profile.
 5. Every posting account must belong to that Profile.
 6. Every Profile-scoped repository/query requires explicit `profileId`.
-7. MVP currency is INR only.
+7. Currency: a system-maintained Currency Catalogue (code-level constant,
+   `domain/currency.ts`, not a DB table) replaces the earlier INR-only
+   freeze (2026-09-03 Settings/Backup/Data Management delta, full rule
+   pending the delta's docs closing pass). Profile has a Primary Currency
+   (default for new Accounts, changeable, not retroactive). Account has its
+   own Currency (authoritative, changeable — not retroactively snapshotted;
+   since Transactions never store a currency, changing an Account's
+   currency immediately changes how every existing and future Transaction
+   on it is interpreted). No FX/conversion/cross-currency aggregation; a
+   Transaction whose postings resolve to more than one currency is rejected
+   (`MIXED_CURRENCY_UNSUPPORTED`).
 8. Money is integer minor units.
 9. Transactions are hard-deleted.
 10. No persisted transaction draft/status.
@@ -102,6 +112,26 @@
       historical one.
     - A transaction may contribute to multiple Budgets; double-counting
       across Budgets is intentional, not a bug.
+29. Dashboards and Panels (2026-09-02 Dashboard and Panels delta, archived
+    in `docs/completed/`; see ADR-037 in `docs/07-decisions.md`):
+    - The Homepage is the default Dashboard for the active Profile — it
+      owns no financial summary model of its own, it only renders the
+      Dashboard's Panels.
+    - A DashboardPanel persists identity (`key`), configuration, and
+      placement (`x`, `y`) only — never balances, totals, transaction
+      results, or any other derived financial fact. Panel dimensions are
+      always registry-supplied, never persisted or user-resizable.
+    - The Panel Registry is two files: `domain/dashboard.ts` (client-safe
+      metadata) and `src/lib/panel-registry.tsx` (server-only rendering,
+      since panel components read the database directly) — never import
+      the rendering half from a Client Component.
+    - A new Profile's Starter Dashboard is created automatically, in the
+      same transaction as the Profile itself, at both of this codebase's
+      Profile-creation call sites.
+    - Removing a panel is immediate — no confirmation, no undo.
+    - Empty panels stay visible with an explanatory empty state; a panel
+      must never silently disappear or invent a default selection (e.g.
+      Balances' "no accounts selected" is never read as "all accounts").
 
 <!-- BEGIN:nextjs-agent-rules -->
 

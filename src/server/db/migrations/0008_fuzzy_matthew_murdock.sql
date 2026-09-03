@@ -1,0 +1,1 @@
+ALTER TABLE `profiles` ADD `primary_currency_id` text REFERENCES currencies(id);

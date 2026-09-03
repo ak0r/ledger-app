@@ -3,10 +3,10 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "../db/client";
-import { SESSION_COOKIE } from "../session";
+import { SESSION_COOKIE, getCurrentAppUser } from "../session";
 import { logoutAppUser } from "../use-cases/auth";
 import type { SessionRow } from "../repositories/sessions";
-import { loginCore, registerCore } from "./auth.core";
+import { loginCore, registerCore, updatePasswordCore } from "./auth.core";
 import type { ActionResult } from "./result";
 
 async function setSessionCookie(session: SessionRow): Promise<void> {
@@ -44,4 +44,10 @@ export async function logoutAction(): Promise<void> {
   if (sessionId) logoutAppUser(db, sessionId);
   cookieStore.delete(SESSION_COOKIE);
   redirect("/login");
+}
+
+export async function updatePasswordAction(input: unknown): Promise<ActionResult<void>> {
+  const appUser = await getCurrentAppUser();
+  if (!appUser) redirect("/login");
+  return updatePasswordCore(db, { ...(input as object), appUserId: appUser.id });
 }

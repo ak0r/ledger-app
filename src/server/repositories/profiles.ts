@@ -35,3 +35,19 @@ export function setProfileAppUserId(
 export function setProfileName(db: DbOrTx, id: string, name: string, updatedAt: string): void {
   db.update(profiles).set({ name, updatedAt }).where(eq(profiles.id, id)).run();
 }
+
+export function setProfilePrimaryCurrencyId(
+  db: DbOrTx,
+  id: string,
+  primaryCurrencyId: string,
+  updatedAt: string,
+): void {
+  db.update(profiles).set({ primaryCurrencyId, updatedAt }).where(eq(profiles.id, id)).run();
+}
+
+// Clean Up Content (cleanup.ts) must null this out before deleting a
+// Profile's Currencies — `primaryCurrencyId` is a real FK to `currencies`,
+// so deleting the row it still points at would otherwise violate it.
+export function clearProfilePrimaryCurrencyId(db: DbOrTx, id: string, updatedAt: string): void {
+  db.update(profiles).set({ primaryCurrencyId: null, updatedAt }).where(eq(profiles.id, id)).run();
+}

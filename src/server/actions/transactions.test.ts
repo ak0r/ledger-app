@@ -52,7 +52,7 @@ describe("createTransactionCore", () => {
     expect(result.success).toBe(true);
   });
 
-  it("rejects an unbalanced transaction at the Zod boundary — fast feedback", () => {
+  it("rejects an unbalanced 2-posting transaction (caught by the domain layer, not Zod — see next test)", () => {
     const db = createTestDb();
     const { profile, bank, food } = setUp(db);
 
@@ -68,6 +68,61 @@ describe("createTransactionCore", () => {
 
     expect(result.success).toBe(false);
     if (!result.success) expect(result.error).toMatch(/balance/i);
+  });
+
+  it("rejects an unbalanced split (3+ postings) at the Zod boundary — fast feedback", () => {
+    // Zod's isBalanced only exempts the exactly-2-postings/one-debit/one-
+    // credit shape (a possible Currency Conversion — schemas.ts can't see
+    // Account currencies to confirm it, only the domain layer can, rule
+    // #17). A 3-posting mismatch is never a Conversion candidate, so this
+    // one genuinely still gets the fast, schema-layer rejection.
+    const db = createTestDb();
+    const { profile, bank, food } = setUp(db);
+
+    const result = createTransactionCore(db, {
+      profileId: profile.id,
+      date: "2026-08-15",
+      description: "Broken split",
+      postings: [
+        { accountId: food.id, debit: 1000, credit: 0 },
+        { accountId: food.id, debit: 1000, credit: 0 },
+        { accountId: bank.id, debit: 0, credit: 1900 },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error).toMatch(/Postings must balance/);
+  });
+
+  it("passes a Currency Conversion payload through the Zod boundary unbalanced (domain layer decides)", () => {
+    const db = createTestDb();
+    const { profile, bank } = setUp(db);
+    const jpy = createCurrency(db, {
+      profileId: profile.id,
+      code: "JPY",
+      name: "Japanese Yen",
+      symbol: "¥",
+      minorUnitScale: 0,
+    });
+    const jpyCash = createAccount(db, {
+      profileId: profile.id,
+      currencyId: jpy.id,
+      name: "JPY in Hand",
+      classification: "ASSET",
+      instrumentType: "CASH",
+    });
+
+    const result = createTransactionCore(db, {
+      profileId: profile.id,
+      date: "2026-09-03",
+      description: "Convert Cash",
+      postings: [
+        { accountId: bank.id, debit: 0, credit: 1000000 },
+        { accountId: jpyCash.id, debit: 15000, credit: 0 },
+      ],
+    });
+
+    expect(result.success).toBe(true);
   });
 
   it("rejects a posting to another Profile's account — only the domain layer can catch this", () => {

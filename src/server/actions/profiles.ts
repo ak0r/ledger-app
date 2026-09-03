@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "../db/client";
 import { requirePrimaryUser, requireProfileAccess } from "../authz";
 import type { ProfileRow } from "../repositories/profiles";
-import { createProfileCore, renameProfileCore } from "./profiles.core";
+import { createProfileCore, renameProfileCore, setProfilePrimaryCurrencyCore } from "./profiles.core";
 import type { ActionResult } from "./result";
 
 // Only the Primary User creates Profiles for other people (2026-08-20 User
@@ -26,6 +26,18 @@ export async function renameProfileAction(
   const result = renameProfileCore(db, input);
   if (result.success) {
     revalidatePath("/", "layout");
+    revalidatePath("/settings/profiles");
+  }
+  return result;
+}
+
+export async function setProfilePrimaryCurrencyAction(
+  profileId: string,
+  input: unknown,
+): Promise<ActionResult<ProfileRow>> {
+  await requireProfileAccess(profileId);
+  const result = setProfilePrimaryCurrencyCore(db, input);
+  if (result.success) {
     revalidatePath("/settings/profiles");
   }
   return result;

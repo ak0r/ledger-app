@@ -13,10 +13,22 @@
 // Family; that container no longer exists, and demo data now seeds into
 // one already-existing Profile at /setup time, not a
 // multi-person household.
-import { toMinorUnits, validateTransaction, type AccountRef, type Classification, type InstrumentType } from "@/domain";
+import {
+  budgetPeriodWindowAt,
+  toMinorUnits,
+  validateTransaction,
+  type AccountRef,
+  type BudgetRecurrenceSchedule,
+  type Classification,
+  type InstrumentType,
+} from "@/domain";
 import type { CurrencyRow } from "../repositories/currencies";
 import type { AccountRow } from "../repositories/accounts";
 import type { TransactionRow, PostingRow } from "../repositories/transactions";
+import type { RecurringRuleRow } from "../repositories/recurringRules";
+import type { BudgetRow } from "../repositories/budgets";
+import type { BudgetPeriodRow } from "../repositories/budgetPeriods";
+import type { BudgetAllocationRow } from "../repositories/budgetAllocations";
 
 const SCALE = 2; // INR minor units — matches createInrCurrencyAction.
 
@@ -25,6 +37,15 @@ export interface DemoDataset {
   accounts: AccountRow[];
   transactions: TransactionRow[];
   postings: PostingRow[];
+  // Recurring Transactions Phase 1 / Budget Framework deltas — definitions
+  // only, same posture as the transactions above: these never generate or
+  // post anything themselves (rule: a Recurring Rule/Budget Period never
+  // touches the Ledger). Included so demo data actually showcases both
+  // deltas instead of only the plain transaction history that predates them.
+  recurringRules: RecurringRuleRow[];
+  budgets: BudgetRow[];
+  budgetPeriods: BudgetPeriodRow[];
+  budgetAllocations: BudgetAllocationRow[];
 }
 
 // Deterministic PRNG (mulberry32) — reproducible amount/category jitter
@@ -187,6 +208,98 @@ class DatasetBuilder {
   }
 }
 
+// One year ago, matching the opening-balance/EMI-history anchor above —
+// these rules describe a pattern that's already been running for that year.
+function buildDemoRecurringRules(profileId: string, acc: Map<string, AccountRow>, anchorDate: string, now: string): RecurringRuleRow[] {
+  return [
+    {
+      id: crypto.randomUUID(),
+      profileId,
+      name: "Rent",
+      fromAccountId: acc.get("bank1")!.id,
+      toAccountId: acc.get("rent")!.id,
+      amountMinor: money(25000),
+      description: "Rent",
+      frequency: "MONTHLY",
+      interval: 1,
+      byMonthDay: 1,
+      byWeekday: null,
+      startDate: anchorDate,
+      endDate: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: crypto.randomUUID(),
+      profileId,
+      name: "Home Loan Interest",
+      fromAccountId: acc.get("bank1")!.id,
+      toAccountId: acc.get("homeLoanInterest")!.id,
+      amountMinor: money(7200),
+      description: "Home Loan Interest",
+      frequency: "MONTHLY",
+      interval: 1,
+      byMonthDay: 1,
+      byWeekday: null,
+      startDate: anchorDate,
+      endDate: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
+}
+
+// A Recurring Budget covering the current calendar month, so its one
+// Period lines up with the real transaction history already generated for
+// "this month" and shows non-zero actuals immediately (spec: Budget
+// Framework delta §5/§11 — the Period's own scope snapshot, computed the
+// same way createBudget would).
+function buildDemoBudget(
+  profileId: string,
+  acc: Map<string, AccountRow>,
+  now: Date,
+  nowIso: string,
+): { budget: BudgetRow; period: BudgetPeriodRow; allocations: BudgetAllocationRow[] } {
+  const schedule: BudgetRecurrenceSchedule = {
+    unit: "MONTH",
+    interval: 1,
+    startDate: isoDate(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))),
+  };
+  const window = budgetPeriodWindowAt(schedule, 0);
+
+  const budget: BudgetRow = {
+    id: crypto.randomUUID(),
+    profileId,
+    name: "Food Expenses",
+    type: "RECURRING",
+    recurrenceUnit: schedule.unit,
+    recurrenceInterval: schedule.interval,
+    recurrenceStartDate: schedule.startDate,
+    recurrenceEndDate: null,
+    recurrenceOccurrences: null,
+    explicitAccountIds: [acc.get("food")!.id, acc.get("restaurants")!.id],
+    filterMatch: "ALL",
+    filterConditions: [],
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+  const period: BudgetPeriodRow = {
+    id: crypto.randomUUID(),
+    budgetId: budget.id,
+    startDate: window.startDate,
+    endDate: window.endDate,
+    scopeSnapshot: { explicitAccountIds: budget.explicitAccountIds!, filter: { match: "ALL", conditions: [] } },
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+  const allocations: BudgetAllocationRow[] = [
+    { id: crypto.randomUUID(), budgetPeriodId: period.id, expenseAccountId: acc.get("food")!.id, targetAmountMinor: money(15000), createdAt: nowIso, updatedAt: nowIso },
+    { id: crypto.randomUUID(), budgetPeriodId: period.id, expenseAccountId: acc.get("restaurants")!.id, targetAmountMinor: money(8000), createdAt: nowIso, updatedAt: nowIso },
+  ];
+
+  return { budget, period, allocations };
+}
+
 function buildCurrency(profileId: string, now: string): CurrencyRow {
   return {
     id: crypto.randomUUID(),
@@ -245,11 +358,12 @@ export function buildDemoDataset(profileId: string, now: Date = new Date(), seed
   const { accounts, byKey: acc } = buildAccounts(profileId, currency.id, ACCOUNT_SPECS, nowIso);
 
   const builder = new DatasetBuilder(nowIso);
+  const anchorDate = isoDate(new Date(now.getTime() - 365 * 86400000));
 
   // --- Opening balances (mirrors createAccount's own opening-balance
   // convention: post to the new account's normal-balance side, opposite
   // side to Balancing) ---
-  builder.split(profileId, isoDate(new Date(now.getTime() - 365 * 86400000)), "Opening balance", acc.get("balancing")!.id, [
+  builder.split(profileId, anchorDate, "Opening balance", acc.get("balancing")!.id, [
     { accountId: acc.get("bank1")!.id, amountMinor: money(90000) },
     { accountId: acc.get("bank2")!.id, amountMinor: money(20000) },
     { accountId: acc.get("epf")!.id, amountMinor: money(150000) },
@@ -260,7 +374,7 @@ export function buildDemoDataset(profileId: string, now: Date = new Date(), seed
   // is a plain liability ledger account only, matches this exactly).
   builder.simple(
     profileId,
-    isoDate(new Date(now.getTime() - 365 * 86400000)),
+    anchorDate,
     "Opening balance",
     acc.get("balancing")!.id,
     acc.get("homeLoan")!.id,
@@ -367,11 +481,18 @@ export function buildDemoDataset(profileId: string, now: Date = new Date(), seed
     }
   }
 
+  const recurringRules = buildDemoRecurringRules(profileId, acc, anchorDate, nowIso);
+  const { budget, period, allocations } = buildDemoBudget(profileId, acc, now, nowIso);
+
   return {
     currencies: [currency],
     accounts,
     transactions: builder.transactions,
     postings: builder.postings,
+    recurringRules,
+    budgets: [budget],
+    budgetPeriods: [period],
+    budgetAllocations: allocations,
   };
 }
 

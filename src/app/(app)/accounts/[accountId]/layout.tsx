@@ -1,16 +1,17 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/server/db/client";
 import { requireActiveProfile } from "@/server/authz";
 import { getAccountBalances, listAccounts } from "@/server/use-cases/accounts";
 import { listCurrencies } from "@/server/use-cases/currencies";
+import { listDistinctTags } from "@/server/use-cases/tags";
 import { getMonthlyCashflow } from "@/server/use-cases/accountHistory";
 import { formatMoney } from "@/lib/utils";
-import { buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AccountIcon } from "@/components/account-icon";
 import { AccountTabs } from "@/components/account-tabs";
 import { AccountMetricCards } from "@/components/account-metric-cards";
+import { TransactionCreateSheet } from "@/components/transaction-create-sheet";
 
 // SQLite is a live local resource — never statically prerender a route that
 // reads it (docs/06-architecture.md).
@@ -34,13 +35,33 @@ export default async function AccountLayout({
   const account = getAccountBalances(db, profile.id).find((a) => a.id === accountId);
   if (!account) notFound();
 
-  const currency = listCurrencies(db, profile.id)[0];
+  const currencies = listCurrencies(db, profile.id);
+  const currency = currencies[0];
   if (!currency) notFound();
 
   const accounts = listAccounts(db, profile.id);
   // Same gate as Add Transaction everywhere else (a Transaction needs a
   // distinct From/To account) — never a silent bounce.
   const canCreateTransaction = accounts.length >= 2;
+  const currenciesById = new Map(currencies.map((c) => [c.id, c]));
+  // This Account's own Currency, not just "whichever Currency happens to
+  // be first" (Currency Catalogue delta, 2026-09-03 — Accounts can have
+  // independently different currencies now; `currency`/`currencies[0]`
+  // above is only a profile-wide fallback for pages with no one Account in
+  // view, e.g. /transactions).
+  const accountCurrency = currenciesById.get(account.currencyId) ?? currency;
+  const transactionFormAccounts = accounts.map((a) => {
+    const accountCurrency = currenciesById.get(a.currencyId);
+    return {
+      id: a.id,
+      name: a.name,
+      classification: a.classification,
+      icon: a.icon,
+      currencyId: a.currencyId,
+      currencySymbol: accountCurrency?.symbol ?? currency.symbol,
+      currencyScale: accountCurrency?.minorUnitScale ?? currency.minorUnitScale,
+    };
+  });
 
   // Real wall-clock "this month"/"year to date" — deliberately fixed
   // calendar windows, not the Insights tab's own user-selectable range
@@ -78,23 +99,23 @@ export default async function AccountLayout({
             )}
           </h1>
           <p className="font-mono text-xl font-semibold tabular-nums">
-            {formatMoney(account.balance, currency.symbol, currency.minorUnitScale)}
+            {formatMoney(account.balance, accountCurrency.symbol, accountCurrency.minorUnitScale)}
           </p>
         </div>
         {canCreateTransaction && (
-          <Link
-            href={`/transactions/new?accountId=${accountId}`}
-            className={buttonVariants()}
-          >
-            + Add Transaction
-          </Link>
+          <TransactionCreateSheet
+            trigger={<Button type="button">+ Add Transaction</Button>}
+            accounts={transactionFormAccounts}
+            existingTags={listDistinctTags(db, profile.id)}
+            defaultFromAccountId={accountId}
+          />
         )}
       </div>
 
       <AccountMetricCards
         instrumentType={account.instrumentType}
-        currencySymbol={currency.symbol}
-        currencyScale={currency.minorUnitScale}
+        currencySymbol={accountCurrency.symbol}
+        currencyScale={accountCurrency.minorUnitScale}
         period={{
           thisMonthInflow: thisMonthPoint?.inflow ?? 0,
           thisMonthOutflow: thisMonthPoint?.outflow ?? 0,

@@ -2,6 +2,8 @@ import type {
   BudgetAllocationViolation,
   BudgetScopeViolation,
   BudgetViolation,
+  DashboardPanelViolation,
+  PanelConfigViolation,
   RecurringRuleViolation,
   TransactionViolation,
 } from "@/domain";
@@ -13,9 +15,35 @@ export class NotFoundError extends Error {
   }
 }
 
+// One human-readable line per violation code — used only for the message
+// surfaced to the user (`ActionResult.error`); `violations` itself stays
+// the full structured list for any caller that needs to branch on it.
+// Reports the *first* violation only, matching how most of this app's
+// validation-error messages already work (single-line, not a bulleted
+// dump) — a Transaction with multiple simultaneous violations is rare and
+// the first one is enough to point the user at the actual problem.
+function describeTransactionViolation(violation: TransactionViolation): string {
+  switch (violation.code) {
+    case "TOO_FEW_POSTINGS":
+      return "A transaction needs at least two postings.";
+    case "UNBALANCED":
+      return "Debits and credits don't balance.";
+    case "INVALID_POSTING":
+      return "One of the postings has an invalid amount.";
+    case "ACCOUNT_NOT_FOUND":
+      return "One of the selected accounts could not be found.";
+    case "OWNERSHIP_MISMATCH":
+      return "One of the selected accounts doesn't belong to this profile.";
+    case "UNSUPPORTED_CURRENCY":
+      return `${violation.currencyCode} isn't a supported currency.`;
+    case "MIXED_CURRENCY_UNSUPPORTED":
+      return "This transaction mixes more than one currency — every account in a transaction must use the same currency.";
+  }
+}
+
 export class TransactionValidationError extends Error {
   constructor(public readonly violations: readonly TransactionViolation[]) {
-    super("Transaction failed domain validation");
+    super(violations[0] ? describeTransactionViolation(violations[0]) : "Transaction failed domain validation");
     this.name = "TransactionValidationError";
   }
 }
@@ -31,6 +59,20 @@ export class BudgetValidationError extends Error {
   constructor(public readonly violations: readonly BudgetViolation[]) {
     super("Budget failed domain validation");
     this.name = "BudgetValidationError";
+  }
+}
+
+export class DashboardPanelValidationError extends Error {
+  constructor(public readonly violations: readonly DashboardPanelViolation[]) {
+    super("Dashboard panel failed domain validation");
+    this.name = "DashboardPanelValidationError";
+  }
+}
+
+export class PanelConfigValidationError extends Error {
+  constructor(public readonly violations: readonly PanelConfigViolation[]) {
+    super("Panel configuration failed domain validation");
+    this.name = "PanelConfigValidationError";
   }
 }
 
@@ -50,8 +92,15 @@ export class BudgetAllocationValidationError extends Error {
 
 export class UnsupportedCurrencyError extends Error {
   constructor(code: string) {
-    super(`Unsupported currency code "${code}" — MVP supports INR only (ADR-020)`);
+    super(`Unsupported currency code "${code}" — not in the Currency Catalogue`);
     this.name = "UnsupportedCurrencyError";
+  }
+}
+
+export class CurrencyAlreadyAddedError extends Error {
+  constructor(code: string) {
+    super(`${code} has already been added to this Profile`);
+    this.name = "CurrencyAlreadyAddedError";
   }
 }
 
@@ -73,6 +122,13 @@ export class InvalidCredentialsError extends Error {
   constructor() {
     super("Invalid email or password");
     this.name = "InvalidCredentialsError";
+  }
+}
+
+export class IncorrectCurrentPasswordError extends Error {
+  constructor() {
+    super("Current password is incorrect");
+    this.name = "IncorrectCurrentPasswordError";
   }
 }
 

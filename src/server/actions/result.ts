@@ -3,10 +3,14 @@ import {
   BudgetAllocationValidationError,
   BudgetScopeValidationError,
   BudgetValidationError,
+  CurrencyAlreadyAddedError,
+  DashboardPanelValidationError,
   EmailAlreadyRegisteredError,
+  IncorrectCurrentPasswordError,
   InvalidCredentialsError,
   MergeIneligibleError,
   NotFoundError,
+  PanelConfigValidationError,
   PasswordRequiredError,
   RecurringRuleValidationError,
   TransactionValidationError,
@@ -48,10 +52,14 @@ export function fromThrown(error: unknown): ActionResult<never> {
     error instanceof BudgetValidationError ||
     error instanceof BudgetScopeValidationError ||
     error instanceof BudgetAllocationValidationError ||
+    error instanceof DashboardPanelValidationError ||
+    error instanceof PanelConfigValidationError ||
     error instanceof NotFoundError ||
     error instanceof UnsupportedCurrencyError ||
+    error instanceof CurrencyAlreadyAddedError ||
     error instanceof MergeIneligibleError ||
     error instanceof InvalidCredentialsError ||
+    error instanceof IncorrectCurrentPasswordError ||
     error instanceof EmailAlreadyRegisteredError ||
     error instanceof UnsupportedImportFormatError
   ) {

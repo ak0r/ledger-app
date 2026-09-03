@@ -3,8 +3,8 @@
 // singleton and is the only thing Client Components import.
 import type { Db } from "../db/client";
 import type { ProfileRow } from "../repositories/profiles";
-import { createProfile, renameProfile } from "../use-cases/profiles";
-import { createProfileSchema, renameProfileSchema } from "./schemas";
+import { createProfile, renameProfile, setProfilePrimaryCurrency } from "../use-cases/profiles";
+import { createProfileSchema, renameProfileSchema, setProfilePrimaryCurrencySchema } from "./schemas";
 import { fromThrown, invalidInput, ok, type ActionResult } from "./result";
 
 export function createProfileCore(db: Db, input: unknown): ActionResult<ProfileRow> {
@@ -24,6 +24,17 @@ export function renameProfileCore(db: Db, input: unknown): ActionResult<ProfileR
 
   try {
     return ok(renameProfile(db, parsed.data.profileId, parsed.data.name));
+  } catch (error) {
+    return fromThrown(error);
+  }
+}
+
+export function setProfilePrimaryCurrencyCore(db: Db, input: unknown): ActionResult<ProfileRow> {
+  const parsed = setProfilePrimaryCurrencySchema.safeParse(input);
+  if (!parsed.success) return invalidInput(parsed.error);
+
+  try {
+    return ok(setProfilePrimaryCurrency(db, parsed.data.profileId, parsed.data.currencyId));
   } catch (error) {
     return fromThrown(error);
   }

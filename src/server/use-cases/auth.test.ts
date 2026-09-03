@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "../testing/createTestDb";
-import { findAppUserByEmail } from "../repositories/app-users";
+import { findAppUserByEmail, findAppUserById } from "../repositories/app-users";
 import { findSessionById } from "../repositories/sessions";
-import { loginAppUser, logoutAppUser, registerAppUser } from "./auth";
-import { EmailAlreadyRegisteredError, InvalidCredentialsError } from "./errors";
+import { loginAppUser, logoutAppUser, registerAppUser, updatePassword } from "./auth";
+import { EmailAlreadyRegisteredError, IncorrectCurrentPasswordError, InvalidCredentialsError, NotFoundError } from "./errors";
 
 describe("registerAppUser", () => {
   it("persists a hashed password (not the plaintext) and creates a session", () => {
@@ -64,6 +64,53 @@ describe("logoutAppUser", () => {
     logoutAppUser(db, session.id);
 
     expect(findSessionById(db, session.id)).toBeUndefined();
+  });
+});
+
+describe("updatePassword", () => {
+  it("changes the password hash and rejects the old password afterward", () => {
+    const db = createTestDb();
+    const { appUser } = registerAppUser(db, { email: "amit@example.com", password: "old-password" });
+
+    updatePassword(db, {
+      appUserId: appUser.id,
+      currentPassword: "old-password",
+      newPassword: "new-password-123",
+    });
+
+    expect(() => loginAppUser(db, { email: "amit@example.com", password: "old-password" })).toThrow(
+      InvalidCredentialsError,
+    );
+    const { session } = loginAppUser(db, { email: "amit@example.com", password: "new-password-123" });
+    expect(findSessionById(db, session.id)?.appUserId).toBe(appUser.id);
+
+    const updated = findAppUserById(db, appUser.id);
+    expect(updated?.passwordHash).not.toBe(appUser.passwordHash);
+  });
+
+  it("throws IncorrectCurrentPasswordError when the current password is wrong", () => {
+    const db = createTestDb();
+    const { appUser } = registerAppUser(db, { email: "amit@example.com", password: "old-password" });
+
+    expect(() =>
+      updatePassword(db, {
+        appUserId: appUser.id,
+        currentPassword: "wrong-password",
+        newPassword: "new-password-123",
+      }),
+    ).toThrow(IncorrectCurrentPasswordError);
+  });
+
+  it("throws NotFoundError for an unknown AppUser", () => {
+    const db = createTestDb();
+
+    expect(() =>
+      updatePassword(db, {
+        appUserId: "does-not-exist",
+        currentPassword: "anything",
+        newPassword: "new-password-123",
+      }),
+    ).toThrow(NotFoundError);
   });
 });
 

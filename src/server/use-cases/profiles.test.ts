@@ -3,7 +3,15 @@ import type { Db } from "../db/client";
 import { createTestDb } from "../testing/createTestDb";
 import { findProfileById } from "../repositories/profiles";
 import { insertAppUser, type AppUserRow } from "../repositories/app-users";
-import { createProfile, getProfile, linkProfileToAppUser, listProfiles, renameProfile } from "./profiles";
+import {
+  createProfile,
+  getProfile,
+  linkProfileToAppUser,
+  listProfiles,
+  renameProfile,
+  setProfilePrimaryCurrency,
+} from "./profiles";
+import { createCurrency } from "./currencies";
 import { NotFoundError, ProfileAlreadyLinkedError } from "./errors";
 
 // linkProfileToAppUser's appUserId argument is a real FK (profiles.app_user_id
@@ -106,5 +114,53 @@ describe("renameProfile", () => {
   it("throws NotFoundError for an unknown id", () => {
     const db = createTestDb();
     expect(() => renameProfile(db, "does-not-exist", "New Name")).toThrow(NotFoundError);
+  });
+});
+
+describe("setProfilePrimaryCurrency", () => {
+  it("updates the Profile's primaryCurrencyId", () => {
+    const db = createTestDb();
+    const profile = createProfile(db, { name: "Amit" });
+    const usd = createCurrency(db, {
+      profileId: profile.id,
+      code: "USD",
+      name: "US Dollar",
+      symbol: "$",
+      minorUnitScale: 2,
+    });
+
+    const updated = setProfilePrimaryCurrency(db, profile.id, usd.id);
+
+    expect(updated.primaryCurrencyId).toBe(usd.id);
+    expect(findProfileById(db, profile.id)?.primaryCurrencyId).toBe(usd.id);
+  });
+
+  it("throws NotFoundError for an unknown Profile id", () => {
+    const db = createTestDb();
+    const profile = createProfile(db, { name: "Amit" });
+    const currency = createCurrency(db, {
+      profileId: profile.id,
+      code: "USD",
+      name: "US Dollar",
+      symbol: "$",
+      minorUnitScale: 2,
+    });
+
+    expect(() => setProfilePrimaryCurrency(db, "does-not-exist", currency.id)).toThrow(NotFoundError);
+  });
+
+  it("throws NotFoundError for a Currency that doesn't belong to this Profile (rule #6)", () => {
+    const db = createTestDb();
+    const profile = createProfile(db, { name: "Amit" });
+    const otherProfile = createProfile(db, { name: "Partner" });
+    const otherCurrency = createCurrency(db, {
+      profileId: otherProfile.id,
+      code: "USD",
+      name: "US Dollar",
+      symbol: "$",
+      minorUnitScale: 2,
+    });
+
+    expect(() => setProfilePrimaryCurrency(db, profile.id, otherCurrency.id)).toThrow(NotFoundError);
   });
 });
