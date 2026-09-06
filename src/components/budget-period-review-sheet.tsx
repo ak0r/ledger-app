@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { BudgetAllocationInput, BudgetFilterState } from "@/domain";
+import type { BudgetAllocationInput, BudgetFilterState } from "@/core";
 import { formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -11,7 +11,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { BudgetFilterBuilder } from "@/components/budget-filter-builder";
 import { BudgetAllocationsTable } from "@/components/budget-allocations-table";
 import { approveBudgetPeriodAction, previewNextBudgetPeriodAction } from "@/server/actions/budgets";
-import type { BudgetPeriodPreview } from "@/server/use-cases/budgets";
+import type { BudgetPeriodPreview } from "@/server/services/budgets";
 
 // Spec §5/§16's "Review & Create" flow — the *only* place a RECURRING
 // Budget's next Period ever gets created (never silently, spec §5). The

@@ -1,6 +1,6 @@
 "use server";
 
-import { db } from "../db/client";
+import { db } from "../persistence/client";
 import { requireActiveProfile } from "../authz";
 import type { RecurringRuleRow } from "../repositories/recurringRules";
 import { createRecurringRuleCore, deleteRecurringRuleCore, editRecurringRuleCore } from "./recurring.core";

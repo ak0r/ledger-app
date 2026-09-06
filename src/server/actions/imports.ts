@@ -1,9 +1,9 @@
 "use server";
 
-import { db } from "../db/client";
+import { db } from "../persistence/client";
 import { requireActiveProfile } from "../authz";
 import type { ImportFileRow } from "../repositories/importFiles";
-import type { ImportPreview } from "../use-cases/imports";
+import type { ImportPreview } from "../services/imports";
 import { commitImportCore, previewImportCore } from "./imports.core";
 import type { ActionResult } from "./result";
 

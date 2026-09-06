@@ -4,7 +4,7 @@
 // DB-validated session row, not just read-and-trust.
 import { cache } from "react";
 import { cookies } from "next/headers";
-import { db } from "./db/client";
+import { db } from "./persistence/client";
 import { findSessionById } from "./repositories/sessions";
 import { findAppUserById, type AppUserRow } from "./repositories/app-users";
 

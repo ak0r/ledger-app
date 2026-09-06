@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
-import type { DbOrTx } from "../db/client";
-import { profiles } from "../db/schema";
+import type { DbOrTx } from "../persistence/client";
+import { profiles } from "../persistence/schema";
 
 export type ProfileRow = typeof profiles.$inferSelect;
 
@@ -34,6 +34,16 @@ export function setProfileAppUserId(
 
 export function setProfileName(db: DbOrTx, id: string, name: string, updatedAt: string): void {
   db.update(profiles).set({ name, updatedAt }).where(eq(profiles.id, id)).run();
+}
+
+export function setProfilePan(
+  db: DbOrTx,
+  id: string,
+  panEncrypted: string,
+  panHash: string,
+  updatedAt: string,
+): void {
+  db.update(profiles).set({ panEncrypted, panHash, updatedAt }).where(eq(profiles.id, id)).run();
 }
 
 export function setProfilePrimaryCurrencyId(

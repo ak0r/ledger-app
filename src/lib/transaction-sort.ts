@@ -1,5 +1,5 @@
 import type { AccountRow } from "@/server/repositories/accounts";
-import type { TransactionWithPostings } from "@/server/use-cases/transactions";
+import type { TransactionWithPostings } from "@/server/services/transactions";
 
 // Single-column, three-state sort (default → ascending → descending →
 // default) applied to the *entire* filtered result set before pagination —

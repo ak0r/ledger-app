@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { db } from "@/server/db/client";
+import { db } from "@/server/persistence/client";
 import { requireActiveProfile } from "@/server/authz";
-import { listAccounts } from "@/server/use-cases/accounts";
-import { listCurrencies } from "@/server/use-cases/currencies";
-import { filterTransactions, listTransactions } from "@/server/use-cases/transactions";
-import { listDistinctTags } from "@/server/use-cases/tags";
+import { listAccounts } from "@/server/services/accounts";
+import { listCurrencies } from "@/server/services/currencies";
+import { filterTransactions, listTransactions } from "@/server/services/transactions";
+import { listDistinctTags } from "@/server/services/tags";
 import { parseTransactionFilter } from "@/lib/transaction-filter";
 import { applySort, parseSortState } from "@/lib/transaction-sort";
 import { buildTransactionTableRows } from "@/lib/transaction-rows";
@@ -53,6 +53,9 @@ export default async function TransactionsPage(props: PageProps<"/transactions">
   }
 
   const currency = currencies[0];
+  const defaultCurrencyId = currencies.some((c) => c.id === profile.primaryCurrencyId)
+    ? (profile.primaryCurrencyId ?? undefined)
+    : undefined;
   const accounts = listAccounts(db, profile.id);
   const accountsById = new Map(accounts.map((account) => [account.id, account]));
   // A Transaction needs a distinct From and To account (transactions/new's
@@ -145,6 +148,7 @@ export default async function TransactionsPage(props: PageProps<"/transactions">
               currency={currency}
               initialState={filterState}
               sortState={sortState}
+              accountCreation={{ currencies, defaultCurrencyId, existingTags }}
             />
             <TransactionQuickSearch
               key={`search-${JSON.stringify(filterState)}`}

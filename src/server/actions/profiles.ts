@@ -1,10 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { db } from "../db/client";
+import { db } from "../persistence/client";
 import { requirePrimaryUser, requireProfileAccess } from "../authz";
 import type { ProfileRow } from "../repositories/profiles";
-import { createProfileCore, renameProfileCore, setProfilePrimaryCurrencyCore } from "./profiles.core";
+import {
+  createProfileCore,
+  renameProfileCore,
+  setProfilePanCore,
+  setProfilePrimaryCurrencyCore,
+} from "./profiles.core";
 import type { ActionResult } from "./result";
 
 // Only the Primary User creates Profiles for other people (2026-08-20 User
@@ -27,6 +32,19 @@ export async function renameProfileAction(
   if (result.success) {
     revalidatePath("/", "layout");
     revalidatePath("/settings/profiles");
+  }
+  return result;
+}
+
+export async function setProfilePanAction(
+  profileId: string,
+  input: unknown,
+): Promise<ActionResult<ProfileRow>> {
+  await requireProfileAccess(profileId);
+  const result = setProfilePanCore(db, input);
+  if (result.success) {
+    revalidatePath("/settings/profiles");
+    revalidatePath("/portfolio/imports");
   }
   return result;
 }

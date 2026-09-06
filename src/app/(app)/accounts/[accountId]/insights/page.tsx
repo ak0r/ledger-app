@@ -1,15 +1,15 @@
 import { notFound } from "next/navigation";
-import { db } from "@/server/db/client";
+import { db } from "@/server/persistence/client";
 import { requireActiveProfile } from "@/server/authz";
-import { getAccountBalances } from "@/server/use-cases/accounts";
-import { listCurrencies } from "@/server/use-cases/currencies";
+import { getAccountBalances } from "@/server/services/accounts";
+import { listCurrencies } from "@/server/services/currencies";
 import {
   getAccountRangeSummary,
   getBalanceTrend,
   getMonthlyCashflow,
-} from "@/server/use-cases/accountHistory";
+} from "@/server/services/accountHistory";
 import { parseInsightsRangePreset, resolveInsightsRange } from "@/lib/insights-range";
-import { fromMinorUnits } from "@/domain";
+import { fromMinorUnits } from "@/core";
 import { formatMoney } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AccountCashflowChart } from "@/components/account-cashflow-chart";
@@ -90,10 +90,7 @@ export default async function AccountInsightsPage(
 
   switch (account.instrumentType) {
     case "BANK":
-    case "CASH":
-    case "MUTUAL_FUND":
-    case "STOCK":
-    case "COMMODITY": {
+    case "CASH": {
       content = (
         <>
           <div className="grid gap-4 md:grid-cols-2">

@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
-import type { DbOrTx } from "../db/client";
-import { accountIdentifiers, accounts } from "../db/schema";
+import type { DbOrTx } from "../persistence/client";
+import { accountIdentifiers, accounts } from "../persistence/schema";
 
 export type AccountIdentifierRow = typeof accountIdentifiers.$inferSelect;
 

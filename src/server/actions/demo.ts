@@ -2,10 +2,10 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { db } from "../db/client";
+import { db } from "../persistence/client";
 import { requireActiveProfile, requireProfileAccess } from "../authz";
-import { listAccounts } from "../use-cases/accounts";
-import { createDemoProfileData } from "../use-cases/demo-data";
+import { listAccounts } from "../services/accounts";
+import { createDemoProfileData } from "../services/demo-data";
 
 // Start with Demo Data — only reachable from /setup, itself only reachable
 // right before the active Profile has any Accounts. Atomicity is

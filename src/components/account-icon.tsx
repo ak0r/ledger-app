@@ -1,6 +1,6 @@
 import { Building2, CreditCard, PiggyBank, Scale, ShoppingCart } from "lucide-react";
 import { DynamicIcon, type IconName } from "lucide-react/dynamic";
-import type { Classification } from "@/domain";
+import type { Classification } from "@/core";
 import { cn } from "@/lib/utils";
 
 // One icon per Classification (docs/screen-contracts.md's FinBodhi

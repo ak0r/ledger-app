@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Filter, Plus, Trash2 } from "lucide-react";
-import { fromMinorUnits, toMinorUnits } from "@/domain";
+import { Check, ChevronsUpDown, Filter, Plus, Trash2 } from "lucide-react";
+import { fromMinorUnits, toMinorUnits } from "@/core";
 import type { AccountRow } from "@/server/repositories/accounts";
 import {
   serializeTransactionFilter,
@@ -12,11 +12,14 @@ import {
   type TransactionFilterState,
 } from "@/lib/transaction-filter";
 import type { SortState } from "@/lib/transaction-sort";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { AccountForm } from "@/components/account-form";
 
 // Generic condition-based filter drawer — replaces both the inline GET-form
 // on the Member-level Transactions page and the old AccountFilterSheet
@@ -107,6 +110,7 @@ export function TransactionFilterDrawer({
   lockedAccountId,
   sortState,
   onApply,
+  accountCreation,
 }: {
   // Optional when `onApply` is given (Import's client-state usage has no
   // URL to navigate to at all — see import-workspace.tsx).
@@ -125,6 +129,17 @@ export function TransactionFilterDrawer({
   // calls this instead of `router.push`. The Transactions/Account-Detail
   // pages don't pass it and keep the original URL-driven behavior.
   onApply?: (state: TransactionFilterState) => void;
+  // Enables "Create new account" inside the From/To Account value picker
+  // (search-or-create, same shape as InstrumentPicker) — opt-in, since it
+  // needs Currency context the Import review workspace doesn't have a
+  // reason to pass (that flow has its own dedicated account-resolution UI,
+  // AGENTS.md rule #26) and Account Detail's own filter hasn't asked for
+  // it. Only `transactions/page.tsx` passes this.
+  accountCreation?: {
+    currencies: { id: string; code: string; symbol: string; minorUnitScale: number }[];
+    defaultCurrencyId?: string;
+    existingTags?: string[];
+  };
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -277,6 +292,7 @@ export function TransactionFilterDrawer({
                 condition={condition}
                 accountOptions={accountOptions}
                 currency={currency}
+                accountCreation={accountCreation}
                 onChange={(value) => updateCondition(condition.id, { value })}
               />
             </div>
@@ -313,55 +329,31 @@ function ConditionValueInput({
   condition,
   accountOptions,
   currency,
+  accountCreation,
   onChange,
 }: {
   condition: FilterCondition;
   accountOptions: { label: string; value: string }[];
   currency: { symbol: string; minorUnitScale: number };
+  accountCreation?: {
+    currencies: { id: string; code: string; symbol: string; minorUnitScale: number }[];
+    defaultCurrencyId?: string;
+    existingTags?: string[];
+  };
   onChange: (value: FilterCondition["value"]) => void;
 }) {
   if (NO_VALUE_OPERATORS.has(condition.operator)) return null;
 
   if (condition.field === "fromAccount" || condition.field === "toAccount") {
-    if (MULTI_ACCOUNT_OPERATORS.has(condition.operator)) {
-      const value = (Array.isArray(condition.value) ? condition.value : []) as string[];
-      return (
-        <Select
-          multiple
-          value={value}
-          onValueChange={(next) => onChange(next as string[])}
-          items={accountOptions}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Choose Accounts…" />
-          </SelectTrigger>
-          <SelectContent>
-            {accountOptions.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      );
-    }
+    const multiple = MULTI_ACCOUNT_OPERATORS.has(condition.operator);
     return (
-      <Select
-        value={typeof condition.value === "string" ? condition.value : ""}
-        onValueChange={(value) => onChange(value as string)}
-        items={accountOptions}
-      >
-        <SelectTrigger>
-          <SelectValue placeholder="Choose an Account…" />
-        </SelectTrigger>
-        <SelectContent>
-          {accountOptions.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <AccountValuePicker
+        multiple={multiple}
+        value={condition.value ?? (multiple ? [] : "")}
+        options={accountOptions}
+        creation={accountCreation}
+        onChange={onChange}
+      />
     );
   }
 
@@ -442,5 +434,164 @@ function ConditionValueInput({
       value={typeof condition.value === "string" ? condition.value : ""}
       onChange={(e) => onChange(e.target.value)}
     />
+  );
+}
+
+// From/To Account value picker — a search-or-create combobox (same Popover
+// + Input + list shape as InstrumentPicker, docs/07-decisions.md's UI-
+// consistency posture for "same control, same look everywhere"), replacing
+// a plain unsearchable <Select> that got unusable once an Account list grew
+// past a handful of entries. "Create new account" only appears once the
+// search has zero matches, and only when `creation` is given — it opens the
+// same AccountForm every other creation entry point uses, not a shortcut
+// duplicate of it. On success the new Account is applied to this condition
+// immediately (no waiting on `router.refresh()`, which AccountForm still
+// calls itself — that's what makes every *other* row's picker, and the rest
+// of the page, see the new Account too).
+function AccountValuePicker({
+  multiple,
+  value,
+  options,
+  creation,
+  onChange,
+}: {
+  multiple: boolean;
+  value: FilterCondition["value"];
+  options: { label: string; value: string }[];
+  creation?: {
+    currencies: { id: string; code: string; symbol: string; minorUnitScale: number }[];
+    defaultCurrencyId?: string;
+    existingTags?: string[];
+  };
+  onChange: (value: FilterCondition["value"]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+  // Optimistic: an Account created from this picker is usable immediately,
+  // without waiting for the `accounts` prop (`options` here) to catch up
+  // via `router.refresh()` — same reasoning as InstrumentPicker's own
+  // create flow.
+  const [createdOptions, setCreatedOptions] = useState<{ label: string; value: string }[]>([]);
+
+  const allOptions = [...options, ...createdOptions.filter((c) => !options.some((o) => o.value === c.value))];
+  const trimmedQuery = query.trim().toLowerCase();
+  const filtered = trimmedQuery
+    ? allOptions.filter((option) => option.label.toLowerCase().includes(trimmedQuery))
+    : allOptions;
+
+  const selectedValues = multiple
+    ? ((Array.isArray(value) ? value : []) as string[])
+    : typeof value === "string" && value
+      ? [value]
+      : [];
+  const selectedLabels = allOptions
+    .filter((option) => selectedValues.includes(option.value))
+    .map((option) => option.label);
+
+  function select(accountId: string) {
+    if (multiple) {
+      const next = selectedValues.includes(accountId)
+        ? selectedValues.filter((v) => v !== accountId)
+        : [...selectedValues, accountId];
+      onChange(next);
+    } else {
+      onChange(accountId);
+      setOpen(false);
+    }
+  }
+
+  return (
+    <>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setQuery("");
+        }}
+      >
+        <PopoverTrigger
+          render={
+            <button
+              type="button"
+              className="flex h-9 w-full min-w-0 items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent px-2.5 py-1 text-left text-base outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
+            />
+          }
+        >
+          <span className={cn("truncate", selectedLabels.length === 0 && "text-muted-foreground")}>
+            {selectedLabels.length > 0
+              ? selectedLabels.join(", ")
+              : multiple
+                ? "Choose Accounts…"
+                : "Choose an Account…"}
+          </span>
+          <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-72 p-2">
+          <Input
+            autoFocus
+            placeholder="Search accounts…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <div className="mt-2 flex max-h-56 flex-col gap-0.5 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <p className="px-2 py-1.5 text-sm text-muted-foreground">No accounts found.</p>
+            ) : (
+              filtered.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className="flex items-center justify-between rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+                  onClick={() => select(option.value)}
+                >
+                  <span className="truncate">{option.label}</span>
+                  {selectedValues.includes(option.value) && (
+                    <Check className="size-3.5 shrink-0" aria-hidden="true" />
+                  )}
+                </button>
+              ))
+            )}
+            {filtered.length === 0 && creation && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  setCreateOpen(true);
+                }}
+                className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm text-primary hover:bg-muted"
+              >
+                <Plus className="size-3.5 shrink-0" aria-hidden="true" />
+                Create new account
+              </button>
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      {creation && (
+        <Sheet open={createOpen} onOpenChange={setCreateOpen}>
+          <SheetContent className="md:max-w-md gap-4 overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>New Account</SheetTitle>
+            </SheetHeader>
+            {createOpen && (
+              <AccountForm
+                currencies={creation.currencies}
+                defaultCurrencyId={creation.defaultCurrencyId}
+                mode="create"
+                existingTags={creation.existingTags}
+                onCreated={(account) => {
+                  setCreatedOptions((prev) => [...prev, { label: account.name, value: account.id }]);
+                  select(account.id);
+                }}
+                onSuccess={() => setCreateOpen(false)}
+                onCancel={() => setCreateOpen(false)}
+              />
+            )}
+          </SheetContent>
+        </Sheet>
+      )}
+    </>
   );
 }

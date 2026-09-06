@@ -1,5 +1,5 @@
 import type { AccountRow } from "@/server/repositories/accounts";
-import type { TransactionWithPostings } from "@/server/use-cases/transactions";
+import type { TransactionWithPostings } from "@/server/services/transactions";
 
 // Generic, DB-independent condition-based filter model — replaces the old
 // ad hoc flat `TransactionFilters` (docs/handoff plan). Reusable by the

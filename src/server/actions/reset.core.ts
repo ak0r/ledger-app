@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
-import type { Db } from "../db/client";
-import { resetLedger } from "../use-cases/reset";
+import type { Db } from "../persistence/client";
+import { resetLedger } from "../services/reset";
 import { resetLedgerSchema } from "./schemas";
 import { fromThrown, invalidInput, ok, type ActionResult } from "./result";
 

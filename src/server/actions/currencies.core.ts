@@ -1,6 +1,6 @@
-import type { Db } from "../db/client";
+import type { Db } from "../persistence/client";
 import type { CurrencyRow } from "../repositories/currencies";
-import { addCurrencyFromCatalog, createCurrency } from "../use-cases/currencies";
+import { addCurrencyFromCatalog, createCurrency } from "../services/currencies";
 import { addCurrencySchema, createCurrencySchema } from "./schemas";
 import { fromThrown, invalidInput, ok, type ActionResult } from "./result";
 

@@ -5,8 +5,8 @@
 // treated as inaccessible, redirecting rather than leaking existence.
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import { db } from "./db/client";
-import { getProfile, getProfileByAppUserId } from "./use-cases/profiles";
+import { db } from "./persistence/client";
+import { getProfile, getProfileByAppUserId } from "./services/profiles";
 import type { ProfileRow } from "./repositories/profiles";
 import type { AppUserRow } from "./repositories/app-users";
 import { getCurrentAppUser } from "./session";

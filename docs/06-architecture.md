@@ -14,6 +14,12 @@
 - SQLite
 - Drizzle ORM
 - Node.js
+- Python 3 + `casparser` (2026-09-05, Portfolio Adoption Plan — CAS PDF
+  import only, invoked as a local subprocess from `scripts/cas_parser.py`;
+  never a network call, per Import Privacy, rule #23). The only non-Node
+  runtime dependency in this stack; must be present wherever the app runs
+  (self-hosted Docker image or local dev machine) for CAS import to work —
+  every other feature is unaffected if it's absent.
 
 Initial deployment: local machine.
 
@@ -23,27 +29,38 @@ Later:
 - Tailscale
 - Traefik if required
 
-No cloud dependency for MVP.
+Self-hosted, single-instance. No cloud dependency.
 
 ## Architecture
 
 ```text
 Browser
    ↓
-Next.js
+Next.js (app/, actions)
    ↓
-Application / Domain
+Application / services (server/)
    ↓
-Ledger Core
+Domain core (core/ledger, core/portfolio)
    ↓
 Drizzle
    ↓
 SQLite
 ```
 
+Two sibling domains live under `core/`: `core/ledger` (Profile/Currency/
+Account/Transaction/Posting — the accounting spine) and `core/portfolio`
+(PortfolioAccount/Folio/InvestmentTransaction/Holding/NAVHistory — the
+investment-tracking domain, ADR-040/041). They are deliberately delinked:
+a Ledger Account can never be Instrument-backed, Portfolio never writes to
+`accounts`/`transactions`/`postings`, and an ESLint rule
+(`eslint.config.mjs`) enforces `core/portfolio` can't import `core/ledger`
+at build time — the two domains share only the underlying Instrument
+Catalogue (`core/portfolio/instruments`, not Profile-scoped, reused as
+shared reference data).
+
 ## Domain boundary
 
-Core accounting code must not depend on:
+Core domain code (`core/ledger`, `core/portfolio`) must not depend on:
 
 - React/UI
 - import parsers
@@ -54,7 +71,8 @@ Core accounting code must not depend on:
 
 ## API
 
-No separate REST API required for MVP.
+No separate REST API — Next.js Server Actions are the only server
+boundary.
 
 ## Validation
 
@@ -86,7 +104,7 @@ Critical tests:
 
 ## Money representation
 
-MVP stores monetary values as integer minor units.
+Monetary values are stored as integer minor units.
 
 No floating-point money representation.
 
@@ -103,7 +121,10 @@ Account references Currency.
 
 Posting references Account, so Posting currency is derived from Account.
 
-MVP supports INR only.
+Multiple currencies exist per Profile (Currency Catalogue,
+`docs/04-modules.md`) — a Transaction whose postings resolve to more than
+one currency is still rejected (`MIXED_CURRENCY_UNSUPPORTED`), except the
+one Currency Conversion shape.
 
 ## Transaction persistence invariant
 
@@ -111,7 +132,7 @@ A persisted Transaction is always complete and balanced.
 
 Transient draft form state exists only in the client/application layer.
 
-No persisted `DRAFT` status is required for MVP.
+No persisted `DRAFT` status.
 
 ## Transaction ownership invariant
 
@@ -234,5 +255,5 @@ postings >= 2
 exactly one of debit/credit > 0 per posting
 sum(debit) == sum(credit)
 posting.account.profile_id == transaction.profile_id
-MVP account currency == INR
+a transaction's postings resolve to exactly one currency (except Currency Conversion)
 ```

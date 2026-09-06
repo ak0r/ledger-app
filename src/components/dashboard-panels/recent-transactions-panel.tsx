@@ -1,7 +1,8 @@
-import type { RecentTransactionsPanelConfig } from "@/domain";
-import { db } from "@/server/db/client";
-import { listAccounts } from "@/server/use-cases/accounts";
-import { listTransactions } from "@/server/use-cases/transactions";
+import Link from "next/link";
+import type { RecentTransactionsPanelConfig } from "@/core";
+import { db } from "@/server/persistence/client";
+import { listAccounts } from "@/server/services/accounts";
+import { listTransactions } from "@/server/services/transactions";
 import { formatDate, formatMoney } from "@/lib/utils";
 import { TagChips } from "@/components/tag-chips";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -43,7 +44,6 @@ export async function RecentTransactionsPanel({
         {transactions.map((transaction) => {
           const toPostings = transaction.postings.filter((p) => p.debit > 0);
           const amount = toPostings.reduce((sum, p) => sum + p.debit, 0);
-          const to = toPostings.map((p) => accountNameById.get(p.accountId) ?? "—").join(", ");
           return (
             <TableRow key={transaction.id}>
               <TableCell className="py-2 whitespace-nowrap text-muted-foreground">{formatDate(transaction.date)}</TableCell>
@@ -53,7 +53,16 @@ export async function RecentTransactionsPanel({
                   <TagChips tags={transaction.tags} />
                 </div>
               </TableCell>
-              <TableCell className="py-2 text-muted-foreground">{to}</TableCell>
+              <TableCell className="py-2 text-muted-foreground">
+                {toPostings.map((p, i) => (
+                  <span key={p.accountId}>
+                    {i > 0 && ", "}
+                    <Link href={`/accounts/${p.accountId}`} className="hover:underline">
+                      {accountNameById.get(p.accountId) ?? "—"}
+                    </Link>
+                  </span>
+                ))}
+              </TableCell>
               <TableCell className="py-2 text-right">
                 <span className="whitespace-nowrap font-mono tabular-nums">{formatMoney(amount, currency.symbol, currency.minorUnitScale)}</span>
               </TableCell>

@@ -2,7 +2,7 @@ import type {
   BalancesPanelConfig,
   RecentExpensesPanelConfig,
   RecentTransactionsPanelConfig,
-} from "@/domain";
+} from "@/core";
 import type { DashboardPanelRow } from "@/server/repositories/dashboardPanels";
 import { NetWorthPanel } from "@/components/dashboard-panels/net-worth-panel";
 import { AssetsPanel } from "@/components/dashboard-panels/assets-panel";
@@ -11,6 +11,7 @@ import { BalancesPanel } from "@/components/dashboard-panels/balances-panel";
 import { RecentExpensesPanel } from "@/components/dashboard-panels/recent-expenses-panel";
 import { RecentTransactionsPanel } from "@/components/dashboard-panels/recent-transactions-panel";
 import { BudgetsNeedingReviewPanel } from "@/components/dashboard-panels/budgets-needing-review-panel";
+import { PortfolioValuePanel } from "@/components/dashboard-panels/portfolio-value-panel";
 
 // The Panel Registry's rendering half (spec §8) — server-only, since every
 // panel component reads the database directly. Import this ONLY from a
@@ -41,5 +42,7 @@ export function renderPanelContent(
       );
     case "BUDGETS_NEEDING_REVIEW":
       return <BudgetsNeedingReviewPanel profileId={profileId} currency={currency} />;
+    case "PORTFOLIO_VALUE":
+      return <PortfolioValuePanel profileId={profileId} currency={currency} />;
   }
 }

@@ -1,4 +1,4 @@
-import type { DateRange } from "@/server/use-cases/accountHistory";
+import type { DateRange } from "@/server/services/accountHistory";
 
 // Insights tab's shared date-range control (product refresh: "the selected
 // range applies to the entire Insights page rather than a separate date

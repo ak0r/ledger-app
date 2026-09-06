@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { db } from "../db/client";
+import { db } from "../persistence/client";
 import { requireActiveProfile } from "../authz";
 import type { AccountRow } from "../repositories/accounts";
 import {

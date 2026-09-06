@@ -1,4 +1,4 @@
-import type { Db } from "../db/client";
+import type { Db } from "../persistence/client";
 import type { BudgetPeriodRow } from "../repositories/budgetPeriods";
 import type { BudgetRow } from "../repositories/budgets";
 import {
@@ -9,7 +9,7 @@ import {
   previewNextBudgetPeriod,
   type BudgetPeriodPreview,
   type BudgetWithFirstPeriod,
-} from "../use-cases/budgets";
+} from "../services/budgets";
 import {
   approveBudgetPeriodSchema,
   createBudgetSchema,

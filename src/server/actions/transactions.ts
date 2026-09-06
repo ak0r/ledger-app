@@ -1,8 +1,8 @@
 "use server";
 
-import { db } from "../db/client";
+import { db } from "../persistence/client";
 import { requireActiveProfile } from "../authz";
-import type { TransactionWithPostings } from "../use-cases/transactions";
+import type { TransactionWithPostings } from "../services/transactions";
 import {
   bulkDeleteTransactionsCore,
   bulkUpdateTagsCore,

@@ -13,7 +13,7 @@ import {
   TYPES_BY_CLASSIFICATION,
   type Classification,
   type InstrumentType,
-} from "@/domain";
+} from "@/core";
 import { humanizeEnum } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +29,7 @@ import { createAccountAction, editAccountAction } from "@/server/actions/account
 // src/server/actions/schemas.ts, run again inside the Server Action
 // (rule #17). No Label/Opening-balance fields (product-polish pass): an
 // opening balance is a normal double-entry Transaction, not special
-// Account-creation state (see src/server/use-cases/accounts.ts).
+// Account-creation state (see src/server/services/accounts.ts).
 const accountFormSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   currencyId: z.string().min(1, "Currency is required"),
@@ -77,6 +77,13 @@ interface AccountFormProps {
   // router.push behavior unchanged.
   onSuccess?: () => void;
   onCancel?: () => void;
+  // Create mode only — fires with the created Account's id/name right after
+  // a successful submit, before onSuccess/router.refresh() below. Lets a
+  // caller that embeds this form inline (e.g. the Transaction filter's
+  // Account picker, transaction-filter-drawer.tsx) apply the new Account
+  // immediately instead of waiting for router.refresh() to re-deliver it
+  // through server props.
+  onCreated?: (account: { id: string; name: string }) => void;
   // Sheet-usage-only (edit-visual-behaviour delta §12) — the wrapping Sheet
   // gates its own close attempts on this rather than the form owning any
   // "are you sure" UI itself, so the confirmation pattern lives in exactly
@@ -92,6 +99,7 @@ export function AccountForm({
   account,
   onSuccess,
   onCancel,
+  onCreated,
   onDirtyChange,
 }: AccountFormProps) {
   const router = useRouter();
@@ -177,6 +185,9 @@ export function AccountForm({
     if (!result.success) {
       setServerError(result.error);
       return;
+    }
+    if (mode === "create") {
+      onCreated?.(result.data);
     }
     if (onSuccess) {
       onSuccess();

@@ -1,5 +1,5 @@
-import { CLASSIFICATIONS, INSTRUMENT_TYPES, type Classification, type InstrumentType } from "@/domain";
-import type { AccountWithBalance } from "@/server/use-cases/accounts";
+import { CLASSIFICATIONS, INSTRUMENT_TYPES, type Classification, type InstrumentType } from "@/core";
+import type { AccountWithBalance } from "@/server/services/accounts";
 
 // Accounts list filter — deliberately *not* Transactions' generic
 // condition-builder model (transaction-filter.ts's field/operator/value

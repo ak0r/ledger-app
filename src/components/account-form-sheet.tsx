@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Classification, InstrumentType } from "@/domain";
+import type { Classification, InstrumentType } from "@/core";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { AccountForm } from "@/components/account-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -40,6 +40,8 @@ export function AccountFormSheet({
     name: string;
     classification: Classification;
     instrumentType: InstrumentType;
+    instrumentId: string | null;
+    instrumentLabel: string | null;
     tags: string[] | null;
     icon: string | null;
   };

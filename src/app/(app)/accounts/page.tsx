@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { db } from "@/server/db/client";
+import { db } from "@/server/persistence/client";
 import { requireActiveProfile } from "@/server/authz";
-import { getAccountBalances } from "@/server/use-cases/accounts";
-import { listCurrencies } from "@/server/use-cases/currencies";
-import { listDistinctTags } from "@/server/use-cases/tags";
+import { getAccountBalances } from "@/server/services/accounts";
+import { listCurrencies } from "@/server/services/currencies";
+import { listDistinctTags } from "@/server/services/tags";
 import { createInrCurrencyAction } from "@/server/actions/currencies";
 import {
   accountFilterToParams,

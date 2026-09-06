@@ -1,0 +1,1 @@
+ALTER TABLE `instruments` ADD `amfi_code` text;

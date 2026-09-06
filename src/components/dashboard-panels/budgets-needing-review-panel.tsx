@@ -1,6 +1,6 @@
-import { db } from "@/server/db/client";
-import { listAccounts } from "@/server/use-cases/accounts";
-import { listBudgetsWithSummary } from "@/server/use-cases/budgets";
+import { db } from "@/server/persistence/client";
+import { listAccounts } from "@/server/services/accounts";
+import { listBudgetsWithSummary } from "@/server/services/budgets";
 import { formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { BudgetPeriodReviewSheet } from "@/components/budget-period-review-sheet";

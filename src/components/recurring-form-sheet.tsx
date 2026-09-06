@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { RecurringFrequency } from "@/domain";
+import type { RecurringFrequency } from "@/core";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { RecurringForm } from "@/components/recurring-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";

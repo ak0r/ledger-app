@@ -270,39 +270,50 @@ Hierarchy should primarily come from spacing, typography, surface contrast, and 
 
 ## 4.1 Desktop
 
-Use a collapsible sidebar.
+Use a collapsible sidebar, grouped by domain (Ledger/Portfolio delink,
+ADR-040) so the two are visually distinct, not one longer flat list
+(`src/components/nav-items.ts`):
 
 ```text
 Ledger
 
-HOME
   Home
 
-TRACK / MANAGE
-  Accounts
+LEDGER
   Transactions
+  Accounts
+  Recurring
+  Budgets
+  Imports
 
-INSIGHTS
-  Reports
+PORTFOLIO
+  Overview
+  Mutual Funds
+  Stocks
+  Accounts / Folios
+  Imports
 
 ────────────────
-SETTINGS / SETUP
+  Import Center      (cross-domain, not a duplicate of either domain's own Imports)
+SETTINGS
   Settings
 ```
 
 Collapsed sidebar shows icons while preserving navigation order.
 
-Settings/Setup remains at the bottom.
+Settings remains at the bottom. Portfolio is holding-centric, not
+transaction-centric — no top-level Transactions or Holdings entry; drill
+down from Overview into an asset class into a security's own detail page,
+which is where its read-only transaction history lives.
 
 ## 4.2 Mobile
 
 Do not reproduce the desktop sidebar.
 
-Use persistent bottom navigation:
-
-```text
-Home | Track | Insights | More
-```
+Use persistent bottom navigation with a curated subset (`mobilePrimary` —
+today: Home, Transactions, Accounts, Portfolio Overview, More); the rest
+stay reachable by drilling in from Home or Portfolio Overview rather than
+crowding the bar.
 
 Rules:
 
@@ -332,7 +343,7 @@ Appearance / utility controls
 Example:
 
 ```text
-Ledger v0.1.0                                          AK   ☼
+Ledger vX.Y.Z (current: v0.3.0)                                          AK   ☼
 ```
 
 ## Mobile
@@ -341,7 +352,7 @@ Keep header compact:
 
 ```text
 Ledger                         AK  ˅
-v0.1.0
+vX.Y.Z (current: v0.3.0)
 ```
 
 Profile switching (Primary User only) remains accessible without making the header heavy.
@@ -426,7 +437,7 @@ Transactions
 
 Future account-level features may add History, Settings, or Valuation.
 
-Do not expose empty future-feature tabs in MVP.
+Do not expose empty future-feature tabs.
 
 ---
 
@@ -621,27 +632,19 @@ Currency
 Tags
 ```
 
-### Conditional fields
-
-For instrument-backed accounts:
-
-```text
-Instrument
-Instrument ID
-Instrument label
-```
-
-Instrument selection comes from external/reference APIs.
-
-Ledger does not maintain an MVP instrument catalogue.
+A Ledger Account can never be Instrument-backed (Ledger/Portfolio delink,
+ADR-040 in `docs/07-decisions.md`) — Asset Accounts are Bank/Cash only.
+There is no Instrument picker or Instrument ID/label field on this form.
+Instrument-backed accounts (Mutual Fund/Stock/Commodity) belong to the
+separate Portfolio domain's own PortfolioAccount, not this form.
 
 ### Rules
 
 - Account belongs to one Profile.
-- Account has one currency.
-- Currency is INR in MVP.
+- Account has one Currency, drawn from the Currency Catalogue — a Profile
+  can hold Accounts in more than one currency; no cross-currency
+  conversion.
 - Account tags are inline.
-- Asset instruments may reference external instrument identity.
 
 ## 13.3 Add / Edit Transaction
 
@@ -673,7 +676,7 @@ Destinations[]
 - Transaction belongs to one Profile through its Accounts/Postings.
 - Minimum two postings.
 - Transaction must balance.
-- Posting/account currencies must agree in MVP.
+- Posting/account currencies must agree within one Transaction (except Currency Conversion).
 - Tags are inline.
 - Editing requires explicit Edit mode.
 - Delete is hard delete.
@@ -704,7 +707,7 @@ Trip = Japan2026
 
 produces a view of otherwise normal transactions.
 
-Do not introduce a tag-management screen in MVP.
+Do not introduce a tag-management screen.
 
 ---
 
@@ -756,7 +759,7 @@ Transaction has >= 2 postings
 Transaction balances
 Posting has valid accounting side
 Accounts belong to same Profile
-Currencies agree in MVP
+Currencies agree within one Transaction (except Currency Conversion)
 ```
 
 ---

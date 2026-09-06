@@ -1,8 +1,16 @@
 # Vision
 
-Build a personal finance application with a strong double-entry accounting foundation and a simple consumer UI.
+Ledger is a self-hosted personal finance application built on a strong
+double-entry accounting foundation, with an investment-tracking Portfolio
+domain alongside it, under a simple consumer UI.
 
 > Accounting is the spine. Product features are modules around it.
+
+No longer an MVP: identity, accounts, transactions, imports, recurring
+transactions, budgets, a configurable dashboard, multi-currency support,
+and Portfolio (CAS/eCAS/tradebook import, NAV/XIRR valuation) are shipped.
+See `docs/04-modules.md` for what's built and `docs/10-open-decisions.md`
+for what's still deliberately deferred.
 
 Core model:
 

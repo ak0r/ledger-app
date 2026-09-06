@@ -6,7 +6,7 @@
 // compat subpath — the classic data/columns/getCoreRowModel shape — is
 // the right fit, not the new API's added complexity.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeftRight, ArrowRight, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronRight } from "lucide-react";
 import { flexRender } from "@tanstack/react-table";
 import {
   getCoreRowModel,
@@ -15,7 +15,7 @@ import {
   type LegacyColumnDef,
   type LegacyRow,
 } from "@tanstack/react-table/legacy";
-import type { Classification } from "@/domain";
+import type { Classification } from "@/core";
 import { TagChips } from "@/components/tag-chips";
 import { TransactionRowMenu } from "@/components/transaction-row-menu";
 import { TransactionQuickEditRow } from "@/components/transaction-quick-edit-row";
@@ -85,7 +85,7 @@ function SelectRowCheckbox({ id, forceVisible = false }: { id: string; forceVisi
             checked={checked}
             onCheckedChange={() => toggleSelected(id)}
             className={cn(
-              "opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100",
+              "opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 [@media(pointer:coarse)]:opacity-100",
               (checked || forceVisible) && "opacity-100",
             )}
           />
@@ -131,6 +131,23 @@ function rowDomId(id: string): string {
 // against the normal, much darker `--background` already passes easily).
 const toAmountClassName =
   "whitespace-nowrap font-mono tabular-nums text-muted-foreground group-focus-visible/row:text-foreground";
+
+// FX-rate supporting info (Revised Investment Model delta, Phase 5,
+// 2026-09-03) — deliberately plain text plus one small outline Badge
+// (Currency code, badge first per the decision doc's own rule 4), not a
+// colored/emphasized element: subordinate to the primary amount above it,
+// not competing with it. Shared by desktop's amount cell and the mobile
+// card so the two presentations never drift.
+function SecondaryInfo({ secondary }: { secondary: ToLineSecondary }) {
+  return (
+    <span className="flex items-center gap-1 whitespace-nowrap text-xs text-muted-foreground">
+      <Badge variant="outline" className="h-4 px-1 text-[10px] font-normal text-muted-foreground">
+        {secondary.currencyCode}
+      </Badge>
+      @ {secondary.rate}
+    </span>
+  );
+}
 
 // From/To column grouping (product refresh) — primary (spacing + a subtle
 // vertical divider at the From→To boundary) plus a secondary static arrow
@@ -408,12 +425,19 @@ function TransactionRow({
   // `toAmountClassName`/here, so decimals line up column-wise regardless of
   // integer-part length) — the two things that make a column of amounts
   // scannable at a glance.
-  const amountCell = (amount: string | undefined, side: "from" | "to") => (
-    <TableCell role="gridcell" className="py-2.5 text-right">
+  const amountCell = (
+    amount: string | undefined,
+    side: "from" | "to",
+    secondary?: ToLineSecondary,
+  ) => (
+    <TableCell role="gridcell" className="py-2.5 text-right align-top">
       {amount && (
-        <span className={side === "to" ? toAmountClassName : "whitespace-nowrap font-mono tabular-nums"}>
-          {amount}
-        </span>
+        <div className="flex flex-col items-end gap-0.5">
+          <span className={side === "to" ? toAmountClassName : "whitespace-nowrap font-mono tabular-nums"}>
+            {amount}
+          </span>
+          {secondary && <SecondaryInfo secondary={secondary} />}
+        </div>
       )}
     </TableCell>
   );
@@ -421,29 +445,13 @@ function TransactionRow({
   if (!isSplit) {
     const fromLine = t.fromLines[0];
     const toLine = t.toLines[0];
-    // Currency Conversion marker (2026-09-03 delta) — only ever reachable
-    // here: a Conversion is always exactly one From/one To posting
-    // (domain/transaction.ts's isConversionShape), so a split row never
-    // needs this. Icon + destination currency code, not a raw "⇄" glyph —
-    // matches the rest of the app's icon-based visual language rather
-    // than relying on an emoji rendering consistently across platforms.
-    const isConversion = !!toLine && toLine.currencyCode !== t.fromCurrencyCode;
     return (
       <TableRow role="row" {...focusProps}>
         {transactionLevelCells(true)}
         {accountCell(fromLine)}
         {amountCell(fromLine?.amount, "from")}
-        {accountCell(
-          toLine,
-          isConversion && (
-            <Badge variant="outline" className="gap-1 font-normal text-muted-foreground">
-              <ArrowLeftRight className="size-3" aria-hidden="true" />
-              {toLine.currencyCode}
-            </Badge>
-          ),
-          "to",
-        )}
-        {amountCell(toLine?.amount, "to")}
+        {accountCell(toLine, undefined, "to")}
+        {amountCell(toLine?.amount, "to", toLine?.secondary)}
         {actionsCell(true)}
       </TableRow>
     );
@@ -493,7 +501,7 @@ function TransactionRow({
           </>,
           "to",
         )}
-        {amountCell(isMultiTo ? t.fromAmount : toLine?.amount, "to")}
+        {amountCell(isMultiTo ? t.fromAmount : toLine?.amount, "to", isMultiTo ? undefined : toLine?.secondary)}
         {actionsCell(true)}
       </TableRow>
     );
@@ -517,7 +525,7 @@ function TransactionRow({
             {accountCell(fromLine, isFirstRow && chevronSide === "from" && expandChevron)}
             {amountCell(fromLine?.amount, "from")}
             {accountCell(toLine, isFirstRow && chevronSide === "to" && expandChevron, "to")}
-            {amountCell(toLine?.amount, "to")}
+            {amountCell(toLine?.amount, "to", toLine?.secondary)}
             {actionsCell(isFirstRow)}
           </TableRow>
         );
@@ -623,22 +631,28 @@ function MobileTransactionCard({
         <div>
           <span className="text-xs text-muted-foreground">To</span>
           <div className="mt-0.5 flex flex-col gap-1">
-            {toLines.map((line, index) => (
-              <div
-                key={index}
-                className="flex items-center justify-between gap-3 text-sm text-muted-foreground"
-              >
-                <span className="flex items-center gap-1.5">
-                  {line.classification && <AccountIcon classification={line.classification} icon={line.icon} />}
-                  {line.account}
-                  {index === 0 && toExtra > 0 && <span>+{toExtra}</span>}
-                  {index === 0 && chevronSide === "to" && chevron}
-                </span>
-                <span className="whitespace-nowrap font-mono tabular-nums">
-                  {index === 0 && isMultiTo && !isExpanded ? t.fromAmount : line.amount}
-                </span>
-              </div>
-            ))}
+            {toLines.map((line, index) => {
+              const showTotal = index === 0 && isMultiTo && !isExpanded;
+              return (
+                <div
+                  key={index}
+                  className="flex items-center justify-between gap-3 text-sm text-muted-foreground"
+                >
+                  <span className="flex items-center gap-1.5">
+                    {line.classification && <AccountIcon classification={line.classification} icon={line.icon} />}
+                    {line.account}
+                    {index === 0 && toExtra > 0 && <span>+{toExtra}</span>}
+                    {index === 0 && chevronSide === "to" && chevron}
+                  </span>
+                  <span className="flex flex-col items-end gap-0.5">
+                    <span className="whitespace-nowrap font-mono tabular-nums">
+                      {showTotal ? t.fromAmount : line.amount}
+                    </span>
+                    {!showTotal && line.secondary && <SecondaryInfo secondary={line.secondary} />}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -660,6 +674,14 @@ function MobileTransactionCard({
 // `toLines` for the same reason on the credit side — see its own doc
 // comment in transaction-rows.ts for why a single "from" isn't enough
 // (Merge Transactions can produce more than one credit posting).
+// Quantity/Price and FX-rate supporting info for a To leg (Revised
+// Investment Model delta, Phase 5, 2026-09-03 — transaction-list UI
+// decision: non-editable, non-sortable, non-searchable, shown only when
+// there is meaningful supporting information, never its own table column).
+// Derived in transaction-rows.ts; rendered subordinate to the To Amount
+// cell here.
+export type ToLineSecondary = { kind: "fx"; currencyCode: string; rate: string };
+
 export interface TransactionTableRow {
   id: string;
   date: string;
@@ -676,6 +698,7 @@ export interface TransactionTableRow {
     icon?: string | null;
     amount: string;
     currencyCode: string;
+    secondary?: ToLineSecondary;
   }[];
   tags: string[] | null;
   // Raw editable values for Full Edit's Sheet overlay (transaction-edit-
@@ -683,6 +706,10 @@ export interface TransactionTableRow {
   edit: {
     fromAccountId: string;
     amount: number;
+    // `units` (Revised Investment Model delta, Phase 5) — the To leg's own
+    // decimal Quantity, only present once a real one has been entered
+    // (see transaction-rows.ts's `instrumentUnitsDecimal`); undefined for
+    // every ordinary posting, same as `secondary` above.
     toLines: { accountId: string; amount: number }[];
   };
 }
@@ -821,8 +848,7 @@ export function TransactionTable({
   );
 
   // `getExpandedRowModel` is wired purely to get real `row.getIsExpanded()`/
-  // `row.toggleExpanded()` state (deltachange20260818transactionexpandablesplitrowsv2.md
-  // — see docs/2026-08-18/plan.md Context section for the full reasoning).
+  // `row.toggleExpanded()` state (a Split-row-expansion delta, 2026-08-18).
   // `subRows` is never populated, so `table.getRowModel().rows` below still
   // yields exactly one entry per transaction, same as before this delta.
   // `getRowCanExpand` is required alongside it: the library's own default

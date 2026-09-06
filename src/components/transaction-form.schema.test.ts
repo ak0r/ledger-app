@@ -22,9 +22,7 @@ const inrBank = account("inr-bank", "INR", 2);
 const inrOther = account("inr-other", "INR", 2);
 const jpyCash = account("jpy-cash", "JPY", 0);
 
-const accountsById = new Map(
-  [inrBank, inrOther, jpyCash].map((a) => [a.id, a]),
-);
+const accountsById = new Map([inrBank, inrOther, jpyCash].map((a) => [a.id, a]));
 
 function baseValues(overrides: Partial<Record<string, unknown>> = {}) {
   return {

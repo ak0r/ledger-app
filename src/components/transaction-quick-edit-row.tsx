@@ -6,7 +6,7 @@ import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { z } from "zod";
 import { Check, X } from "lucide-react";
-import { toMinorUnits } from "@/domain";
+import { toMinorUnits } from "@/core";
 import { buildTransactionFormSchema } from "@/components/transaction-form";
 import { humanizeEnum, formatMoney } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -230,7 +230,7 @@ export function TransactionQuickEditRow({
       <TableCell role="gridcell">
         <form id={formId} onSubmit={handleSubmit(onSubmit)} className="sr-only" aria-hidden="true" />
         {serverError && <p className="mb-1 text-xs text-destructive">{serverError}</p>}
-        <div className="flex justify-end gap-1">
+        <div className="flex justify-end gap-1 [@media(pointer:coarse)]:gap-3">
           <Tooltip>
             <TooltipTrigger
               render={

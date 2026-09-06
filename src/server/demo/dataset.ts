@@ -3,10 +3,10 @@
 // (a FinBodhi export the user confirmed is "inspiration only," not a
 // literal import source — its schema is foreign and includes modules with
 // no Ledger equivalent). Investment-type accounts (stocks/mutual funds/
-// metals) from that reference are deliberately dropped: docs/05-mvp-scope.md
-// excludes Investments/Stock/Metal accounts, and AGENTS.md rule #11 freezes
-// instrument types to the seven used below — this dataset stays entirely
-// inside that frozen set (resolved conflict, see the approved plan).
+// metals) from that reference are deliberately dropped: a Ledger Account
+// can never be Instrument-backed (ADR-040 in docs/07-decisions.md), and
+// AGENTS.md rule #11 freezes instrument types to the seven used below —
+// this dataset stays entirely inside that frozen set.
 //
 // 2026-08-20 User Simplification delta: trimmed to single-Profile scope —
 // the demo dataset used to build two Members (a household) inside one
@@ -15,13 +15,15 @@
 // multi-person household.
 import {
   budgetPeriodWindowAt,
+  fromMinorUnits,
   toMinorUnits,
+  toQuantityMinorUnits,
   validateTransaction,
   type AccountRef,
   type BudgetRecurrenceSchedule,
   type Classification,
   type InstrumentType,
-} from "@/domain";
+} from "@/core";
 import type { CurrencyRow } from "../repositories/currencies";
 import type { AccountRow } from "../repositories/accounts";
 import type { TransactionRow, PostingRow } from "../repositories/transactions";
@@ -142,6 +144,11 @@ class DatasetBuilder {
         accountId: leg.accountId,
         debit: leg.debit,
         credit: leg.credit,
+        // quantity always mirrors this leg's own amount — demo data is
+        // single-currency (SCALE = 2) with no Conversion/Instrument legs,
+        // so price is always 1 (Revised Investment Model delta, 2026-09-03).
+        quantity: toQuantityMinorUnits(fromMinorUnits(leg.debit || leg.credit, SCALE)),
+        price: 1,
         createdAt: this.now,
         updatedAt: this.now,
       });
@@ -504,7 +511,15 @@ export function validateDataset(dataset: DemoDataset): void {
   const accountRefs = new Map<string, AccountRef>(
     dataset.accounts.map((account) => {
       const currency = dataset.currencies.find((c) => c.id === account.currencyId)!;
-      return [account.id, { id: account.id, profileId: account.profileId, currencyCode: currency.code }];
+      return [
+        account.id,
+        {
+          id: account.id,
+          profileId: account.profileId,
+          currencyCode: currency.code,
+          currencyScale: currency.minorUnitScale,
+        },
+      ];
     }),
   );
 
@@ -520,7 +535,13 @@ export function validateDataset(dataset: DemoDataset): void {
     const violations = validateTransaction(
       {
         profileId: transaction.profileId,
-        postings: postings.map((p) => ({ accountId: p.accountId, debit: p.debit, credit: p.credit })),
+        postings: postings.map((p) => ({
+          accountId: p.accountId,
+          debit: p.debit,
+          credit: p.credit,
+          quantity: p.quantity,
+          price: p.price,
+        })),
       },
       accountRefs,
     );

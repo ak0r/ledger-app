@@ -1,4 +1,4 @@
-import type { Db } from "../db/client";
+import type { Db } from "../persistence/client";
 import type { AccountRow } from "../repositories/accounts";
 import {
   archiveAccount,
@@ -6,7 +6,7 @@ import {
   bulkUpdateAccountTags,
   createAccount,
   editAccount,
-} from "../use-cases/accounts";
+} from "../services/accounts";
 import {
   archiveAccountSchema,
   bulkArchiveAccountsSchema,

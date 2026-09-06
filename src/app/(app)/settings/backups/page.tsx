@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { db } from "@/server/db/client";
+import { db } from "@/server/persistence/client";
 import { requirePrimaryUser } from "@/server/authz";
-import { BACKUP_DIR, getBackupSettings, listBackupHistory } from "@/server/use-cases/backups";
+import { BACKUP_DIR, getBackupSettings, listBackupHistory } from "@/server/services/backups";
 import { createBackupAction } from "@/server/actions/backups";
 import { AutomaticBackupToggle } from "@/components/automatic-backup-toggle";
 import { Badge } from "@/components/ui/badge";

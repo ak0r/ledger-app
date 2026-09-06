@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, Settings2, X } from "lucide-react";
-import { CONFIGURABLE_PANEL_KEYS, PANEL_DIMENSIONS_BY_KEY, PANEL_NAME_BY_KEY, isPanelKey, type PanelKey } from "@/domain";
+import { CONFIGURABLE_PANEL_KEYS, PANEL_DIMENSIONS_BY_KEY, PANEL_NAME_BY_KEY, isPanelKey, type PanelKey } from "@/core";
 import type { DashboardPanelRow } from "@/server/repositories/dashboardPanels";
 import { movePanelAction, removePanelAction } from "@/server/actions/dashboards";
 import { GRID_COLUMNS, resolveDrop, type GridPanel } from "@/lib/dashboard-grid-layout";
@@ -198,6 +198,18 @@ function DraggablePanel({
 }) {
   const { setNodeRef, attributes, listeners, transform, isDragging } = useDraggable({ id });
 
+  // dnd-kit's `attributes` (role/tabIndex/aria-describedby, etc.) aren't
+  // SSR-stable — spreading them unconditionally makes the client's first
+  // render disagree with the server-rendered HTML (hydration mismatch).
+  // `mounted` starts false on both server and the client's first pass, so
+  // that pass matches the server exactly; the attrs attach one tick later,
+  // after hydration has already reconciled.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setMounted(true), 0);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <div
       ref={setNodeRef}
@@ -214,19 +226,25 @@ function DraggablePanel({
         {/* Name always visible (spec revision — the plain hover-only header
             was hard to scan); only the drag handle + Configure/Remove
             controls stay hover-only, so the frame itself stays quiet. */}
-        <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+        <span className="flex min-w-0 items-center gap-1 text-xs font-medium text-muted-foreground">
           <button
             type="button"
-            className="cursor-grab touch-none opacity-0 transition-opacity active:cursor-grabbing group-hover:opacity-100"
+            className="shrink-0 cursor-grab touch-none opacity-0 transition-opacity active:cursor-grabbing group-hover:opacity-100"
             aria-label="Drag to move panel"
-            {...attributes}
-            {...listeners}
+            {...(mounted ? attributes : undefined)}
+            {...(mounted ? listeners : undefined)}
           >
             <GripVertical className="size-3.5" aria-hidden="true" />
           </button>
-          {name}
+          {/* A 1x1 panel can be too narrow for a long name (e.g.
+              "Liabilities") to wrap without the frame's own overflow-hidden
+              clipping the second line — truncate with an ellipsis instead,
+              full name still reachable via the title tooltip. */}
+          <span className="truncate" title={name}>
+            {name}
+          </span>
         </span>
-        <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">{controls}</div>
+        <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">{controls}</div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto">{children}</div>
     </div>

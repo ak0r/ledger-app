@@ -2,7 +2,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { db, sqlite } from "../db/client";
+import { db, sqlite } from "../persistence/client";
 import { requirePrimaryUser } from "../authz";
 import { SESSION_COOKIE } from "../session";
 import { ACTIVE_PROFILE_COOKIE } from "../activeProfile";

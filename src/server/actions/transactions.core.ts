@@ -1,4 +1,4 @@
-import type { Db } from "../db/client";
+import type { Db } from "../persistence/client";
 import {
   bulkDeleteTransactions,
   bulkUpdateTags,
@@ -7,7 +7,7 @@ import {
   editTransaction,
   mergeTransactions,
   type TransactionWithPostings,
-} from "../use-cases/transactions";
+} from "../services/transactions";
 import {
   bulkDeleteTransactionsSchema,
   bulkUpdateTagsSchema,

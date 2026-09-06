@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
-import type { DbOrTx } from "../db/client";
-import { appUsers } from "../db/schema";
+import type { DbOrTx } from "../persistence/client";
+import { appUsers } from "../persistence/schema";
 
 export type AppUserRow = typeof appUsers.$inferSelect;
 

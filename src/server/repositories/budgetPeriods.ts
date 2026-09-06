@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
-import type { DbOrTx } from "../db/client";
-import { budgetPeriods, budgets } from "../db/schema";
+import type { DbOrTx } from "../persistence/client";
+import { budgetPeriods, budgets } from "../persistence/schema";
 
 export type BudgetPeriodRow = typeof budgetPeriods.$inferSelect;
 

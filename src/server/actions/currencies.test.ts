@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "../testing/createTestDb";
-import { createProfile } from "../use-cases/profiles";
+import { createProfile } from "../services/profiles";
 import { createCurrencyCore } from "./currencies.core";
 
 describe("createCurrencyCore", () => {

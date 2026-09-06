@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { TYPES_BY_CLASSIFICATION, type Classification, type ImportDirection, type InstrumentType } from "@/domain";
-import type { AccountChoice, AccountResolution } from "@/server/use-cases/imports";
+import { TYPES_BY_CLASSIFICATION, type Classification, type ImportDirection, type InstrumentType } from "@/core";
+import type { AccountChoice, AccountResolution } from "@/server/services/imports";
 import { previewImportAction, commitImportAction } from "@/server/actions/imports";
 import { cn, formatDate, formatMoney, humanizeEnum } from "@/lib/utils";
 import { paginate } from "@/lib/pagination";
@@ -12,7 +12,7 @@ import {
   filterTransactions,
   type TransactionFilterState,
 } from "@/lib/transaction-filter";
-import type { TransactionWithPostings } from "@/server/use-cases/transactions";
+import type { TransactionWithPostings } from "@/server/services/transactions";
 import { AccountIcon } from "@/components/account-icon";
 import { TransactionFilterDrawer } from "@/components/transaction-filter-drawer";
 import { Button } from "@/components/ui/button";
@@ -256,8 +256,8 @@ function toFilterableTransaction(
     createdAt: "",
     updatedAt: "",
     postings: [
-      { id: `${candidate.clientRowId}-credit`, transactionId: candidate.clientRowId, accountId: creditAccountId, debit: 0, credit: candidate.amountMinor, createdAt: "", updatedAt: "" },
-      { id: `${candidate.clientRowId}-debit`, transactionId: candidate.clientRowId, accountId: debitAccountId, debit: candidate.amountMinor, credit: 0, createdAt: "", updatedAt: "" },
+      { id: `${candidate.clientRowId}-credit`, transactionId: candidate.clientRowId, accountId: creditAccountId, debit: 0, credit: candidate.amountMinor, quantity: 0, price: 1, createdAt: "", updatedAt: "" },
+      { id: `${candidate.clientRowId}-debit`, transactionId: candidate.clientRowId, accountId: debitAccountId, debit: candidate.amountMinor, credit: 0, quantity: 0, price: 1, createdAt: "", updatedAt: "" },
     ],
   };
 }

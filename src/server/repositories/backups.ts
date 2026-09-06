@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
-import type { DbOrTx } from "../db/client";
-import { backups } from "../db/schema";
+import type { DbOrTx } from "../persistence/client";
+import { backups } from "../persistence/schema";
 
 export type BackupRow = typeof backups.$inferSelect;
 

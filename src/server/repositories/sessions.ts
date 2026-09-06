@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
-import type { DbOrTx } from "../db/client";
-import { sessions } from "../db/schema";
+import type { DbOrTx } from "../persistence/client";
+import { sessions } from "../persistence/schema";
 
 export type SessionRow = typeof sessions.$inferSelect;
 

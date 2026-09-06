@@ -1,10 +1,10 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { db } from "@/server/db/client";
+import { db } from "@/server/persistence/client";
 import { requireActiveProfile } from "@/server/authz";
-import { listAccounts } from "@/server/use-cases/accounts";
-import { listCurrencies } from "@/server/use-cases/currencies";
-import { getDefaultDashboardWithPanels } from "@/server/use-cases/dashboards";
+import { listAccounts } from "@/server/services/accounts";
+import { listCurrencies } from "@/server/services/currencies";
+import { getDefaultDashboardWithPanels } from "@/server/services/dashboards";
 import { renderPanelContent } from "@/lib/panel-registry";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";

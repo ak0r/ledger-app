@@ -1,6 +1,6 @@
-import type { Db } from "../db/client";
+import type { Db } from "../persistence/client";
 import type { RecurringRuleRow } from "../repositories/recurringRules";
-import { createRecurringRule, deleteRecurringRule, editRecurringRule } from "../use-cases/recurring";
+import { createRecurringRule, deleteRecurringRule, editRecurringRule } from "../services/recurring";
 import { createRecurringRuleSchema, deleteRecurringRuleSchema, editRecurringRuleSchema } from "./schemas";
 import { fromThrown, invalidInput, ok, type ActionResult } from "./result";
 

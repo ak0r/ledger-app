@@ -49,6 +49,24 @@ release is tagged. Until then, all work accumulates under `[Unreleased]`.
   transactions collapse to one row by default with a disclosure chevron,
   consistent between desktop and mobile.
 
+### Currency & Multi-Currency
+
+- A system-maintained Currency Catalogue replaces the earlier INR-only
+  freeze — a Profile has a Primary Currency (default for new Accounts,
+  changeable, not retroactive) and each Account has its own independently
+  changeable Currency. `/settings/currencies` adds a Currency to a Profile
+  from the catalogue.
+- Still no FX, conversion, or cross-currency aggregation — a Transaction
+  whose postings resolve to more than one currency is rejected, except a
+  dedicated 2-posting Currency Conversion shape that persists an explicit
+  exchange rate for that one transaction.
+
+### Settings & Backup
+
+- `/settings` groups Profiles, Currencies, and Backups.
+- Local whole-instance backup (the single `ledger.db` file), automatic
+  daily backup with an on/off toggle, backup history.
+
 ### Recurring Transactions (Phase 1)
 
 - Recurring Rules: define a recurring transaction pattern (From/To
@@ -115,6 +133,31 @@ release is tagged. Until then, all work accumulates under `[Unreleased]`.
   until explicit approval, then commit is atomic. Committed transactions
   carry permanent import provenance, and import history shows resolved
   account, new-account count, and inflow/outflow per file.
+
+### Portfolio (investment tracking)
+
+- A new **Portfolio** top-level nav section, separate from Ledger: an
+  Instrument Catalogue (real Stock/Mutual Fund reference data, searchable),
+  and Portfolio's own model — PortfolioAccount/Folio/InvestmentTransaction/
+  Holding/NAVHistory — never a Ledger Account or Transaction.
+- **Import Mutual Fund CAS** — upload a CAMS/KFin Consolidated Account
+  Statement PDF; parsed entirely on this machine (never sent anywhere).
+  Preview counts/warnings before commit; a statement whose PAN doesn't
+  match the active Profile's registered PAN is rejected.
+- **Import demat eCAS** — upload an NSDL/CDSL holdings-snapshot PDF for
+  equities; the demat account is auto-detected from the file itself.
+- **Import Stock Tradebook** — upload a broker's equity delivery CSV
+  (Zerodha's format, or a generic header-matched fallback) into a chosen
+  Portfolio Account/Folio.
+- **Valuation** — Mutual Fund NAVs refresh from a public AMFI feed; Stock
+  prices refresh from NSE with a Yahoo Finance fallback. Each Security's
+  page shows XIRR and a "Snapshot only"/"Verified" integrity badge
+  comparing its transaction history against the latest imported statement.
+- Overview, Mutual Funds, and Stocks pages show holdings, invested amount,
+  and current value; "Accounts / Folios" manages Portfolio Accounts and
+  Folios directly. A new cross-domain **Import Center** page shows Ledger's
+  and Portfolio's import history side by side.
+- Capital-gains/tax computation is explicitly not built yet.
 
 ### Onboarding
 

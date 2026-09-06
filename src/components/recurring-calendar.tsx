@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { occurrencesInRange, type RecurringSchedule } from "@/domain";
+import { occurrencesInRange, type RecurringSchedule } from "@/core";
 import { cn, formatMoney } from "@/lib/utils";
 import {
   MONTH_LABELS,

@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { db } from "@/server/db/client";
+import { db } from "@/server/persistence/client";
 import { requireActiveProfile } from "@/server/authz";
-import { listAccounts } from "@/server/use-cases/accounts";
-import { listCurrencies } from "@/server/use-cases/currencies";
-import { listRecurringRulesWithNextDue } from "@/server/use-cases/recurring";
+import { listAccounts } from "@/server/services/accounts";
+import { listCurrencies } from "@/server/services/currencies";
+import { listRecurringRulesWithNextDue } from "@/server/services/recurring";
 import { buttonVariants } from "@/components/ui/button";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
 import { RecurringRulesTable } from "@/components/recurring-rules-table";

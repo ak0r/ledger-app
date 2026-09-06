@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
-import type { DbOrTx } from "../db/client";
-import { importFiles } from "../db/schema";
+import type { DbOrTx } from "../persistence/client";
+import { importFiles } from "../persistence/schema";
 
 export type ImportFileRow = typeof importFiles.$inferSelect;
 

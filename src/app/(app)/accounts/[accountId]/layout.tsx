@@ -1,10 +1,10 @@
 import { notFound } from "next/navigation";
-import { db } from "@/server/db/client";
+import { db } from "@/server/persistence/client";
 import { requireActiveProfile } from "@/server/authz";
-import { getAccountBalances, listAccounts } from "@/server/use-cases/accounts";
-import { listCurrencies } from "@/server/use-cases/currencies";
-import { listDistinctTags } from "@/server/use-cases/tags";
-import { getMonthlyCashflow } from "@/server/use-cases/accountHistory";
+import { getAccountBalances, listAccounts } from "@/server/services/accounts";
+import { listCurrencies } from "@/server/services/currencies";
+import { listDistinctTags } from "@/server/services/tags";
+import { getMonthlyCashflow } from "@/server/services/accountHistory";
 import { formatMoney } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

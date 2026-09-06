@@ -1,8 +1,8 @@
 "use server";
 
-import { db } from "../db/client";
+import { db } from "../persistence/client";
 import { requireActiveProfile } from "../authz";
-import { exportTransactionsCsv } from "../use-cases/export";
+import { exportTransactionsCsv } from "../services/export";
 import type { ActionResult } from "./result";
 
 // Export Data (§16) — scoped to the active Profile, not instance-level like

@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
-import type { DbOrTx } from "../db/client";
-import { dashboards } from "../db/schema";
+import type { DbOrTx } from "../persistence/client";
+import { dashboards } from "../persistence/schema";
 
 export type DashboardRow = typeof dashboards.$inferSelect;
 

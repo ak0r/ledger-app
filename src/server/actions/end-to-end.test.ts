@@ -5,10 +5,9 @@ import { createCurrencyCore } from "./currencies.core";
 import { createAccountCore } from "./accounts.core";
 import { createTransactionCore } from "./transactions.core";
 
-// Phase 5 exit criteria (docs/11-implementation-plan.md): a Profile, its
-// Accounts, and a Transaction can be created end-to-end through the API
-// layer alone — nothing here reaches past the action layer into
-// repositories/use-cases directly.
+// End-to-end smoke test: a Profile, its Accounts, and a Transaction can be
+// created through the API layer alone — nothing here reaches past the
+// action layer into repositories/use-cases directly.
 describe("Phase 5 exit criteria: end-to-end through the action layer", () => {
   it("creates a Profile, Currency, two Accounts, and a balanced Transaction", () => {
     const db = createTestDb();

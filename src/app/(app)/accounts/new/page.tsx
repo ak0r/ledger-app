@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
-import { db } from "@/server/db/client";
+import { db } from "@/server/persistence/client";
 import { requireActiveProfile } from "@/server/authz";
-import { listCurrencies } from "@/server/use-cases/currencies";
-import { listDistinctTags } from "@/server/use-cases/tags";
+import { listCurrencies } from "@/server/services/currencies";
+import { listDistinctTags } from "@/server/services/tags";
 import { AccountForm } from "@/components/account-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 

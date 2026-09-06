@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { db } from "@/server/db/client";
+import { db } from "@/server/persistence/client";
 import { requireActiveProfile } from "@/server/authz";
-import { listImports } from "@/server/use-cases/imports";
-import { listAccounts } from "@/server/use-cases/accounts";
-import { listCurrencies } from "@/server/use-cases/currencies";
+import { listImports } from "@/server/services/imports";
+import { listAccounts } from "@/server/services/accounts";
+import { listCurrencies } from "@/server/services/currencies";
 import { formatDate, formatMoney } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";

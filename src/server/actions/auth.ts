@@ -2,9 +2,9 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { db } from "../db/client";
+import { db } from "../persistence/client";
 import { SESSION_COOKIE, getCurrentAppUser } from "../session";
-import { logoutAppUser } from "../use-cases/auth";
+import { logoutAppUser } from "../services/auth";
 import type { SessionRow } from "../repositories/sessions";
 import { loginCore, registerCore, updatePasswordCore } from "./auth.core";
 import type { ActionResult } from "./result";

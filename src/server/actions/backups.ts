@@ -1,10 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { db, sqlite } from "../db/client";
+import { db, sqlite } from "../persistence/client";
 import { requirePrimaryUser } from "../authz";
 import type { BackupSettingsRow } from "../repositories/backupSettings";
-import { runBackup } from "../use-cases/backups";
+import { runBackup } from "../services/backups";
 import { setAutomaticBackupEnabledCore } from "./backups.core";
 import type { ActionResult } from "./result";
 

@@ -1,13 +1,13 @@
 import Link from "next/link";
-import { db } from "@/server/db/client";
+import { ArrowLeft } from "lucide-react";
+import { db } from "@/server/persistence/client";
 import { requirePrimaryUser } from "@/server/authz";
-import { listProfiles } from "@/server/use-cases/profiles";
-import { listAccounts } from "@/server/use-cases/accounts";
+import { listProfiles } from "@/server/services/profiles";
+import { listAccounts } from "@/server/services/accounts";
 import { activateProfileAction } from "@/server/actions/activeProfile";
 import { loadDemoDataForProfileAction } from "@/server/actions/demo";
 import { readActiveProfileIdCookie } from "@/server/activeProfile";
 import { ProfileForm } from "@/components/profile-form";
-import { ProfilesModal } from "@/components/profiles-modal";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,9 +36,16 @@ export default async function ProfilesPage() {
   const activeProfileId = await readActiveProfileIdCookie();
 
   return (
-    <ProfilesModal>
+    <div className="mx-auto flex max-w-2xl flex-col gap-4">
       <div>
-        <h1 className="text-xl font-semibold">Profiles</h1>
+        <Link
+          href="/settings"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          Settings
+        </Link>
+        <h1 className="text-xl font-semibold">Manage Profiles</h1>
         <p className="text-sm text-muted-foreground">
           Each Profile is a separate financial identity within this instance.
         </p>
@@ -105,6 +112,6 @@ export default async function ProfilesPage() {
           <ProfileForm submitLabel="Add Profile" />
         </CardContent>
       </Card>
-    </ProfilesModal>
+    </div>
   );
 }

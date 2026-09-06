@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
-import type { DbOrTx } from "../db/client";
-import { postings, transactions } from "../db/schema";
+import type { DbOrTx } from "../persistence/client";
+import { postings, transactions } from "../persistence/schema";
 
 export type TransactionRow = typeof transactions.$inferSelect;
 export type PostingRow = typeof postings.$inferSelect;

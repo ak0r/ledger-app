@@ -1,6 +1,7 @@
-import type { RecentExpensesPanelConfig } from "@/domain";
-import { db } from "@/server/db/client";
-import { getExpenseTotalsByPeriod } from "@/server/use-cases/dashboards";
+import Link from "next/link";
+import type { RecentExpensesPanelConfig } from "@/core";
+import { db } from "@/server/persistence/client";
+import { getExpenseTotalsByPeriod } from "@/server/services/dashboards";
 import { formatMoney } from "@/lib/utils";
 
 // Expense Account totals for a period — an aggregation view, not a raw
@@ -28,7 +29,9 @@ export async function RecentExpensesPanel({
       {totals.map((total) => (
         <li key={total.accountId} className="flex flex-col gap-1 text-sm">
           <div className="flex items-center justify-between">
-            <span>{total.accountName}</span>
+            <Link href={`/accounts/${total.accountId}`} className="hover:underline">
+              {total.accountName}
+            </Link>
             <span className="font-mono tabular-nums">{formatMoney(total.totalMinor, currency.symbol, currency.minorUnitScale)}</span>
           </div>
           {/* Uniform expense-category color (src/app/globals.css's

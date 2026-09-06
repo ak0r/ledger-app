@@ -1,7 +1,7 @@
 import { and, eq, inArray, sum as sqlSum } from "drizzle-orm";
-import type { AccountRef } from "@/domain";
-import type { DbOrTx } from "../db/client";
-import { accounts, currencies, postings } from "../db/schema";
+import type { AccountRef } from "@/core";
+import type { DbOrTx } from "../persistence/client";
+import { accounts, currencies, postings } from "../persistence/schema";
 
 export type AccountRow = typeof accounts.$inferSelect;
 
@@ -89,6 +89,7 @@ export function findAccountRefs(
       id: accounts.id,
       profileId: accounts.profileId,
       currencyCode: currencies.code,
+      currencyScale: currencies.minorUnitScale,
     })
     .from(accounts)
     .innerJoin(currencies, eq(accounts.currencyId, currencies.id))

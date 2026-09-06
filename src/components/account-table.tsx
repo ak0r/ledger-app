@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Pencil } from "lucide-react";
-import type { AccountWithBalance } from "@/server/use-cases/accounts";
+import type { AccountWithBalance } from "@/server/services/accounts";
 import {
   buildAccountSortHref,
   nextAccountSortState,
@@ -60,7 +60,7 @@ function SelectRowCheckbox({ id }: { id: string }) {
       checked={checked}
       onCheckedChange={() => toggleSelected(id)}
       className={cn(
-        "opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100",
+        "opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 [@media(pointer:coarse)]:opacity-100",
         checked && "opacity-100",
       )}
     />
@@ -116,7 +116,7 @@ export function AccountTable({
               {sortableHeader("Classification", "classification")}
             </TableHead>
             <TableHead role="columnheader" className="text-xs font-semibold text-foreground/90">
-              {sortableHeader("Instrument", "instrumentType")}
+              {sortableHeader("Type", "instrumentType")}
             </TableHead>
             <TableHead role="columnheader" className="text-right text-xs font-semibold text-foreground/90">
               {sortableHeader("Balance", "balance", "end")}
@@ -174,7 +174,7 @@ export function AccountTable({
                 <TagChips tags={account.tags} />
               </TableCell>
               <TableCell role="gridcell" className="py-2.5">
-                <div className="flex justify-end gap-1.5">
+                <div className="flex justify-end gap-1.5 [@media(pointer:coarse)]:gap-3">
                   <AccountFormSheet
                     mode="edit"
                     currencies={[]}
@@ -186,6 +186,8 @@ export function AccountTable({
                       name: account.name,
                       classification: account.classification,
                       instrumentType: account.instrumentType,
+                      instrumentId: account.instrumentId,
+                      instrumentLabel: account.instrumentLabel,
                       tags: account.tags,
                       icon: account.icon,
                     }}

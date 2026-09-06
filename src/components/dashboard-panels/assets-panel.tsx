@@ -1,6 +1,6 @@
 import { PiggyBank } from "lucide-react";
-import { db } from "@/server/db/client";
-import { getAccountBalances } from "@/server/use-cases/accounts";
+import { db } from "@/server/persistence/client";
+import { getAccountBalances } from "@/server/services/accounts";
 import { CardPanelFigure } from "./card-panel-figure";
 
 export async function AssetsPanel({
@@ -13,5 +13,7 @@ export async function AssetsPanel({
   const balances = getAccountBalances(db, profileId);
   const total = balances.filter((a) => a.classification === "ASSET").reduce((sum, a) => sum + a.balance, 0);
 
-  return <CardPanelFigure amountMinor={total} currency={currency} colorClassName="text-category-asset" icon={PiggyBank} />;
+  return (
+    <CardPanelFigure amountMinor={total} currency={currency} colorClassName="text-category-asset" icon={PiggyBank} href="/accounts" />
+  );
 }

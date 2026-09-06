@@ -1,6 +1,6 @@
 "use client";
 
-import type { BudgetSummary } from "@/server/use-cases/budgets";
+import type { BudgetSummary } from "@/server/services/budgets";
 import { formatDate, formatMoney, humanizeEnum } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

@@ -1,0 +1,7 @@
+# Python dependency for scripts/cas_parser.py (CAS PDF import, Portfolio
+# Adoption Plan 2026-09-05). Not part of the Node/Next.js dependency tree —
+# install into a Python 3 environment reachable as `python3` from the app's
+# runtime (self-hosted Docker image, or local dev machine):
+#   python3 -m venv .venv && .venv/bin/pip install -r scripts/requirements.txt
+# and point LEDGER_PYTHON at .venv/bin/python3 if it isn't the system python3.
+casparser>=1.4.1

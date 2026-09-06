@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLASSIFICATIONS, INSTRUMENT_TYPES } from "@/domain";
+import { CLASSIFICATIONS, INSTRUMENT_TYPES } from "@/core";
 import { buildDemoDataset, validateDataset } from "./dataset";
 
 const PROFILE_ID = "profile-1";
@@ -41,8 +41,8 @@ describe("buildDemoDataset", () => {
       expect(CLASSIFICATIONS).toContain(account.classification);
       expect(INSTRUMENT_TYPES).toContain(account.instrumentType);
     }
-    // Explicitly no investment-type instruments (dropped per the resolved
-    // 05-mvp-scope.md conflict) — guards against reintroducing them.
+    // Explicitly no investment-type instruments (a Ledger Account can never
+    // be Instrument-backed, ADR-040) — guards against reintroducing them.
     const names = dataset.accounts.map((a) => a.name.toLowerCase());
     expect(names.some((n) => /stock|mutual fund|metal/.test(n))).toBe(false);
   });

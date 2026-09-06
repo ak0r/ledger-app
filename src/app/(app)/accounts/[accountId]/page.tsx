@@ -1,10 +1,10 @@
 import { notFound } from "next/navigation";
-import { db } from "@/server/db/client";
+import { db } from "@/server/persistence/client";
 import { requireActiveProfile } from "@/server/authz";
-import { getAccountBalances, listAccounts } from "@/server/use-cases/accounts";
-import { listCurrencies } from "@/server/use-cases/currencies";
-import { filterTransactions, listTransactions } from "@/server/use-cases/transactions";
-import { listDistinctTags } from "@/server/use-cases/tags";
+import { getAccountBalances, listAccounts } from "@/server/services/accounts";
+import { listCurrencies } from "@/server/services/currencies";
+import { filterTransactions, listTransactions } from "@/server/services/transactions";
+import { listDistinctTags } from "@/server/services/tags";
 import { parseTransactionFilter } from "@/lib/transaction-filter";
 import { applySort, parseSortState } from "@/lib/transaction-sort";
 import { buildTransactionTableRows } from "@/lib/transaction-rows";

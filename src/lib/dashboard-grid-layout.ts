@@ -1,4 +1,4 @@
-import { PANEL_DIMENSIONS_BY_KEY, type PanelKey } from "@/domain";
+import { PANEL_DIMENSIONS_BY_KEY, type PanelKey } from "@/core";
 
 // Pure drop-resolution for the Bento grid drag-and-drop (spec §15) — kept
 // separate from dashboard-grid.tsx so it's testable without dnd-kit/DOM.

@@ -1,8 +1,9 @@
 import { after } from "next/server";
-import { db, sqlite } from "@/server/db/client";
+import { db, sqlite } from "@/server/persistence/client";
 import { requireActiveProfile } from "@/server/authz";
-import { listProfiles } from "@/server/use-cases/profiles";
-import { runBackupIfDue } from "@/server/use-cases/backups";
+import { listProfiles } from "@/server/services/profiles";
+import { runBackupIfDue } from "@/server/services/backups";
+import { runNavRefreshIfDue } from "@/server/services/navRefresh";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { BottomNav } from "@/components/bottom-nav";
 import { AppHeader } from "@/components/app-header";
@@ -23,6 +24,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // background timer (use-cases/backups.ts explains why).
   after(() => runBackupIfDue(db, sqlite));
 
+  // Best-effort AMFI NAV refresh — same rationale/mechanism as the backup
+  // line above (services/navRefresh.ts explains why: no background timer,
+  // "due" derived from nav_history's own most recent row).
+  after(() => runNavRefreshIfDue(db));
+
   // Only the Primary User gets a switcher — a Normal AppUser has exactly
   // one Profile (registration invariant) and nothing to switch between.
   const profiles = appUser.isPrimary ? listProfiles(db) : undefined;
@@ -32,7 +38,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <SidebarNav isPrimary={appUser.isPrimary} />
       <div className="flex min-w-0 flex-1 flex-col">
         <AppHeader activeProfileId={profile.id} profileName={profile.name} profiles={profiles} />
-        <main className="flex-1 p-4 pb-20 md:pb-4">{children}</main>
+        <main className="flex-1 p-4 pb-20 md:pb-4">
+          <div className="mx-auto w-full max-w-5xl">{children}</div>
+        </main>
       </div>
       <BottomNav isPrimary={appUser.isPrimary} />
     </div>

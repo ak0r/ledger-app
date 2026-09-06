@@ -1,8 +1,8 @@
-import type { Db } from "../db/client";
+import type { Db } from "../persistence/client";
 import type { AppUserRow } from "../repositories/app-users";
 import type { SessionRow } from "../repositories/sessions";
 import type { ProfileRow } from "../repositories/profiles";
-import { loginAppUser, registerAppUser, updatePassword } from "../use-cases/auth";
+import { loginAppUser, registerAppUser, updatePassword } from "../services/auth";
 import { loginAppUserSchema, registerAppUserSchema, updatePasswordSchema } from "./schemas";
 import { fromThrown, invalidInput, ok, type ActionResult } from "./result";
 

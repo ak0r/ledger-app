@@ -12,11 +12,12 @@ import {
   BUDGET_TYPES,
   CLASSIFICATIONS,
   CREATABLE_CLASSIFICATIONS,
+  INSTRUMENT_BACKED_TYPES,
   INSTRUMENT_TYPES,
   PANEL_KEYS,
   RECENT_EXPENSES_PERIODS,
   RECURRING_FREQUENCIES,
-} from "../db/schema";
+} from "../persistence/schema";
 
 export const createProfileSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
@@ -30,6 +31,19 @@ export const renameProfileSchema = z.object({
 export const setProfilePrimaryCurrencySchema = z.object({
   profileId: z.string().min(1),
   currencyId: z.string().min(1),
+});
+
+// Indian PAN format (5 letters, 4 digits, 1 letter) — the identifier a CAS
+// PDF is usually password-protected with (security/pan.ts). Normalized
+// uppercase before validation so "abcde1234f" and "ABCDE1234F" are the
+// same input.
+export const setProfilePanSchema = z.object({
+  profileId: z.string().min(1),
+  pan: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/, "Enter a valid PAN (e.g. ABCDE1234F)"),
 });
 
 export const registerAppUserSchema = z.object({
@@ -124,11 +138,38 @@ export const bulkUpdateAccountTagsSchema = z.object({
   removeTags: z.array(z.string().trim().min(1)).default([]),
 });
 
+// Instrument catalogue (Revised Investment Model delta, Phase 4,
+// 2026-09-03; search rewritten by the Instrument Catalogue delta,
+// 2026-09-04) — not Profile-scoped (schema.ts's own doc comment on the
+// `instruments` table), so unlike every schema above there's no
+// `profileId` field here.
+export const searchInstrumentsSchema = z.object({
+  type: z.enum(INSTRUMENT_BACKED_TYPES),
+  query: z.string(),
+});
+
+export const refreshInstrumentCatalogueSchema = z.object({
+  type: z.enum(["STOCK", "MUTUAL_FUND"]),
+});
+
+export const createInstrumentSchema = z.object({
+  type: z.enum(INSTRUMENT_BACKED_TYPES),
+  name: z.string().trim().min(1),
+  unitLabel: z.string().trim().min(1).optional(),
+});
+
 const postingSchema = z
   .object({
     accountId: z.string().min(1),
     debit: z.number().int().min(0),
     credit: z.number().int().min(0),
+    // Instrument-backed postings only (Revised Investment Model delta,
+    // Phase 5, 2026-09-03) — the raw domain Quantity integer (6-decimal
+    // scale, domain/quantity.ts), converted from the form's human decimal
+    // input at the client boundary (`toQuantityMinorUnits`). Omitted for
+    // every ordinary posting; the use-case layer falls back to its own
+    // mirror-derivation when absent (src/server/services/transactions.ts).
+    quantity: z.number().int().positive().optional(),
   })
   .refine((posting) => (posting.debit > 0 ? 1 : 0) + (posting.credit > 0 ? 1 : 0) === 1, {
     message: "Exactly one of debit/credit must be positive",
@@ -198,7 +239,7 @@ export const bulkUpdateTagsSchema = z.object({
   removeTags: z.array(z.string().trim().min(1)).default([]),
 });
 
-// Recurring Transactions Phase 1 (docs/pending/2026-08-27-Recurring-
+// Recurring Transactions Phase 1 (docs/completed/2026-08-27-Recurring-
 // Transactions.md) — mirrors the domain invariants in domain/recurring.ts
 // that don't need a DB lookup; ownership is still enforced server-side in
 // use-cases/recurring.ts (rule #17).
@@ -488,4 +529,74 @@ export const setAutomaticBackupEnabledSchema = z.object({
 
 export const resetLedgerSchema = z.object({
   confirmation: z.literal("RESET", { message: 'Type "RESET" to continue' }),
+});
+
+// Portfolio (Portfolio Adoption Plan, 2026-09-05) — `profileId` present on
+// every schema here, unlike `instruments`' own schemas: PortfolioAccount/
+// Folio/InvestmentTransaction are Profile-scoped (schema.ts's own
+// comments on those tables), Instrument itself is not.
+export const createPortfolioAccountSchema = z.object({
+  profileId: z.string().min(1),
+  name: z.string().trim().min(1, "Name is required"),
+  type: z.enum(INSTRUMENT_BACKED_TYPES),
+  provider: z.string().trim().min(1).optional(),
+});
+
+export const createFolioSchema = z.object({
+  profileId: z.string().min(1),
+  portfolioAccountId: z.string().min(1),
+  number: z.string().trim().min(1, "Folio/account number is required"),
+  amcCode: z.string().trim().min(1).optional(),
+});
+
+// Portfolio investment transactions are import-derived, read-only records
+// (Portfolio UI/Navigation Model delta, 2026-09-05, §6/§9) — no user-facing
+// create/edit/delete schema for them. `createInvestmentTransaction`
+// (services/investmentTransactions.ts) still exists and is still Zod-
+// validated at its own layer, called only by services/casImport.ts.
+
+export const runCasImportSchema = z.object({
+  profileId: z.string().min(1),
+  password: z.string(),
+  filename: z.string().optional(),
+  currencyId: z.string().min(1),
+});
+
+// Preview needs no currencyId — it only counts what a commit would create,
+// never converts an amount into a Money value (UX review, 2026-09-05
+// accepted correction: CAS import gets a real review step before commit).
+export const previewCasImportSchema = z.object({
+  profileId: z.string().min(1),
+  password: z.string(),
+});
+
+// A tradebook carries no PAN/investor identity and needs no password — the
+// user has already picked/created the destination PortfolioAccount+Folio
+// before this ever runs (services/tradebookImport.ts's own rationale).
+export const previewTradebookImportSchema = z.object({
+  profileId: z.string().min(1),
+  folioId: z.string().min(1),
+});
+
+export const runTradebookImportSchema = z.object({
+  profileId: z.string().min(1),
+  portfolioAccountId: z.string().min(1),
+  folioId: z.string().min(1),
+  currencyId: z.string().min(1),
+});
+
+// Demat eCAS import — no currencyId (it only ever records Holding
+// snapshots, never a Money-valued InvestmentTransaction) and no
+// account/folio picker (both are auto-resolved from the file's own
+// dp_id/client_id, services/ecasImport.ts), same PDF+password shape as
+// MF CAS otherwise.
+export const previewEcasImportSchema = z.object({
+  profileId: z.string().min(1),
+  password: z.string(),
+});
+
+export const runEcasImportSchema = z.object({
+  profileId: z.string().min(1),
+  password: z.string(),
+  filename: z.string().optional(),
 });

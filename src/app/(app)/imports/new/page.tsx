@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { db } from "@/server/db/client";
+import { db } from "@/server/persistence/client";
 import { requireActiveProfile } from "@/server/authz";
-import { listAccounts } from "@/server/use-cases/accounts";
-import { listCurrencies } from "@/server/use-cases/currencies";
+import { listAccounts } from "@/server/services/accounts";
+import { listCurrencies } from "@/server/services/currencies";
 import { ImportWorkspace } from "@/components/import-workspace";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,9 +41,9 @@ export default async function NewImportPage() {
 
   return (
     // A data-heavy workbench, not a narrow content page (unlike New
-    // Account/other `max-w-*` cards) — spans the full `<main>` width so the
-    // transaction review table has real room; the shell layout itself
-    // already has no cap (src/app/(app)/layout.tsx).
+    // Account/other `max-w-*` cards) — fills the shell's own max-w-5xl cap
+    // (src/app/(app)/layout.tsx) so the transaction review table has real
+    // room, unlike the narrower `max-w-lg`/`max-w-2xl` forms elsewhere.
     <Card>
       <CardHeader>
         <CardTitle as="h1">New Import</CardTitle>

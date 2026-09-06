@@ -14,7 +14,7 @@ import { useTransactionWorkspace } from "@/components/transaction-workspace";
 import type { MergeCandidateAccount } from "@/lib/merge-eligibility";
 import type { TransactionTableRow } from "@/components/transaction-table";
 import { deleteTransactionAction } from "@/server/actions/transactions";
-import { toMinorUnits } from "@/domain";
+import { toMinorUnits } from "@/core";
 import { cn } from "@/lib/utils";
 
 // Actions cell for both the desktop table and mobile card (product-polish
@@ -89,7 +89,7 @@ export function TransactionRowMenu({
       : undefined;
 
   return (
-    <div className="flex justify-end gap-1">
+    <div className="flex justify-end gap-1 [@media(pointer:coarse)]:gap-3">
       {onQuickEdit ? (
         <Tooltip>
           <TooltipTrigger
@@ -108,7 +108,7 @@ export function TransactionRowMenu({
                 title={quickEditDisabledReason}
                 onClick={() => onQuickEdit(row.id)}
                 className={cn(
-                  "opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100",
+                  "opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 [@media(pointer:coarse)]:opacity-100",
                   quickEditForceVisible && "opacity-100",
                 )}
               >

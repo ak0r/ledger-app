@@ -1,6 +1,6 @@
 "use server";
 
-import { db } from "../db/client";
+import { db } from "../persistence/client";
 import { requireActiveProfile } from "../authz";
 import type { DashboardPanelRow } from "../repositories/dashboardPanels";
 import { addPanelCore, movePanelCore, removePanelCore, updatePanelConfigurationCore } from "./dashboards.core";

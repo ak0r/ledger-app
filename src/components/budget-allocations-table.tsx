@@ -1,7 +1,7 @@
 "use client";
 
-import type { BudgetAllocationInput } from "@/domain";
-import { fromMinorUnits, toMinorUnits } from "@/domain";
+import type { BudgetAllocationInput } from "@/core";
+import { fromMinorUnits, toMinorUnits } from "@/core";
 import { formatMoney } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

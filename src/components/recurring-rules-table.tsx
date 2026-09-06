@@ -1,7 +1,7 @@
 "use client";
 
-import type { RecurringFrequency } from "@/domain";
-import type { RecurringRuleWithNextDue } from "@/server/use-cases/recurring";
+import type { RecurringFrequency } from "@/core";
+import type { RecurringRuleWithNextDue } from "@/server/services/recurring";
 import { formatDate, formatMoney } from "@/lib/utils";
 import { WEEKDAY_OPTIONS } from "@/components/recurring-form";
 import { RecurringFormSheet } from "@/components/recurring-form-sheet";

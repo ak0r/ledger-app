@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { RECURRING_FREQUENCIES, fromMinorUnits, toMinorUnits, type RecurringFrequency } from "@/domain";
+import { RECURRING_FREQUENCIES, fromMinorUnits, toMinorUnits, type RecurringFrequency } from "@/core";
 import { humanizeEnum } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -23,7 +23,7 @@ import { createRecurringRuleAction, editRecurringRuleAction } from "@/server/act
 //
 // Interval is fixed to 1 — every mockup in the spec (§6) only ever shows
 // "Every month"/"Every week", never an "every N" stepper; the domain/schema
-// layer already supports arbitrary `interval` (docs/pending/2026-08-27-
+// layer already supports arbitrary `interval` (docs/completed/2026-08-27-
 // Recurring-Transactions.md's own model), so a UI control can be added
 // later without a data-model change. YEARLY has no Day control — it
 // anchors on `startDate`'s own month/day (domain/recurring.ts), matching

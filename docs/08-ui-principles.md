@@ -8,11 +8,13 @@ UI should hide accounting complexity while preserving accounting correctness.
 
 ## Profile context
 
-Renamed from "Member" (2026-08-20 User Simplification delta). Every route
-is scoped to one Profile (`/p/[profileId]/...`).
+Renamed from "Member" (2026-08-20 User Simplification delta). The active
+Profile is application-level context resolved server-side from a cookie
+(ADR-033), not a URL segment — routes are flat and top-level
+(`/accounts`, `/transactions`, `/portfolio`, `/settings/...`).
 
 Show the active Profile clearly (name, and a switcher for the Primary User,
-who can access every Profile in the Hosted Instance via `/profiles`).
+who can access every Profile in the Hosted Instance via `/settings/profiles`).
 
 Switching Profile changes the working scope of:
 
@@ -78,7 +80,7 @@ Total                     ₹5,000
 [Save]
 ```
 
-MVP can prioritize one-source-to-many-destination entry.
+Simple mode prioritizes one-source-to-many-destination entry.
 
 The underlying domain must support generic N-posting transactions.
 
@@ -147,13 +149,11 @@ Show:
 
 ## Dashboard
 
-MVP:
-
-- account balances
-- net position where meaningful
-- income
-- expenses
-- recent transactions
+Shipped as a configurable Panel system (`docs/04-modules.md`'s Dashboard
+and Panels section) — the Homepage renders whichever Panels the active
+Profile's Dashboard has, never a fixed hardcoded list. The Starter
+Dashboard every new Profile gets: Net Worth/Assets/Liabilities cards,
+Balances/Recent Expenses/Recent Transactions lists.
 
 ## Reports
 
@@ -175,4 +175,4 @@ States:
 - yellow: modified
 - red: deleted
 
-No history implementation in MVP.
+No history implementation (deferred — `docs/10-open-decisions.md`).

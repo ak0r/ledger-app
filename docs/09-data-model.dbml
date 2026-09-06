@@ -1,14 +1,24 @@
 // Conceptual schema, kept in sync with the real Drizzle schema at
-// src/server/db/schema.ts (field-for-field, snake_case per ADR-017).
-// Money values are integer minor units. Timestamps/dates are ISO 8601
-// strings (SQLite has no native datetime type here).
+// src/server/persistence/schema.ts (field-for-field, snake_case per
+// ADR-017). Money values are integer minor units. Timestamps/dates are
+// ISO 8601 strings (SQLite has no native datetime type here).
 //
-// Renamed from the original `members`-only MVP schema by the 2026-08-20
-// User Simplification delta (ADR-029): `members` → `profiles`, plus a new
-// AppUser/Session identity layer above it. Extended by the 2026-08-21
-// Instrument Model delta Step 1 (`instruments`) and the 2026-08-25/26
+// Two sibling domains, deliberately delinked (ADR-040): the Ledger tables
+// (profiles down through dashboard_panels) and the Portfolio tables
+// (instruments down through portfolio_imports) — zero FKs cross from
+// Portfolio into accounts/transactions/postings, enforced additionally by
+// an ESLint rule at the TypeScript layer (core/portfolio can't import
+// core/ledger).
+//
+// Renamed from the original `members`-only schema by the 2026-08-20 User
+// Simplification delta (ADR-029): `members` → `profiles`, plus a new
+// AppUser/Session identity layer above it. Extended by the 2026-08-25/26
 // Import Framework + Account Resolution deltas (`import_files`,
-// `account_identifiers`, `transactions.import_file_id`).
+// `account_identifiers`, `transactions.import_file_id`), the 2026-09-05
+// Portfolio Adoption Plan (`profiles.pan_encrypted`/`pan_hash`, every
+// Portfolio table), and Stock Tradebook/eCAS/Yahoo work (2026-09-06,
+// `instruments.nse_code`/`bse_code`/`amfi_code`, `holdings.source`'s
+// `ECAS_PDF` value).
 
 Table app_users {
   id text [pk]
@@ -30,6 +40,9 @@ Table profiles {
   id text [pk]
   name text [not null]
   app_user_id text [unique, note: 'Nullable — a Profile can exist unlinked to any AppUser (created by the Primary User for someone who registers later).']
+  primary_currency_id text [note: 'Default Currency for a newly created Account (Currency Catalogue delta) — not retroactive.']
+  pan_encrypted text [note: 'AES-256-GCM ciphertext (base64) — Portfolio Adoption Plan. Decrypted only when a CAS import needs it as the PDF password.']
+  pan_hash text [note: 'SHA-256 digest for equality/lookup (e.g. matching a re-imported statement) without decrypting.']
   created_at datetime [not null]
   updated_at datetime [not null]
 }
@@ -46,15 +59,21 @@ Table currencies {
 }
 
 // Shared reference data — NOT Profile-scoped, unlike every other table
-// here. An Instrument ("HDFC Bank the stock") is the same catalogue row
-// regardless of which Profile references it via accounts.instrument_id.
-// Instrument Model delta (2026-08-21) Step 1 only — no pricing/identifiers/
-// quantity yet (Steps 2-10 of that delta not started).
+// here (except nav_history below). An Instrument ("HDFC Bank the stock")
+// is the same catalogue row regardless of which PortfolioAccount
+// references it. Reused as-is by the Portfolio domain after the Ledger/
+// Portfolio delink (ADR-040) — never linked to a Ledger `accounts` row.
 Table instruments {
   id text [pk]
-  type text [not null, note: 'MUTUAL_FUND | STOCK | COMMODITY']
+  type text [not null, note: 'MUTUAL_FUND | STOCK | COMMODITY (InstrumentBackedType)']
   name text [not null]
   unit_label text [note: 'Free-text pricing-unit hint for commodities, e.g. "10g" — null for MUTUAL_FUND/STOCK.']
+  source text [note: 'Instrument Catalogue ingestion provenance, e.g. "indianapi" — null for a user/import-created row.']
+  source_id text [note: 'The (source, source_id) pair is the catalogue upsert-match identity — not a DB unique index (ADR-039).']
+  nse_code text [note: 'Set by Stock tradebook import (broker symbol) or demat eCAS import (casparser-backfilled symbol).']
+  bse_code text [note: 'Set by demat eCAS import when casparser reports the BSE exchange.']
+  isin text
+  amfi_code text [note: 'Mutual Fund fallback identity when a CAS statement scheme has no ISIN — also the AMFI bulk NAV feed primary key.']
   created_at datetime [not null]
   updated_at datetime [not null]
 }
@@ -65,9 +84,9 @@ Table accounts {
   currency_id text [not null]
   name text [not null]
   classification text [not null, note: 'ASSET | LIABILITY | INCOME | EXPENSE | BALANCING']
-  instrument_type text [not null, note: 'BANK | CASH | CREDIT_CARD | LOAN | EXPENSE | INCOME | BALANCING | MUTUAL_FUND | STOCK | COMMODITY (frozen, rule #11)']
-  instrument_id text [note: 'Free-text (ADR-016) — unrelated to the `instruments` catalogue or `account_identifiers`.']
-  instrument_label text
+  instrument_type text [not null, note: 'BANK | CASH | CREDIT_CARD | LOAN | EXPENSE | INCOME | BALANCING (frozen, rule #11) — never MUTUAL_FUND/STOCK/COMMODITY (Ledger/Portfolio delink, ADR-040)']
+  instrument_id text [note: 'Inert since ADR-040 — no longer written. Free-text (ADR-016), unrelated to the `instruments` catalogue or `account_identifiers`.']
+  instrument_label text [note: 'Inert since ADR-040 — no longer written.']
   tags text [note: 'JSON array: string[] (flat opaque strings, not key/value)']
   icon text
   is_archived boolean [not null, default: false]
@@ -207,8 +226,99 @@ Table dashboard_panels {
   Note: 'width/height are never stored — always supplied by the Panel Registry, never user-editable'
 }
 
+// --- Portfolio domain (ADR-040/041) — zero FKs into accounts/transactions/
+// postings above. `instruments`/`nav_history` are shared reference data,
+// not Profile-scoped, same reasoning as `instruments` itself predates this
+// section.
+
+Table portfolio_accounts {
+  id text [pk]
+  profile_id text [not null]
+  name text [not null, note: 'e.g. "Zerodha", "CAMS Import"']
+  type text [not null, note: 'InstrumentBackedType — MUTUAL_FUND | STOCK | COMMODITY']
+  provider text [note: 'e.g. "CAMS/KFin", "NSDL/CDSL eCAS"']
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+Table folios {
+  id text [pk]
+  portfolio_account_id text [not null]
+  number text [not null, note: 'Folio number (MF) or demat account number `dp_id-client_id` (eCAS) — user-typed for tradebook import.']
+  amc_code text
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+// units × price == amount is the domain invariant (the single-sided
+// equivalent of a Ledger posting's balance check) — DIVIDEND is exempt
+// (a cash payout has no unit/price component).
+Table investment_transactions {
+  id text [pk]
+  profile_id text [not null]
+  instrument_id text [not null]
+  folio_id text
+  date datetime [not null]
+  type text [not null, note: 'BUY | SELL | DIVIDEND | BONUS | SPLIT | TRANSFER_IN | TRANSFER_OUT']
+  units integer [not null, note: 'Quantity scale (6 decimals), domain/quantity.ts — same fixed scale as Ledger posting.quantity.']
+  price real [not null]
+  amount integer [not null, note: 'Integer minor units of currency_id.']
+  currency_id text [not null]
+  source text [not null, note: 'MANUAL | CSV_IMPORT | CAS_PDF']
+  source_ref text
+  narration text
+  dedup_key text [note: 'Content hash for idempotent re-import — DB-level partial unique index on (profile_id, dedup_key) WHERE dedup_key IS NOT NULL.']
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+// An *observed* snapshot only (a CAS/eCAS closing balance, a manual
+// entry) — never the live position, which is always netted fresh from
+// investment_transactions. Rows are never deduped/upserted: re-importing
+// the same statement adds another point-in-time observation.
+Table holdings {
+  id text [pk]
+  profile_id text [not null]
+  instrument_id text [not null]
+  folio_id text
+  as_of_date datetime [not null]
+  units integer [not null]
+  source text [not null, note: 'MANUAL | CAS_PDF | CSV_IMPORT | ECAS_PDF']
+  source_ref text
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+// NOT Profile-scoped — a NAV/price is a market fact. One row per
+// (instrument_id, date), upserted on refresh (DB-level unique index).
+Table nav_history {
+  id text [pk]
+  instrument_id text [not null]
+  date datetime [not null]
+  nav real [not null]
+  source text [note: 'AMFI | NSE | YAHOO | null for a manual entry']
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+Table portfolio_imports {
+  id text [pk]
+  profile_id text [not null]
+  kind text [not null, note: 'CAS | ECAS | CSV | MANUAL']
+  status text [not null, note: 'PENDING | SUCCESS | FAILED']
+  filename text
+  source_ref text
+  result text [note: 'JSON — open shape, summary counts specific to the import kind.']
+  error text
+  started_at datetime
+  finished_at datetime
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
 Ref: sessions.app_user_id > app_users.id
 Ref: profiles.app_user_id > app_users.id
+Ref: profiles.primary_currency_id > currencies.id
 Ref: currencies.profile_id > profiles.id
 Ref: accounts.profile_id > profiles.id
 Ref: accounts.currency_id > currencies.id
@@ -228,6 +338,14 @@ Ref: budget_allocations.budget_period_id > budget_periods.id
 Ref: budget_allocations.expense_account_id > accounts.id
 Ref: dashboards.profile_id > profiles.id
 Ref: dashboard_panels.dashboard_id > dashboards.id
+Ref: portfolio_accounts.profile_id > profiles.id
+Ref: folios.portfolio_account_id > portfolio_accounts.id
+Ref: investment_transactions.profile_id > profiles.id
+Ref: investment_transactions.folio_id > folios.id
+Ref: investment_transactions.currency_id > currencies.id
+Ref: holdings.profile_id > profiles.id
+Ref: holdings.folio_id > folios.id
+Ref: portfolio_imports.profile_id > profiles.id
 
 // Domain constraints not fully expressible in this conceptual DBML:
 //
@@ -236,7 +354,9 @@ Ref: dashboard_panels.dashboard_id > dashboards.id
 // 3. debit and credit must be non-negative.
 // 4. SUM(debit) == SUM(credit) per transaction.
 // 5. posting.account.profile_id == transaction.profile_id.
-// 6. MVP account currency is INR.
+// 6. A transaction's postings must resolve to exactly one currency
+//    (MIXED_CURRENCY_UNSUPPORTED), except the one Currency Conversion
+//    shape — no FX/conversion/cross-currency aggregation otherwise.
 // 7. Hard delete transaction aggregate atomically.
 // 8. An AppUser links to at most one Profile (unique); a Profile links to
 //    at most one AppUser (nullable) but can exist unlinked.
@@ -266,3 +386,20 @@ Ref: dashboard_panels.dashboard_id > dashboards.id
 // 17. Every new Profile receives exactly one dashboards row (is_default =
 //     true) at creation time; predates-this-delta Profiles receive one
 //     lazily, the first time their default Dashboard is read.
+// 18. investment_transactions: units * price == amount (DIVIDEND exempt —
+//     a cash payout has no unit/price component). instrument_id has no DB
+//     FK (instruments isn't Profile-scoped and predates this constraint
+//     style, ADR-038's own reasoning) but must reference a real row.
+// 19. holdings rows are never deduped/upserted — each import records
+//     another point-in-time observation; the live position is always
+//     netUnitsFromTransactions() over investment_transactions, never read
+//     from holdings.
+// 20. Zero FKs cross from any Portfolio table (instruments down through
+//     portfolio_imports) into accounts/transactions/postings — enforced
+//     additionally by an ESLint rule banning core/portfolio from
+//     importing core/ledger (ADR-040).
+// 21. A demat eCAS import's PortfolioAccount/Folio auto-resolve from the
+//     file's own dp_id/client_id; a Stock tradebook import's instead
+//     requires the user to pick or create one first — the two have no
+//     automatic way to agree on one Folio identity for the same real
+//     demat account (ADR-045).

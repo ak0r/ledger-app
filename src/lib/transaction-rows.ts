@@ -1,9 +1,35 @@
-import { fromMinorUnits, toMinorUnits } from "@/domain";
+import { fromMinorUnits, toMinorUnits } from "@/core";
 import type { AccountRow } from "@/server/repositories/accounts";
-import type { TransactionWithPostings } from "@/server/use-cases/transactions";
-import type { TransactionTableRow } from "@/components/transaction-table";
+import type { TransactionWithPostings } from "@/server/services/transactions";
+import type { TransactionTableRow, ToLineSecondary } from "@/components/transaction-table";
 import type { MergeCandidateTransaction } from "@/lib/merge-eligibility";
 import { formatMoney } from "@/lib/utils";
+
+// Trims to at most `maxDecimals` places without padding — 100 -> "100",
+// 72.4567 -> "72.4567", not "72.4567000" (used for both a Quantity's own
+// decimal amount and an FX rate; neither is Money, so `formatMoney` doesn't
+// apply).
+function trimmedNumber(value: number, maxDecimals = 4): string {
+  return Number(value.toFixed(maxDecimals)).toString();
+}
+
+// FX-rate secondary info for a Currency Conversion's To leg (Revised
+// Investment Model delta, Phase 5, 2026-09-03) — the reconciliation
+// currency is always the From leg's own currency
+// (core/ledger/transactions/transaction.ts), so a differing price only
+// ever shows up on a To posting whose currency differs from the From leg.
+function toLineSecondary(
+  posting: { price: number },
+  postingCurrency: { code: string; symbol: string; minorUnitScale: number },
+  fromCurrency: { code: string; symbol: string; minorUnitScale: number },
+): ToLineSecondary | undefined {
+  const isConversion = postingCurrency.code !== fromCurrency.code;
+  if (isConversion && posting.price > 0) {
+    return { kind: "fx", currencyCode: postingCurrency.code, rate: trimmedNumber(1 / posting.price) };
+  }
+
+  return undefined;
+}
 
 // Shared by the Member-scoped Transactions page and the Account detail
 // page (docs/ledger-transaction-list-change.md: "one reusable
@@ -78,6 +104,7 @@ export function buildTransactionTableRows(
           icon: account?.icon,
           amount: formatMoney(posting.debit, postingCurrency.symbol, postingCurrency.minorUnitScale),
           currencyCode: postingCurrency.code,
+          secondary: toLineSecondary(posting, postingCurrency, fromCurrency),
         };
       }),
       tags: transaction.tags,

@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { CURRENCY_CATALOG } from "@/domain";
-import { db } from "@/server/db/client";
+import { CURRENCY_CATALOG } from "@/core";
+import { db } from "@/server/persistence/client";
 import { requireActiveProfile } from "@/server/authz";
-import { listCurrencies } from "@/server/use-cases/currencies";
+import { listCurrencies } from "@/server/services/currencies";
 import { AddCurrencyDialog } from "@/components/add-currency-dialog";
 import { Badge } from "@/components/ui/badge";
 

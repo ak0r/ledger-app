@@ -6,11 +6,11 @@ import {
   type BudgetFilterCondition,
   type BudgetFilterState,
   type BudgetTagsOperator,
-} from "@/domain";
+} from "@/core";
 
-export type { BudgetFilterState } from "@/domain";
+export type { BudgetFilterState } from "@/core";
 import type { AccountRow } from "@/server/repositories/accounts";
-import type { TransactionWithPostings } from "@/server/use-cases/transactions";
+import type { TransactionWithPostings } from "@/server/services/transactions";
 
 // Evaluator for the Budget-domain filter shape (domain/budget.ts) against
 // real ledger data — kept a separate file from that pure domain module

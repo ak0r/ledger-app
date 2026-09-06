@@ -1,4 +1,4 @@
-import type { AccountWithBalance } from "@/server/use-cases/accounts";
+import type { AccountWithBalance } from "@/server/services/accounts";
 import {
   compareNumbers,
   compareStrings,

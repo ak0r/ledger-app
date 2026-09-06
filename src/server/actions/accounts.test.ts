@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { Db } from "../db/client";
+import type { Db } from "../persistence/client";
 import { createTestDb } from "../testing/createTestDb";
-import { createProfile } from "../use-cases/profiles";
-import { createCurrency } from "../use-cases/currencies";
+import { createProfile } from "../services/profiles";
+import { createCurrency } from "../services/currencies";
 import { archiveAccountCore, createAccountCore, editAccountCore } from "./accounts.core";
 
 function setUp(db: Db) {

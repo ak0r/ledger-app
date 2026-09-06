@@ -1,12 +1,12 @@
 "use server";
 
-import { db } from "../db/client";
+import { db } from "../persistence/client";
 import { requireActiveProfile } from "../authz";
 import type { BudgetPeriodRow } from "../repositories/budgetPeriods";
 import type { BudgetRow } from "../repositories/budgets";
 import { approveBudgetPeriodCore, createBudgetCore, deleteBudgetCore, editBudgetCore, previewNextBudgetPeriodCore } from "./budgets.core";
 import type { ActionResult } from "./result";
-import type { BudgetPeriodPreview, BudgetWithFirstPeriod } from "../use-cases/budgets";
+import type { BudgetPeriodPreview, BudgetWithFirstPeriod } from "../services/budgets";
 
 export async function createBudgetAction(input: unknown): Promise<ActionResult<BudgetWithFirstPeriod>> {
   const { profile } = await requireActiveProfile();

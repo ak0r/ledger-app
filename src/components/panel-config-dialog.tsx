@@ -10,7 +10,7 @@ import {
   type PanelKey,
   type RecentExpensesPanelConfig,
   type RecentTransactionsPanelConfig,
-} from "@/domain";
+} from "@/core";
 import type { DashboardPanelRow } from "@/server/repositories/dashboardPanels";
 import { updatePanelConfigurationAction } from "@/server/actions/dashboards";
 import { humanizeEnum } from "@/lib/utils";

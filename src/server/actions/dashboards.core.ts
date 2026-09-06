@@ -1,6 +1,6 @@
-import type { Db } from "../db/client";
+import type { Db } from "../persistence/client";
 import type { DashboardPanelRow } from "../repositories/dashboardPanels";
-import { addPanel, movePanel, removePanel, updatePanelConfiguration } from "../use-cases/dashboards";
+import { addPanel, movePanel, removePanel, updatePanelConfiguration } from "../services/dashboards";
 import { addPanelSchema, movePanelSchema, removePanelSchema, updatePanelConfigurationSchema } from "./schemas";
 import { fromThrown, invalidInput, ok, type ActionResult } from "./result";
 

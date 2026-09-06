@@ -36,17 +36,20 @@ Each Transaction belongs to exactly one Profile.
 
 Every Posting Account must belong to the same Profile as its Transaction.
 
-No shared Accounts in MVP.
+No shared Accounts.
 
 ## Currency
 
-MVP supports INR only.
-
-Each Account references exactly one Currency.
+Each Account references exactly one Currency, drawn from the system
+Currency Catalogue (`docs/04-modules.md`). A Profile has a Primary
+Currency (default for new Accounts, changeable, not retroactive); an
+Account's own Currency is independently changeable and authoritative.
 
 Posting currency is derived from Account.
 
-No cross-currency Transactions or FX in MVP.
+No cross-currency Transactions or FX — a Transaction whose postings
+resolve to more than one currency is rejected
+(`MIXED_CURRENCY_UNSUPPORTED`), except the one Currency Conversion shape.
 
 ## Classification
 
@@ -106,11 +109,11 @@ Delete removes the Transaction aggregate and dependent records atomically.
 
 ## Deletion
 
-MVP uses hard delete.
+Hard delete (rule #9).
 
 No soft-delete fields.
 
-No transaction history in MVP.
+No transaction history (deferred).
 
 ## Drafts
 
@@ -131,4 +134,7 @@ Changing tags never changes:
 
 ## Investments
 
-Investment-specific quantity, valuation, cost basis, tax and pricing mechanics are deferred.
+Investment quantity, valuation, and pricing live in the separate Portfolio
+domain (`docs/02-domain-model.md`, `docs/04-modules.md`) — never a Ledger
+Account, Transaction, or Posting. Cost basis and capital-gains tax
+computation remain deferred.

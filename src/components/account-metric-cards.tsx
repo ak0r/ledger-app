@@ -1,4 +1,4 @@
-import type { InstrumentType } from "@/domain";
+import type { InstrumentType } from "@/core";
 import { formatMoney } from "@/lib/utils";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 
@@ -60,9 +60,6 @@ export function AccountMetricCards({
   switch (instrumentType) {
     case "BANK":
     case "CASH":
-    case "MUTUAL_FUND":
-    case "STOCK":
-    case "COMMODITY":
       return (
         <div className="flex flex-wrap gap-3">
           <MetricCard label="Inflow (this month)" value={money(period.thisMonthInflow)} />

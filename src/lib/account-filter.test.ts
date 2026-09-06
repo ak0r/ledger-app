@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AccountWithBalance } from "@/server/use-cases/accounts";
+import type { AccountWithBalance } from "@/server/services/accounts";
 import {
   accountFilterToParams,
   applyAccountFilter,

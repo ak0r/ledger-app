@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AccountRow } from "@/server/repositories/accounts";
-import type { TransactionWithPostings } from "@/server/use-cases/transactions";
+import type { TransactionWithPostings } from "@/server/services/transactions";
 import {
   EMPTY_FILTER_STATE,
   filterTransactions,
@@ -49,6 +49,8 @@ function transaction(
     postings: postings.map((posting, index) => ({
       id: `${id}-p${index}`,
       transactionId: id,
+      quantity: 0,
+      price: 1,
       createdAt: "now",
       updatedAt: "now",
       ...posting,

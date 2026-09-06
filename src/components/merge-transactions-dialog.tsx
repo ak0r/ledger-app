@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { checkMergeEligibility, type MergeCandidateAccount } from "@/lib/merge-eligibility";
 import { toMergeCandidate } from "@/lib/transaction-rows";
-import { toMinorUnits } from "@/domain";
+import { toMinorUnits } from "@/core";
 import { formatMoney } from "@/lib/utils";
 import type { TransactionTableRow } from "@/components/transaction-table";
 import { mergeTransactionsAction } from "@/server/actions/transactions";

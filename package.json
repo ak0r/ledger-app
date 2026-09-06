@@ -14,7 +14,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "setup:python": "node scripts/setup-python.mjs",
+    "postinstall": "node scripts/setup-python.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

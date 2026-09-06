@@ -1,6 +1,7 @@
-import type { BalancesPanelConfig } from "@/domain";
-import { db } from "@/server/db/client";
-import { getAccountBalances } from "@/server/use-cases/accounts";
+import Link from "next/link";
+import type { BalancesPanelConfig } from "@/core";
+import { db } from "@/server/persistence/client";
+import { getAccountBalances } from "@/server/services/accounts";
 import { formatMoney, humanizeEnum } from "@/lib/utils";
 
 // Empty state is a valid panel state (spec §23) — "No accounts selected"
@@ -34,10 +35,10 @@ export async function BalancesPanel({
     <ul className="flex flex-col gap-2">
       {shown.map((account) => (
         <li key={account.id} className="flex items-center justify-between text-sm">
-          <span>
+          <Link href={`/accounts/${account.id}`} className="hover:underline">
             {account.name}
             <span className="ml-2 text-muted-foreground">{humanizeEnum(account.classification)}</span>
-          </span>
+          </Link>
           <span className="font-mono tabular-nums">{formatMoney(account.balance, currency.symbol, currency.minorUnitScale)}</span>
         </li>
       ))}

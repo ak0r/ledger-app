@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
-import type { DbOrTx } from "../db/client";
-import { recurringRules } from "../db/schema";
+import type { DbOrTx } from "../persistence/client";
+import { recurringRules } from "../persistence/schema";
 
 export type RecurringRuleRow = typeof recurringRules.$inferSelect;
 

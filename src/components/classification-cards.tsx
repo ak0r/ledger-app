@@ -1,6 +1,6 @@
 "use client";
 
-import { CLASSIFICATIONS, type Classification } from "@/domain";
+import { CLASSIFICATIONS, type Classification } from "@/core";
 import { humanizeEnum, cn } from "@/lib/utils";
 import { AccountIcon } from "@/components/account-icon";
 

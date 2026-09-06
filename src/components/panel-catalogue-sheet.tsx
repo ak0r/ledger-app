@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { PANEL_CATEGORIES, PANEL_CATEGORY_BY_KEY, PANEL_DESCRIPTION_BY_KEY, PANEL_KEYS, PANEL_NAME_BY_KEY, type PanelCategory } from "@/domain";
+import { PANEL_CATEGORIES, PANEL_CATEGORY_BY_KEY, PANEL_DESCRIPTION_BY_KEY, PANEL_KEYS, PANEL_NAME_BY_KEY, type PanelCategory } from "@/core";
 import { addPanelAction } from "@/server/actions/dashboards";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";

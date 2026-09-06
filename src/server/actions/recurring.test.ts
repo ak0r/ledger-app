@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { Db } from "../db/client";
+import type { Db } from "../persistence/client";
 import { createTestDb } from "../testing/createTestDb";
-import { createProfile } from "../use-cases/profiles";
-import { createCurrency } from "../use-cases/currencies";
-import { createAccount } from "../use-cases/accounts";
+import { createProfile } from "../services/profiles";
+import { createCurrency } from "../services/currencies";
+import { createAccount } from "../services/accounts";
 import { createRecurringRuleCore, deleteRecurringRuleCore, editRecurringRuleCore } from "./recurring.core";
 
 function setUp(db: Db) {

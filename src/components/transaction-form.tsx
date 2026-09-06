@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { toMinorUnits, type Classification } from "@/domain";
+import { toMinorUnits, type Classification } from "@/core";
 import { humanizeEnum } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -370,13 +370,17 @@ export function TransactionForm({
     setValue("reconciled", false, { shouldValidate: false });
   }, [fromAccountId, toLineAccountId, amount, toAmount, setValue]);
 
-  // Rate is a display/input convenience only, never submitted or persisted
-  // (Currency Conversion delta rule 5: "reference rates must never replace
-  // the actual transaction amounts as accounting truth") — always derived
-  // from the two real leg amounts, except for the one tick right after the
-  // user edits it themselves (rateEditedRef), so recomputing right back
-  // from the amount it just set doesn't visibly snap the input to a
-  // rounded-off value the instant they finish typing.
+  // Rate is a display/input convenience over the two real leg amounts,
+  // never submitted directly (onSubmit only ever sends the two `amount`
+  // fields as postings, same as before) — always derived from them, except
+  // for the one tick right after the user edits it themselves
+  // (rateEditedRef), so recomputing right back from the amount it just set
+  // doesn't visibly snap the input to a rounded-off value the instant they
+  // finish typing. The server independently re-derives and persists the
+  // same ratio as the posting's `price` (Revised Investment Model delta,
+  // 2026-09-03, use-cases/transactions.ts's derivePostings) — Rate was
+  // never an accounting fact of its own, and still isn't; it's just no
+  // longer discarded once it reaches the server.
   const [rateInput, setRateInput] = useState("");
   const rateEditedRef = useRef(false);
   useEffect(() => {
@@ -408,7 +412,8 @@ export function TransactionForm({
     const postings = [
       { accountId: values.fromAccountId, debit: 0, credit: fromAmountMinorUnits },
       ...values.toLines.map((line) => {
-        const lineScale = accountsById.get(line.accountId)?.currencyScale ?? currencyScale;
+        const lineAccount = accountsById.get(line.accountId);
+        const lineScale = lineAccount?.currencyScale ?? currencyScale;
         return {
           accountId: line.accountId,
           debit: toMinorUnits(line.amount, lineScale),

@@ -15,7 +15,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { SESSION_COOKIE } from "@/server/session";
-import { db } from "@/server/db/client";
+import { db } from "@/server/persistence/client";
 import { findSessionById } from "@/server/repositories/sessions";
 
 export function proxy(request: NextRequest) {

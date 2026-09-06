@@ -4,6 +4,10 @@
 /node_modules
 /.pnp
 .pnp.*
+
+# Python venv for scripts/cas_parser.py (scripts/setup-python.mjs's
+# postinstall step creates this — local runtime state, not versioned)
+/.venv
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
@@ -41,7 +45,11 @@ yarn-error.log*
 next-env.d.ts
 
 # database (SQLite is source of truth per docs/06-architecture.md — the file
-# itself is local runtime state, not something to version)
+# itself is local runtime state, not something to version). The whole
+# /data directory, not just *.db globs, since it also holds pan.key (the
+# local PAN-encryption key, Portfolio Adoption Plan) — real secret
+# material that must never be committed.
+/data
 *.db
 *.db-journal
 *.db-shm

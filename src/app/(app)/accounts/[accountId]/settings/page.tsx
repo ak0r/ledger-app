@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
-import { db } from "@/server/db/client";
+import { db } from "@/server/persistence/client";
 import { requireActiveProfile } from "@/server/authz";
-import { getAccount } from "@/server/use-cases/accounts";
-import { listCurrencies } from "@/server/use-cases/currencies";
-import { listDistinctTags } from "@/server/use-cases/tags";
+import { getAccount } from "@/server/services/accounts";
+import { listCurrencies } from "@/server/services/currencies";
+import { listDistinctTags } from "@/server/services/tags";
 import { AccountForm } from "@/components/account-form";
 import { ArchiveAccountButton } from "@/components/archive-account-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";

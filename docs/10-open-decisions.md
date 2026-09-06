@@ -24,28 +24,38 @@ No global Tag entity is planned.
 
 ## Investment model
 
-Future design required for:
+Decided and shipped as the separate Portfolio domain (2026-09-05/06 — see
+`docs/04-modules.md`'s Investments section and ADR-040/041/043/044 in
+`docs/07-decisions.md`): PortfolioAccount/Folio/InvestmentTransaction/
+Holding/NAVHistory, STOCK/MUTUAL_FUND/COMMODITY InstrumentBackedTypes,
+quantity/unit price on InvestmentTransaction, NAV valuation (AMFI + NSE/
+Yahoo feeds), XIRR, a cut-down Holding-integrity signal.
 
-- STOCK
-- METAL
-- MUTUAL_FUND
-- ETF
-- quantity
-- unit price
-- valuation
-- cost basis
-- tax rules
-- price feeds
+Still future design required for:
+
+- capital-gains/tax computation (LTCG/STCG, Schedule 112A)
+- corporate-action (bonus/split) detection or replay
+- cost basis beyond a simple per-transaction price
+- ETF as an InstrumentBackedType
+- demat-held Mutual Fund/Bond holdings from an eCAS (no BOND type exists)
+- automatic Folio-identity reconciliation between a tradebook's manually
+  typed Folio and an eCAS's auto-derived one
+- retry/backoff on the Yahoo Finance feed
 
 ## Multi-currency / FX
 
-Future design required for:
+Decided and shipped (2026-09-03 Settings/Backup/Data Management delta —
+see `docs/04-modules.md`'s Currency Catalogue section): a Currency
+Catalogue, a Profile Primary Currency, an independently changeable Account
+Currency.
 
-- additional currencies
-- FX rates
-- conversion
+Still future design required for:
+
+- FX rates / conversion between currencies
 - FX gain/loss
-- cross-currency transactions
+- cross-currency Transaction aggregation (the one Currency Conversion
+  2-posting shape persists an explicit rate for that transaction alone —
+  not a general conversion engine)
 
 ## Spaces
 
@@ -137,7 +147,8 @@ Still future design required for:
   `dashboards.is_default` — but there's no UI to manage more than one)
 - a Charts panel category
 - Investment-dependent panels (Recent Investments/Portfolio Value/
-  Portfolio NAV), gated on the Instrument/Valuation model
+  Portfolio NAV) — the Portfolio valuation model they'd read now exists
+  (`docs/04-modules.md`), but no such panel has been built yet
 - user-resizable panels
 - separate mobile layouts / touch-friendly hover-control fallback
 
@@ -151,7 +162,7 @@ Future design required for:
 - diff presentation
 - retention
 
-MVP uses hard delete and has no history UI.
+Hard delete is permanent (rule #9); no history UI exists.
 
 ## Authentication / sharing
 

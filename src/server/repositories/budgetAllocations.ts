@@ -1,6 +1,6 @@
 import { eq, inArray } from "drizzle-orm";
-import type { DbOrTx } from "../db/client";
-import { budgetAllocations } from "../db/schema";
+import type { DbOrTx } from "../persistence/client";
+import { budgetAllocations } from "../persistence/schema";
 
 export type BudgetAllocationRow = typeof budgetAllocations.$inferSelect;
 

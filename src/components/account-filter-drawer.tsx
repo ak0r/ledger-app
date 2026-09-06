@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Filter } from "lucide-react";
-import { CLASSIFICATIONS, INSTRUMENT_TYPES, type Classification, type InstrumentType } from "@/domain";
+import { CLASSIFICATIONS, INSTRUMENT_TYPES, type Classification, type InstrumentType } from "@/core";
 import { humanizeEnum } from "@/lib/utils";
 import { accountFilterToParams, type AccountFilterState } from "@/lib/account-filter";
 import type { AccountSortState } from "@/lib/account-sort";

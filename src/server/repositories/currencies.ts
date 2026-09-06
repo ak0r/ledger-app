@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
-import type { DbOrTx } from "../db/client";
-import { currencies } from "../db/schema";
+import type { DbOrTx } from "../persistence/client";
+import { currencies } from "../persistence/schema";
 
 export type CurrencyRow = typeof currencies.$inferSelect;
 

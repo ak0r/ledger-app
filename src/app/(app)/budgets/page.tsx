@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { db } from "@/server/db/client";
+import { db } from "@/server/persistence/client";
 import { requireActiveProfile } from "@/server/authz";
-import { listAccounts } from "@/server/use-cases/accounts";
-import { listCurrencies } from "@/server/use-cases/currencies";
-import { listBudgetsWithSummary } from "@/server/use-cases/budgets";
+import { listAccounts } from "@/server/services/accounts";
+import { listCurrencies } from "@/server/services/currencies";
+import { listBudgetsWithSummary } from "@/server/services/budgets";
 import { buttonVariants } from "@/components/ui/button";
 import { BudgetList } from "@/components/budget-list";
 

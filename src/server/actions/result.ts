@@ -8,15 +8,19 @@ import {
   EmailAlreadyRegisteredError,
   IncorrectCurrentPasswordError,
   InvalidCredentialsError,
+  InvestmentTransactionValidationError,
   MergeIneligibleError,
+  MultiPanStatementError,
   NotFoundError,
   PanelConfigValidationError,
+  PanMismatchError,
   PasswordRequiredError,
   RecurringRuleValidationError,
   TransactionValidationError,
   UnsupportedCurrencyError,
   UnsupportedImportFormatError,
-} from "../use-cases/errors";
+  WrongStatementTypeError,
+} from "../services/errors";
 
 // `code` is optional and only set for a handful of errors the client needs
 // to branch on structurally rather than just display (today: password-
@@ -48,6 +52,7 @@ export function fromThrown(error: unknown): ActionResult<never> {
   }
   if (
     error instanceof TransactionValidationError ||
+    error instanceof InvestmentTransactionValidationError ||
     error instanceof RecurringRuleValidationError ||
     error instanceof BudgetValidationError ||
     error instanceof BudgetScopeValidationError ||
@@ -61,7 +66,10 @@ export function fromThrown(error: unknown): ActionResult<never> {
     error instanceof InvalidCredentialsError ||
     error instanceof IncorrectCurrentPasswordError ||
     error instanceof EmailAlreadyRegisteredError ||
-    error instanceof UnsupportedImportFormatError
+    error instanceof UnsupportedImportFormatError ||
+    error instanceof PanMismatchError ||
+    error instanceof MultiPanStatementError ||
+    error instanceof WrongStatementTypeError
   ) {
     return { success: false, error: error.message };
   }

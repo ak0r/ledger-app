@@ -2,7 +2,7 @@
 
 ## Core entities
 
-MVP:
+The accounting spine (`core/ledger`):
 
 - Profile
 - Currency
@@ -11,6 +11,13 @@ MVP:
 - Posting
 
 No separate accounting Category entity. Expense categories are Expense Accounts. Income categories are Income Accounts.
+
+Later modules add their own entities on top of this spine, documented in
+`docs/04-modules.md` rather than repeated here: Recurring Rule, Budget/
+BudgetPeriod/BudgetAllocation, Dashboard/DashboardPanel. The Portfolio
+domain (`core/portfolio`) is a deliberately separate sibling model —
+PortfolioAccount/Folio/InvestmentTransaction/Holding/NAVHistory — see its
+own section below.
 
 ## Profile
 
@@ -42,11 +49,16 @@ No shared Accounts.
 
 ## Currency
 
-Currency is a Profile-scoped reference.
+Currency is a Profile-scoped reference, instantiated from the system-
+maintained Currency Catalogue (`core/shared/currency.ts`, a code-level
+constant, not a DB table — `docs/04-modules.md`).
 
-MVP supports INR only.
-
-Each Account references exactly one Currency.
+Each Account references exactly one Currency. A Profile has a Primary
+Currency (default for a new Account, changeable, not retroactive); an
+Account's own Currency is authoritative and independently changeable —
+since Transactions never store a currency of their own, changing an
+Account's Currency immediately reinterprets every existing and future
+Transaction on it.
 
 ```text
 INR
@@ -59,7 +71,11 @@ Currency owns monetary precision. Account owns the relationship to Currency.
 
 Posting does not carry a separate currency field. Posting currency is derived from its Account.
 
-Future multi-currency / FX may introduce additional currencies and FX mechanics.
+No FX, conversion, or cross-currency aggregation. A Transaction whose
+postings resolve to more than one currency is rejected
+(`MIXED_CURRENCY_UNSUPPORTED`), except the one 2-posting Currency
+Conversion shape, which persists an explicit rate for that transaction
+alone.
 
 ## Account
 
@@ -99,7 +115,7 @@ BALANCING
 
 Instrument type describes the nature of the Account/instrument. It does not determine accounting treatment.
 
-MVP (frozen — AGENTS.md rule #11, 2026-08-19 account-model delta):
+Frozen (AGENTS.md rule #11, 2026-08-19 account-model delta):
 
 ```text
 BANK
@@ -109,21 +125,15 @@ LOAN
 EXPENSE
 INCOME
 BALANCING
-MUTUAL_FUND
-STOCK
-COMMODITY
 ```
 
-`MUTUAL_FUND`/`STOCK`/`COMMODITY` are instrument-backed (see the separate
-Instrument entity below) but full investment mechanics — quantity, pricing,
-valuation — are still not built (Step 1 of 10 shipped; see
-`docs/pending/2026-08-21-Instrument-Model-Pricing-Foundations.md`).
-
-Future (not yet a frozen type):
-
-```text
-ETF
-```
+A Ledger Account can never be Instrument-backed (`MUTUAL_FUND`/`STOCK`/
+`COMMODITY` were part of this list until the Ledger/Portfolio delink,
+ADR-040 — an Asset Account's only types are now `BANK`/`CASH`). Investment
+tracking is a separate sibling domain, Portfolio, with its own
+`InstrumentBackedType` list (`MUTUAL_FUND`/`STOCK`/`COMMODITY`) and its
+own `PortfolioAccount` entity — see "Portfolio domain" below and
+`docs/04-modules.md`.
 
 Examples:
 
@@ -157,33 +167,18 @@ classification = INCOME
 instrument_type = INCOME
 ```
 
-`STOCK`/`MUTUAL_FUND`/`COMMODITY` Accounts exist as a frozen instrument type
-(above), but full investment mechanics remain future work — see the note
-above.
+### Instrument identifiers (inert)
 
-### Instrument identifiers
-
-`instrument_id` and `instrument_label` on `accounts` are nullable free-text
-fields (ADR-016) — unrelated to the separate `Instrument` catalogue entity
-(shared reference data, not Profile-scoped — one row per real-world
-instrument like "HDFC Bank the stock") or to `AccountIdentifier` (a bank
-statement's account-number identifier, used by Import account resolution —
-see `docs/04-modules.md`'s Imports section). Examples of the free-text
-fields:
-
-```text
-Stock:
-instrument_id = INE118H01025
-instrument_label = BSE Limited
-```
-
-```text
-Commodity:
-instrument_id = gold-999
-instrument_label = Gold 999
-```
-
-Investment valuation, quantity, cost basis, and tax rules are still not implemented.
+`instrument_id` and `instrument_label` still exist as nullable columns on
+`accounts` (ADR-016) but are no longer written by `createAccount`/
+`editAccount` since the Ledger/Portfolio delink (ADR-040) — left inert
+rather than dropped in a migration, this codebase's established posture
+for a superseded column, pending a real data migration for any Account
+created under the old model. They were, and are, unrelated to the separate
+`Instrument` catalogue entity (shared reference data, not Profile-scoped —
+one row per real-world instrument like "HDFC Bank the stock") or to
+`AccountIdentifier` (a bank statement's account-number identifier, used by
+Import account resolution — see `docs/04-modules.md`'s Imports section).
 
 ## Transaction
 
@@ -195,7 +190,9 @@ A Transaction contains at least two Postings.
 
 Every Posting must reference an Account owned by the Transaction's Profile.
 
-MVP supports INR only. Cross-currency Transactions are not supported.
+A Transaction's postings must resolve to exactly one currency
+(`MIXED_CURRENCY_UNSUPPORTED` otherwise), except the one Currency
+Conversion shape.
 
 Fields/concepts:
 
@@ -214,7 +211,7 @@ updated_at
 Import workflow (see `docs/04-modules.md`), permanent provenance back to
 the originating `ImportFile` even after commit.
 
-No merchant entity in MVP. Description/payee remains text.
+No merchant entity. Description/payee remains text.
 
 ## Posting
 
@@ -337,7 +334,7 @@ Store money as integer minor units.
 
 Never use floating-point values for money.
 
-MVP INR scale:
+Example (INR, scale 2):
 
 ```text
 ₹500.25 → 50025
@@ -392,7 +389,7 @@ No shared tag table.
 
 ## Deletion
 
-MVP uses hard delete.
+Hard delete (rule #9).
 
 Deleting a Transaction removes:
 
@@ -402,7 +399,7 @@ Deleting a Transaction removes:
 
 Deletion is atomic.
 
-No transaction history UI in MVP.
+No transaction history UI (deferred — `docs/10-open-decisions.md`).
 
 ## Drafts
 
@@ -411,6 +408,30 @@ Drafts are transient UI/application state.
 No persisted `DRAFT` status.
 
 A persisted Transaction is complete and balanced.
+
+## Portfolio domain
+
+A deliberately separate sibling model (`core/portfolio`, ADR-040/041) —
+never a Ledger Account, Transaction, or Posting. Full detail in
+`docs/04-modules.md`'s Investments section; entities only, here:
+
+```text
+PortfolioAccount   (a brokerage/AMC/demat relationship — "Zerodha", "CAMS")
+Folio              (an account/folio number within a PortfolioAccount)
+Instrument         (shared catalogue reference data, not Profile-scoped —
+                     MUTUAL_FUND | STOCK | COMMODITY, "HDFC Bank the stock")
+InvestmentTransaction  (BUY/SELL/DIVIDEND/BONUS/SPLIT/TRANSFER_IN/OUT —
+                         units × price == amount, the single-sided
+                         equivalent of a Ledger posting's balance check)
+Holding            (an *observed* snapshot from an import — CAS/eCAS
+                     closing balance, never the live computed position)
+NAVHistory         (per-Instrument price history, not Profile-scoped)
+PortfolioImport    (CAS / ECAS / CSV / MANUAL import provenance)
+```
+
+The live position is always netted fresh from `InvestmentTransaction`
+rows (`netUnitsFromTransactions`) — never read from `Holding`, mirroring
+how a Ledger Account's balance is always summed fresh from `postings`.
 
 ## Future modules
 
@@ -441,6 +462,5 @@ Detection remain future plugin modules.
 
 ### Investments
 
-Future instrument-aware module.
-
-Deferred.
+Shipped as the Portfolio domain — see "Portfolio domain" above and
+`docs/04-modules.md`. Capital-gains/tax computation remains deferred.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AccountRow } from "@/server/repositories/accounts";
-import type { TransactionWithPostings } from "@/server/use-cases/transactions";
+import type { TransactionWithPostings } from "@/server/services/transactions";
 import {
   derivedExpenseAccountIds,
   filterTransactionsForBudget,
@@ -51,6 +51,8 @@ function transaction(
       accountId: posting.accountId,
       debit: posting.debit,
       credit: posting.credit,
+      quantity: 0,
+      price: 1,
       createdAt: "now",
       updatedAt: "now",
     })),

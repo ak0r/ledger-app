@@ -177,17 +177,146 @@ Dashboards per Profile, a Charts panel category, Investment-dependent
 panels (Recent Investments/Portfolio Value/Portfolio NAV — not even as
 placeholders), user-resizable panels, separate mobile layouts.
 
+## Currency Catalogue
+
+Shipped 2026-09-03 (Settings/Backup/Data Management delta) — lifts the
+earlier INR-only freeze (ADR-020) per explicit user direction, without
+adding FX. The Currency Catalogue itself (`core/shared/currency.ts`) is a
+code-level constant — a system-maintained, mostly-static reference list of
+currency definitions (code/name/symbol/minor-unit scale) — never a DB
+table; `currencies` stays a per-Profile instantiation record of a code
+drawn from it (`/settings/currencies`' "Add Currency" picker).
+
+- A Profile has a **Primary Currency** — the default for a newly created
+  Account, changeable at any time, never applied retroactively to existing
+  Accounts.
+- An Account has its own **Currency** — authoritative for every Transaction
+  posted against it, changeable at any time, and (since Transactions never
+  store a currency of their own) that change immediately reinterprets every
+  existing and future Transaction on that Account, not just future ones.
+- No FX, conversion, or cross-currency aggregation of any kind. A
+  Transaction whose postings resolve to more than one currency is rejected
+  outright (`MIXED_CURRENCY_UNSUPPORTED`) — the sole exception is the
+  2-posting Currency Conversion shape (`postings.quantity`/`price`,
+  ADR-038), which persists an explicit exchange rate for that one
+  transaction rather than aggregating across currencies.
+
+## Settings, Backup & Data Management
+
+Shipped 2026-09-03 (Settings/Backup/Data Management delta), alongside the
+Currency Catalogue above. `/settings` groups Profiles, Currencies, and
+Backups under one area.
+
+- **Local backup**: one physical `ledger.db` file is the whole Hosted
+  Instance (every AppUser/Profile/Account/Transaction/Budget/Dashboard/
+  Currency), so a backup is `better-sqlite3`'s native `.backup()` of that
+  one file to a fixed server-filesystem path (`<data>/backups`) — not a
+  user-editable location, and not a browser-side download. Automatic daily
+  backup is on by default, toggleable, opportunistically triggered
+  (`runBackupIfDue`) the same way NAV refresh is (`docs/04-modules.md`'s
+  Investments section) — due since the backup history table's own most
+  recent row, not a separate settings row.
+- **Clean Up Content** wipes a Profile's Accounts/Transactions/Currencies
+  without deleting the Profile itself — the documented way to discard demo
+  data or start over (used by the onboarding "Start from Scratch"/demo-data
+  flows).
+
 ## Investments
 
-Foundations only: an `Instrument` catalogue entity exists (shared reference
-data, not Profile-scoped) and `MUTUAL_FUND`/`STOCK`/`COMMODITY` are frozen
-Account instrument types — Step 1 of `docs/pending/2026-08-21-Instrument-Model-Pricing-Foundations.md`'s
-10-step plan. Quantity, pricing, valuation, and the rest of that plan are
-still not built.
+**Ledger/Portfolio delink (2026-09-05, ADR-040,
+`analysis/folioman-vs-ledger/06-pwa-validation-and-domain-delink.md`) —
+supersedes the account-integrated model below.** A Ledger Account can
+never be Instrument-backed again: `MUTUAL_FUND`/`STOCK`/`COMMODITY` are
+removed from `INSTRUMENT_TYPES`; Asset Accounts are `CASH`/`BANK` only.
+Portfolio is a separate future domain (`core/portfolio`) with its own
+`PortfolioAccount`/`InvestmentTransaction`/`Holding` model (Folioman's
+actual shape, `analysis/folioman-vs-ledger/07-folioman-database-model.md`)
+— never Ledger's `accounts`/`transactions`/`postings`. Not yet built
+(gated on a portfolio domain document in progress).
+
+**What's preserved from the account-integrated era, and reused going
+forward:** the Instrument Catalogue itself — real STOCK/MUTUAL_FUND
+ingestion from IndianAPI (Analyst primary, Pro fallback,
+upsert-preserving-on-failure), NSE/BSE/ISIN identifiers, local search —
+is untouched and will back the future Portfolio module directly; it never
+depended on `accounts` at the schema level. `postings.quantity`/`price`
+and the domain's reconciliation-value balance check are also preserved,
+but now purely for Currency Conversion's persisted exchange rate — the
+Instrument-backed branch of that check is removed.
+
+**What's gone:** the Account form's Instrument picker, the transaction
+form's Units field, the transaction list's quantity/unit-price display,
+and `accounts.instrumentId`/`instrumentLabel` as a live linkage (columns
+remain in the schema, unwritten, pending a real Phase 3 data migration for
+any Account created under the old model). Original history: Step 1 of
+`docs/completed/2026-08-21-Instrument-Model-Pricing-Foundations.md`'s
+10-step plan shipped 2026-08-22; the "Revised Investment Model" delta
+(2026-09-03, ADR-038) and "Instrument Catalogue" delta (2026-09-04,
+ADR-039, `docs/completed/2026-09-04-Instrument-Catalogue.md`) built the
+now-superseded Account↔Instrument bridge.
+
+### Portfolio (shipped)
+
+The Portfolio domain promised above is built: its own `PortfolioAccount`/
+`Folio`/`InvestmentTransaction`/`Holding`/`NAVHistory`/`PortfolioImport`
+model (`core/portfolio`, ADR-041), a top-level nav section (Overview/Mutual
+Funds/Stocks/Accounts-Folios/Imports, ADR-042) alongside Ledger's own, and
+a cross-domain Import Center. "Security" (the investment) and "Holding"
+(the Profile's position in it) are kept as distinct, consistently-labeled
+concepts throughout — "Instrument" stays backend-only vocabulary.
+
+Import paths, all sharing one Upload → Preview (counts/warnings, zero
+writes) → Approval → Commit shape (ADR-042):
+
+- **Mutual Fund CAS** (CAMS/KFin Consolidated Account Statement PDF) —
+  `casparser` run as a local subprocess (ADR-041), never a network call.
+  Every scheme resolves to an Instrument by ISIN or AMFI code; every
+  transaction gets a content-hash dedup key; the statement's own closing
+  balance is recorded as an observed `Holding` snapshot. A statement whose
+  PAN doesn't match the active Profile's registered PAN is rejected
+  outright (ADR-042) — no auto-create-a-new-Profile offer (Folioman has
+  one; deliberately deferred, ADR-042).
+- **Demat eCAS** (NSDL/CDSL holdings-snapshot PDF) — the equity analog of
+  the MF CAS's closing balance: no transaction history, only a point-in-
+  time position per demat account (ADR-045). Equities only in V1 — no
+  demat-held Mutual Fund or Bond. PortfolioAccount/Folio auto-resolve from
+  the file's own `dp_id`/`client_id`. Every demat account in one statement
+  must agree on a single PAN, or the statement is rejected.
+- **Stock Tradebook** (a broker's own equity delivery CSV — Zerodha's
+  format plus a header-alias generic fallback, ADR-043) — the destination
+  PortfolioAccount/Folio are picked or created by the user first (a
+  tradebook carries no investor identity to auto-resolve one from). The
+  dedup key includes the broker's own trade ID from the start, closing a
+  same-day/same-price/same-quantity collision class before it could
+  happen.
+- Both the MF CAS and eCAS paths reject a file shaped like the other with
+  a clear message, rather than crashing on an undefined property
+  (ADR-045).
+
+Valuation (ADR-044): an AMFI bulk feed refreshes every catalogued Mutual
+Fund's NAV in one request; NSE's own historical-data endpoint refreshes
+Stocks one at a time, falling back to Yahoo Finance on an NSE miss
+(ADR-046) — both opportunistic, `after()`-triggered, same "due since the
+history table's own last row" posture as the existing backup refresh.
+XIRR (Newton-Raphson with a bisection fallback, `core/portfolio/
+valuations/xirr.ts`) is computed per Instrument using the NAV's own
+recorded date as the terminal cashflow date, never wall-clock "today." A
+cut-down Holding-integrity signal (`VERIFIED`/`SNAPSHOT_ONLY`/`undefined`,
+not Folioman's full five-state reconciliation) compares the
+transaction-implied position against the latest observed snapshot.
+
+**Still deferred, deliberately:** capital-gains/tax computation (LTCG/
+STCG, Schedule 112A), corporate-action (bonus/split) detection or replay,
+partial-history chaining, automatic Folio-identity reconciliation between
+a tradebook's manually-typed Folio and an eCAS's auto-derived one (a UI
+nudge showing the derived number exists; no merge algorithm), retry/
+backoff on the Yahoo feed, and demat-held Mutual Fund/Bond holdings from
+an eCAS (no BOND instrument type exists to receive one).
 
 ## Reports
 
-MVP basic reports consume ledger data.
+Basic reports consume ledger data read-side only (income, expenses,
+account balances, transaction trends, tag-filtered views).
 
 ## Insights / AI
 

@@ -1,6 +1,6 @@
-import type { Db } from "../db/client";
+import type { Db } from "../persistence/client";
 import type { BackupSettingsRow } from "../repositories/backupSettings";
-import { setAutomaticBackupEnabled } from "../use-cases/backups";
+import { setAutomaticBackupEnabled } from "../services/backups";
 import { setAutomaticBackupEnabledSchema } from "./schemas";
 import { fromThrown, invalidInput, ok, type ActionResult } from "./result";
 

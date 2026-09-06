@@ -1,6 +1,6 @@
 import { Wallet } from "lucide-react";
-import { db } from "@/server/db/client";
-import { getAccountBalances } from "@/server/use-cases/accounts";
+import { db } from "@/server/persistence/client";
+import { getAccountBalances } from "@/server/services/accounts";
 import { CardPanelFigure } from "./card-panel-figure";
 
 // Runtime-derived, never persisted (spec §7/§27) — Assets minus
@@ -26,6 +26,7 @@ export async function NetWorthPanel({
       currency={currency}
       colorClassName={netWorth >= 0 ? "text-success" : "text-destructive"}
       icon={Wallet}
+      href="/accounts"
     />
   );
 }

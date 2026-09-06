@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { db } from "@/server/db/client";
+import { db } from "@/server/persistence/client";
 import { requirePrimaryUser } from "@/server/authz";
-import { getProfile } from "@/server/use-cases/profiles";
-import { listCurrencies } from "@/server/use-cases/currencies";
+import { getProfile } from "@/server/services/profiles";
+import { listCurrencies } from "@/server/services/currencies";
+import { decryptPan, maskPan } from "@/server/security/pan";
 import { ProfileForm } from "@/components/profile-form";
 import { PrimaryCurrencyForm } from "@/components/primary-currency-form";
+import { PanForm } from "@/components/pan-form";
 import { CleanUpContentButton } from "@/components/clean-up-content-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -28,20 +30,24 @@ export default async function EditProfilePage(props: PageProps<"/settings/profil
   const profile = getProfile(db, profileId);
   if (!profile) notFound();
   const currencies = listCurrencies(db, profileId);
+  const maskedPan = profile.panEncrypted ? maskPan(decryptPan(profile.panEncrypted)) : null;
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 p-4">
-      <Link
-        href="/settings/profiles"
-        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-3.5" aria-hidden="true" />
-        Back to Profiles
-      </Link>
+    <div className="mx-auto flex max-w-2xl flex-col gap-4">
+      <div>
+        <Link
+          href="/settings/profiles"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          Manage Profiles
+        </Link>
+        <h1 className="text-xl font-semibold">Edit Profile</h1>
+      </div>
 
       <Card>
         <CardHeader>
-          <CardTitle as="h1">Edit Profile</CardTitle>
+          <CardTitle>Name</CardTitle>
         </CardHeader>
         <CardContent>
           <ProfileForm submitLabel="Save" mode="edit" profile={{ id: profile.id, name: profile.name }} />
@@ -66,6 +72,19 @@ export default async function EditProfilePage(props: PageProps<"/settings/profil
 
       <Card>
         <CardHeader>
+          <CardTitle>PAN</CardTitle>
+          <CardDescription>
+            Checked against every CAS statement imported for this Profile — an import from a
+            different PAN is rejected.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <PanForm profileId={profile.id} maskedPan={maskedPan} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Clean Up Content</CardTitle>
           <CardDescription>
             Permanently delete all Accounts, Transactions, and other financial data in this
@@ -76,6 +95,6 @@ export default async function EditProfilePage(props: PageProps<"/settings/profil
           <CleanUpContentButton profileId={profileId} />
         </CardContent>
       </Card>
-    </main>
+    </div>
   );
 }
