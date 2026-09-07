@@ -18,6 +18,7 @@ export {
   PANEL_DIMENSIONS_BY_KEY,
   PANEL_NAME_BY_KEY,
   PANEL_DESCRIPTION_BY_KEY,
+  PANEL_DASHBOARD_BY_KEY,
   RECENT_EXPENSES_PERIODS,
   BALANCES_ACCOUNT_SCOPES,
   PANEL_DEFAULT_CONFIG,
@@ -25,6 +26,10 @@ export {
   validateDashboard,
   isPanelKey,
   validateDashboardPanelPlacement,
+  DASHBOARD_CONTEXTS,
+  DASHBOARD_CONTEXT_LABEL,
+  SPENDING_HEATMAP_BANDS,
+  spendingHeatmapBand,
 } from "./dashboard";
 export type {
   PanelCategory,
@@ -42,4 +47,5 @@ export type {
   DashboardInput,
   DashboardViolation,
   DashboardPanelViolation,
+  DashboardContext,
 } from "./dashboard";

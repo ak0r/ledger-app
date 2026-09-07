@@ -1,14 +1,20 @@
 import { toMinorUnits, type ImportDirection, type NormalizedImportRow } from "@/core";
-import { PasswordRequiredError, UnsupportedImportFormatError } from "../services/errors";
+import { UnrecognizedImportFormatError } from "../services/errors";
 import { MONTHS, parseAmount } from "./shared";
+import { readItems, mergeAnchors, type TextItem } from "./pdfTextExtraction";
 import type { ImportAdapter, ParsedFile } from "./types";
 
 // First PDF adapter — a genuinely different shape from the XLS/CSV
 // adapters: no cells/rows, just positioned text. Federal Bank statements
 // are password-protected by the bank itself (never handled here at rest —
-// the password is used once, for the single `getDocument()` call below,
-// and is never written to a variable that outlives this function, let
-// alone to disk/DB/logs).
+// the password is used once, for the single `getDocument()` call inside
+// `readItems`, and is never written to a variable that outlives this
+// function, let alone to disk/DB/logs). The pdfjs-dist text-extraction
+// machinery itself (`readItems`/`mergeAnchors`/`TextItem`) lives in
+// `pdfTextExtraction.ts` — shared with the PDF Custom Importer path,
+// which needs the same positioned-text primitive but derives its own
+// column anchors from a user-drawn crop region instead of this adapter's
+// header-anchored approach.
 const PDF_MAGIC = "%PDF-";
 const DATE_ROW_PATTERN = /^\d{2}-[A-Za-z]{3}-\d{4}$/;
 const ACCOUNT_NUMBER_PATTERN = /Account Number\s*:\s*(\d+)/i;
@@ -25,77 +31,11 @@ const COLUMN = {
   withdrawals: 6,
   deposits: 7,
 } as const;
-// Header cells that sit close enough in x to merge into one anchor are
-// genuinely two lines of the same column label (e.g. "Tran"/"Type",
-// "Cheque"/"Details") — not two different columns.
-const ANCHOR_MERGE_TOLERANCE = 6;
 // Physical text lines within this y-distance are the same visual line
 // (font metrics/rounding can put two same-line items a fraction of a point
 // apart) — much smaller than the ~8.4pt gap observed between a
 // transaction's first line and its wrapped Particulars continuation line.
 const LINE_MERGE_TOLERANCE = 2;
-
-interface TextItem {
-  str: string;
-  x: number;
-  y: number;
-  page: number;
-}
-
-// pdfjs-dist's Node ("legacy") build normally spins up its text-extraction
-// work via a dynamically-`import()`ed worker module — that dynamic import
-// uses a runtime-computed path pdfjs builds internally, which Turbopack's
-// server bundle can't resolve (it isn't a static specifier it can trace).
-// Registering the worker module on `globalThis.pdfjsWorker` up front makes
-// pdfjs use it directly instead, skipping that broken dynamic import
-// entirely — the standard workaround for pdfjs-dist under bundlers other
-// than webpack/vite (which its own internal import is hand-tuned for).
-let workerRegistered = false;
-async function registerWorker(): Promise<void> {
-  if (workerRegistered) return;
-  const worker = await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
-  (globalThis as unknown as { pdfjsWorker?: unknown }).pdfjsWorker = worker;
-  workerRegistered = true;
-}
-
-async function readItems(buffer: Buffer, password: string | undefined): Promise<TextItem[]> {
-  await registerWorker();
-  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  let doc;
-  try {
-    doc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer), password, verbosity: 0 }).promise;
-  } catch (error) {
-    if (error instanceof pdfjsLib.PasswordException) {
-      throw new PasswordRequiredError(
-        error.code === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD ? "incorrect" : "required",
-      );
-    }
-    throw error;
-  }
-
-  const items: TextItem[] = [];
-  for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber++) {
-    const page = await doc.getPage(pageNumber);
-    const content = await page.getTextContent();
-    for (const item of content.items) {
-      // `getTextContent()` items can be `TextMarkedContent` (no `str`) —
-      // narrow to the text-bearing shape before reading its position.
-      if (!("str" in item) || item.str.trim() === "") continue;
-      items.push({ str: item.str, x: item.transform[4], y: item.transform[5], page: pageNumber });
-    }
-  }
-  return items;
-}
-
-function mergeAnchors(xs: number[]): number[] {
-  const sorted = [...xs].sort((a, b) => a - b);
-  const merged: number[] = [];
-  for (const x of sorted) {
-    const last = merged[merged.length - 1];
-    if (last === undefined || x - last > ANCHOR_MERGE_TOLERANCE) merged.push(x);
-  }
-  return merged;
-}
 
 // Column anchors come from wherever "Particulars" appears in the header —
 // its own x plus every other header-row item's x, on that same page/line
@@ -184,12 +124,12 @@ export const federalAccountPdfAdapter: ImportAdapter = {
     const items = await readItems(buffer, password);
 
     if (!items.some((item) => INSTITUTION_MARKER.test(item.str))) {
-      throw new UnsupportedImportFormatError(`expected a Federal Bank account statement`);
+      throw new UnrecognizedImportFormatError(`expected a Federal Bank account statement`);
     }
 
     const anchors = findColumnAnchors(items);
     if (!anchors) {
-      throw new UnsupportedImportFormatError(`expected a Federal Bank account statement with a "Particulars" column`);
+      throw new UnrecognizedImportFormatError(`expected a Federal Bank account statement with a "Particulars" column`);
     }
 
     const accountIdentifier = findAccountIdentifier(items);

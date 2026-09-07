@@ -8,8 +8,16 @@ import { findAccountIdentifiersByProfile, insertAccountIdentifier } from "../rep
 import { createProfile } from "./profiles";
 import { createCurrency } from "./currencies";
 import { createAccount } from "./accounts";
-import { commitImport, listImports, previewImport, type CommitImportFile } from "./imports";
-import { NotFoundError, UnsupportedImportFormatError } from "./errors";
+import * as XLSX from "xlsx";
+import {
+  commitImport,
+  listImports,
+  previewCustomPdfImport,
+  previewCustomXlsImport,
+  previewImport,
+  type CommitImportFile,
+} from "./imports";
+import { NotFoundError, UnrecognizedImportFormatError } from "./errors";
 
 // Synthetic fixture (AGENTS.md rules #23-#25) — no real account/personal data.
 const HDFC_FIXTURE = readFileSync(
@@ -66,18 +74,129 @@ describe("previewImport", () => {
     );
   });
 
-  it("throws UnsupportedImportFormatError when no adapter detects the file", async () => {
+  it("throws UnrecognizedImportFormatError when no adapter recognizes the file", async () => {
     const db = createTestDb();
     const { profile } = setUpLedger(db);
     await expect(
       previewImport(db, { profileId: profile.id, filename: "statement.csv", fileBase64: toBase64(""), fileKey: "f" }),
-    ).rejects.toThrow(UnsupportedImportFormatError);
+    ).rejects.toThrow(UnrecognizedImportFormatError);
+  });
+});
+
+// Ledger Custom Importer delta — `previewCustomXlsImport`/
+// `previewCustomPdfImport` reuse the exact same account-resolution/
+// candidate-building path as `previewImport` (`buildPreviewFromRows`
+// internally) — these tests confirm that reuse, not the mapping logic
+// itself (customImportMapping.test.ts already covers that in isolation).
+describe("previewCustomXlsImport", () => {
+  function toXlsBase64(rows: string[][]): string {
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "Sheet1");
+    return (XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer).toString("base64");
+  }
+
+  it("applies a confirmed column mapping and resolves accounts the same way an adapter-based import does", async () => {
+    const db = createTestDb();
+    const { profile } = setUpLedger(db);
+    const fileBase64 = toXlsBase64([
+      ["Date", "Description", "Debit", "Credit"],
+      ["2026-08-01", "Coffee", "150", ""],
+      ["2026-08-02", "Salary", "", "50000"],
+    ]);
+
+    const preview = await previewCustomXlsImport(db, {
+      profileId: profile.id,
+      filename: "statement.xlsx",
+      fileBase64,
+      fileKey: "f",
+      mapping: {
+        dateColumn: 0,
+        dateFormat: "ISO",
+        descriptionColumn: 1,
+        amountShape: { kind: "debitCredit", debitColumn: 2, creditColumn: 3 },
+        referenceColumn: null,
+      },
+    });
+
+    expect(preview.source).toBe("custom.xls.manual");
+    expect(preview.accountResolution.status).toBe("unidentified");
+    expect(preview.candidates).toHaveLength(2);
+    expect(preview.newAccounts).toEqual(
+      expect.arrayContaining([
+        { key: "EXPENSE:unknown", classification: "EXPENSE", name: "Unknown" },
+        { key: "INCOME:unknown", classification: "INCOME", name: "Unknown" },
+      ]),
+    );
+  });
+
+  it("throws UnsupportedImportFormatError when the mapping yields no importable rows", async () => {
+    const db = createTestDb();
+    const { profile } = setUpLedger(db);
+    const fileBase64 = toXlsBase64([["Date", "Description", "Debit", "Credit"]]);
+
+    await expect(
+      previewCustomXlsImport(db, {
+        profileId: profile.id,
+        filename: "statement.xlsx",
+        fileBase64,
+        fileKey: "f",
+        mapping: {
+          dateColumn: 0,
+          dateFormat: "ISO",
+          descriptionColumn: 1,
+          amountShape: { kind: "debitCredit", debitColumn: 2, creditColumn: 3 },
+          referenceColumn: null,
+        },
+      }),
+    ).rejects.toThrow("no importable rows found");
+  });
+});
+
+describe("previewCustomPdfImport", () => {
+  // Reuses the same synthetic Federal Bank fixture as federalAccountPdf's
+  // own tests (AGENTS.md rules #23-#25 — fabricated data throughout).
+  const PDF_FIXTURE_BASE64 = readFileSync(
+    path.join(import.meta.dirname, "../../../fixtures/imports/federal/account/sample.pdf"),
+  ).toString("base64");
+  const PDF_PASSWORD = "AMIT2807";
+
+  it("applies a crop + column mapping and resolves accounts the same way an adapter-based import does", async () => {
+    const db = createTestDb();
+    const { profile } = setUpLedger(db);
+
+    // A wide-open crop (the whole page) — this test exercises the
+    // preview/resolution wiring, not crop-bounds filtering itself
+    // (pdfTextExtraction.test.ts already covers that precisely).
+    const wideRect = { x0: 0, y0: -1000, x1: 10_000, y1: 10_000 };
+    const preview = await previewCustomPdfImport(db, {
+      profileId: profile.id,
+      filename: "statement.pdf",
+      fileBase64: PDF_FIXTURE_BASE64,
+      fileKey: "f",
+      pages: [
+        { pageNumber: 1, cropRect: wideRect },
+        { pageNumber: 2, cropRect: wideRect },
+      ],
+      mapping: {
+        dateColumn: 0,
+        dateFormat: "DD_MON_YYYY",
+        descriptionColumn: 2,
+        amountShape: { kind: "debitCredit", debitColumn: 6, creditColumn: 7 },
+        referenceColumn: null,
+      },
+      password: PDF_PASSWORD,
+    });
+
+    expect(preview.source).toBe("custom.pdf.manual");
+    expect(preview.accountResolution.status).toBe("unidentified");
+    expect(preview.transactionCount).toBeGreaterThan(0);
   });
 });
 
 // Account Resolution delta (2026-08-26) §10-§16 — driven against the
 // synthetic HDFC fixture (AGENTS.md rules #23-#25 — fabricated account
-// number 00001234567890, no real data) so `detectAdapter` +
+// number 00001234567890, no real data) so `resolveImport` +
 // `hdfcAccountXlsAdapter.parse` + the resolution engine are exercised
 // together exactly as the browser flow does, not just the pure matcher.
 describe("previewImport — account resolution", () => {

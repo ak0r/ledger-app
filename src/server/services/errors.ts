@@ -187,6 +187,39 @@ export class UnsupportedImportFormatError extends Error {
   }
 }
 
+// A candidate adapter's own `detect()` said "maybe" (a cheap, sometimes
+// necessarily loose check — e.g. Federal Bank's PDF adapter can only check
+// magic bytes before password-protected content is ever readable), but its
+// `parse()` then determined the file isn't actually a match after all
+// (Ledger Custom Importer delta — `resolveImport`, `server/importers/
+// index.ts`). Distinct from `UnsupportedImportFormatError`: this means
+// "not mine, try the next candidate / fall back to Custom Importer," never
+// "recognized as mine but broken" — resolveImport only treats this one
+// error type as non-fatal for a candidate; every other throw (including
+// PasswordRequiredError) still propagates immediately.
+export class UnrecognizedImportFormatError extends Error {
+  constructor(reason: string) {
+    super(`Could not recognize this file's format: ${reason}`);
+    this.name = "UnrecognizedImportFormatError";
+  }
+}
+
+// More than one registered adapter's `parse()` succeeded on the same file
+// (Ledger Custom Importer delta) — with today's adapter set this shouldn't
+// actually be reachable (each institution-specific adapter's own `detect()`
+// already does a real content check, and the two format-agnostic adapters,
+// Federal PDF and generic CSV, can't both parse the same bytes), but a
+// future adapter could collide. Surfaced honestly rather than silently
+// picking one, per the same "review new source data before guessing"
+// posture as PAN mismatch/wrong-statement-type rejection elsewhere in this
+// codebase.
+export class AmbiguousImportFormatError extends Error {
+  constructor(matchedLabels: readonly string[]) {
+    super(`Multiple importers recognized this file (${matchedLabels.join(", ")}) — this needs a closer look.`);
+    this.name = "AmbiguousImportFormatError";
+  }
+}
+
 // A CAS PDF's own investor PAN (casparser's per-folio `PAN` field) doesn't
 // match this Profile's registered PAN (`profiles.panHash`) — thrown before
 // anything from the statement is persisted (Portfolio Adoption Plan's PAN

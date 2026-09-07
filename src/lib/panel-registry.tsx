@@ -12,6 +12,14 @@ import { RecentExpensesPanel } from "@/components/dashboard-panels/recent-expens
 import { RecentTransactionsPanel } from "@/components/dashboard-panels/recent-transactions-panel";
 import { BudgetsNeedingReviewPanel } from "@/components/dashboard-panels/budgets-needing-review-panel";
 import { PortfolioValuePanel } from "@/components/dashboard-panels/portfolio-value-panel";
+import { MonthlySnapshotPanel } from "@/components/dashboard-panels/monthly-snapshot-panel";
+import { SpendingTrendPanel } from "@/components/dashboard-panels/spending-trend-panel";
+import { RecurringExpensesPanel } from "@/components/dashboard-panels/recurring-expenses-panel";
+import { DailySpendingHeatmapPanel } from "@/components/dashboard-panels/daily-spending-heatmap-panel";
+import { SavingsRatePanel } from "@/components/dashboard-panels/savings-rate-panel";
+import { CreditCardHealthPanel } from "@/components/dashboard-panels/credit-card-health-panel";
+import { BudgetHealthPanel } from "@/components/dashboard-panels/budget-health-panel";
+import { AttentionPanel } from "@/components/dashboard-panels/attention-panel";
 
 // The Panel Registry's rendering half (spec §8) — server-only, since every
 // panel component reads the database directly. Import this ONLY from a
@@ -44,5 +52,21 @@ export function renderPanelContent(
       return <BudgetsNeedingReviewPanel profileId={profileId} currency={currency} />;
     case "PORTFOLIO_VALUE":
       return <PortfolioValuePanel profileId={profileId} currency={currency} />;
+    case "MONTHLY_SNAPSHOT":
+      return <MonthlySnapshotPanel profileId={profileId} currency={currency} />;
+    case "SPENDING_TREND":
+      return <SpendingTrendPanel profileId={profileId} currency={currency} />;
+    case "RECURRING_EXPENSES":
+      return <RecurringExpensesPanel profileId={profileId} currency={currency} />;
+    case "DAILY_SPENDING_HEATMAP":
+      return <DailySpendingHeatmapPanel profileId={profileId} currency={currency} />;
+    case "SAVINGS_RATE":
+      return <SavingsRatePanel profileId={profileId} currency={currency} />;
+    case "CREDIT_CARD_HEALTH":
+      return <CreditCardHealthPanel profileId={profileId} currency={currency} />;
+    case "BUDGET_HEALTH":
+      return <BudgetHealthPanel profileId={profileId} currency={currency} />;
+    case "ATTENTION":
+      return <AttentionPanel profileId={profileId} currency={currency} />;
   }
 }

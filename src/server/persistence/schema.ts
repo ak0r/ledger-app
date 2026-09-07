@@ -38,6 +38,7 @@ import type {
   BudgetScopeSnapshot,
   PanelKey,
   PanelConfigByKey,
+  DashboardContext,
   InvestmentTransactionType,
   InvestmentTransactionSource,
   PortfolioImportKind,
@@ -438,11 +439,17 @@ export const postings = sqliteTable("postings", {
 });
 
 // Dashboard and Panels delta (docs/completed/2026-09-02-Dashboard-and-Panels.md)
-// §27 — a UI composition layer, not a financial data store. Phase 1 is one
-// default Dashboard per Profile (`isDefault` always true today), but the
-// model allows more later (spec §4) — no uniqueness constraint on
-// `isDefault` at the schema level, enforced at the application layer
-// instead (same posture as every other cross-row invariant in this file).
+// §27 — a UI composition layer, not a financial data store. Extended by
+// the Dashboard System Phase 1 delta (2026-09-06) with `context` — one
+// Dashboard per (Profile, context) now, not one per Profile; `isDefault`
+// stays `true` on every row (every context's Dashboard is "the" one for
+// that context, Phase 1 has no multiple-Dashboards-per-context concept
+// yet) — left inert rather than repurposed, this codebase's own posture
+// for a superseded-but-not-dropped column. Uniqueness on
+// `(profile_id, context)` is a DB-level partial-adjacent unique index
+// (see the migration SQL), not enforced here — same "SQLite composite
+// uniqueness via migration SQL, not drizzle syntax" precedent as
+// `investment_transactions`'s own `dedup_key` index (ADR-041).
 export const dashboards = sqliteTable("dashboards", {
   id: id(),
   profileId: text("profile_id")
@@ -450,6 +457,7 @@ export const dashboards = sqliteTable("dashboards", {
     .references(() => profiles.id),
   name: text("name").notNull(),
   isDefault: integer("is_default", { mode: "boolean" }).notNull().default(true),
+  context: text("context").notNull().default("FINANCIAL").$type<DashboardContext>(),
   ...timestamps,
 });
 

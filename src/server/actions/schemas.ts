@@ -5,6 +5,7 @@
 // the DB and can only happen in the domain/use-case layer (Phase 3/4),
 // which every action still runs after this parse succeeds (rule #17).
 import { z } from "zod";
+import { DATE_FORMATS } from "@/core";
 import {
   BALANCES_ACCOUNT_SCOPES,
   BUDGET_FILTER_MATCHES,
@@ -302,6 +303,82 @@ export const previewImportSchema = z.object({
   // Password-protected import files (Federal Bank Account PDF adapter) —
   // used only for this one preview parse, never persisted (rule: never
   // store a statement password). Absent for every non-encrypted adapter.
+  password: z.string().optional(),
+});
+
+// Ledger Custom Importer delta — the column mapping and crop-region shapes
+// a user confirms in the client's mapping/crop UI, re-validated here
+// (rule #17: domain/application validation must not be replaced by UI
+// validation) rather than trusted as given. Column references are plain
+// indices, not names — see core/ledger/statements/customImport.ts's own
+// reasoning.
+const amountShapeSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("debitCredit"),
+    debitColumn: z.number().int().nonnegative(),
+    creditColumn: z.number().int().nonnegative(),
+  }),
+  z.object({
+    kind: z.literal("amountDirection"),
+    amountColumn: z.number().int().nonnegative(),
+    directionColumn: z.number().int().nonnegative(),
+  }),
+]);
+
+const columnMappingSchema = z.object({
+  dateColumn: z.number().int().nonnegative(),
+  dateFormat: z.enum(DATE_FORMATS),
+  descriptionColumn: z.number().int().nonnegative(),
+  amountShape: amountShapeSchema,
+  referenceColumn: z.number().int().nonnegative().nullable(),
+});
+
+const pdfRectSchema = z
+  .object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() })
+  .refine((rect) => rect.x1 > rect.x0 && rect.y1 > rect.y0, "Invalid crop rectangle");
+
+const pdfCropPageSchema = z.object({
+  pageNumber: z.number().int().positive(),
+  cropRect: pdfRectSchema,
+});
+
+export const previewCustomXlsImportSchema = z.object({
+  profileId: z.string().min(1),
+  filename: z.string().trim().min(1),
+  fileBase64: z.string().min(1, "File is empty"),
+  fileKey: z.string().min(1),
+  mapping: columnMappingSchema,
+});
+
+export const previewCustomPdfImportSchema = z.object({
+  profileId: z.string().min(1),
+  filename: z.string().trim().min(1),
+  fileBase64: z.string().min(1, "File is empty"),
+  fileKey: z.string().min(1),
+  pages: z.array(pdfCropPageSchema).min(1, "Select at least one page"),
+  mapping: columnMappingSchema,
+  password: z.string().optional(),
+});
+
+// These three read no Profile data at all (pure file parsing) — no
+// `profileId` field, unlike every schema above. The action layer still
+// requires a logged-in session (`requireActiveProfile()`) before calling
+// them, same auth gate as every other action; there's just nothing
+// Profile-scoped inside the parse itself. They feed the client's
+// page-selector/crop-editor/ColumnMappingForm round-trips, before the
+// user has confirmed a mapping/crop yet.
+export const readRawXlsTableSchema = z.object({
+  fileBase64: z.string().min(1, "File is empty"),
+});
+
+export const getPdfPageCountSchema = z.object({
+  fileBase64: z.string().min(1, "File is empty"),
+  password: z.string().optional(),
+});
+
+export const extractPdfCropPreviewSchema = z.object({
+  fileBase64: z.string().min(1, "File is empty"),
+  pages: z.array(pdfCropPageSchema).min(1, "Select at least one page"),
   password: z.string().optional(),
 });
 

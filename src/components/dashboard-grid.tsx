@@ -43,10 +43,12 @@ export function DashboardGrid({
   dashboardId,
   panels,
   accounts,
+  eligiblePanels,
 }: {
   dashboardId: string;
   panels: { panel: DashboardPanelRow; content: React.ReactNode }[];
   accounts: { id: string; name: string }[];
+  eligiblePanels: { key: PanelKey; eligibility: { eligible: boolean; reason?: string } }[];
 }) {
   const router = useRouter();
   const [configuringPanelId, setConfiguringPanelId] = useState<string | null>(null);
@@ -94,7 +96,7 @@ export function DashboardGrid({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex justify-end">
-        <PanelCatalogueSheet dashboardId={dashboardId} />
+        <PanelCatalogueSheet dashboardId={dashboardId} eligiblePanels={eligiblePanels} />
       </div>
 
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
@@ -229,7 +231,7 @@ function DraggablePanel({
         <span className="flex min-w-0 items-center gap-1 text-xs font-medium text-muted-foreground">
           <button
             type="button"
-            className="shrink-0 cursor-grab touch-none opacity-0 transition-opacity active:cursor-grabbing group-hover:opacity-100"
+            className="relative shrink-0 cursor-grab touch-none opacity-0 transition-opacity active:cursor-grabbing group-hover:opacity-100 [@media(pointer:coarse)]:before:absolute [@media(pointer:coarse)]:before:inset-[-10px] [@media(pointer:coarse)]:before:content-['']"
             aria-label="Drag to move panel"
             {...(mounted ? attributes : undefined)}
             {...(mounted ? listeners : undefined)}

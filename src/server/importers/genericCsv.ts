@@ -1,23 +1,18 @@
 import Papa from "papaparse";
 import { toMinorUnits, type ImportDirection, type NormalizedImportRow } from "@/core";
-import { UnsupportedImportFormatError } from "../services/errors";
-import { parseAmount } from "./shared";
+import { UnrecognizedImportFormatError } from "../services/errors";
+import {
+  AMOUNT_COLUMNS,
+  CREDIT_COLUMNS,
+  DATE_COLUMNS,
+  DEBIT_COLUMNS,
+  DESCRIPTION_COLUMNS,
+  DIRECTION_COLUMNS,
+  REFERENCE_COLUMNS,
+  findColumn,
+  parseAmount,
+} from "./shared";
 import type { ImportAdapter, ParsedFile } from "./types";
-
-// Header aliases accepted case-insensitively (delta §5 — "Generic CSV ->
-// Column mapping / parsing"). Real bank exports vary on naming; this covers
-// the common ones without trying to be exhaustive.
-const DATE_COLUMNS = ["date"];
-const DESCRIPTION_COLUMNS = ["description", "narration"];
-const DEBIT_COLUMNS = ["debit"];
-const CREDIT_COLUMNS = ["credit"];
-const AMOUNT_COLUMNS = ["amount"];
-const DIRECTION_COLUMNS = ["type", "direction"];
-const REFERENCE_COLUMNS = ["reference", "ref"];
-
-function findColumn(headers: readonly string[], candidates: readonly string[]): string | undefined {
-  return headers.find((header) => candidates.includes(header.trim().toLowerCase()));
-}
 
 function parseDirection(raw: string): ImportDirection | undefined {
   const normalized = raw.trim().toLowerCase();
@@ -47,7 +42,7 @@ export const genericCsvAdapter: ImportAdapter = {
     const dateColumn = findColumn(headers, DATE_COLUMNS);
     const descriptionColumn = findColumn(headers, DESCRIPTION_COLUMNS);
     if (!dateColumn || !descriptionColumn) {
-      throw new UnsupportedImportFormatError(
+      throw new UnrecognizedImportFormatError(
         `expected a "date" column and a "description"/"narration" column`,
       );
     }
@@ -61,7 +56,7 @@ export const genericCsvAdapter: ImportAdapter = {
     const useDebitCredit = Boolean(debitColumn && creditColumn);
     const useAmountDirection = Boolean(amountColumn && directionColumn);
     if (!useDebitCredit && !useAmountDirection) {
-      throw new UnsupportedImportFormatError(
+      throw new UnrecognizedImportFormatError(
         `expected either "debit"/"credit" columns or "amount"/"type" columns`,
       );
     }

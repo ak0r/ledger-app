@@ -3,7 +3,11 @@ import {
   isPossibleIdentifierMatch,
   resolveUnknownCounterAccount,
   validateTransaction,
+  type ColumnMapping,
   type ImportDirection,
+  type NormalizedImportRow,
+  type PdfCropPage,
+  type RawTable,
 } from "@/core";
 import type { Db } from "../persistence/client";
 import type { InstrumentType } from "../persistence/schema";
@@ -22,7 +26,14 @@ import {
 import { insertImportFile, findImportFilesByProfile, type ImportFileRow } from "../repositories/importFiles";
 import { insertPostings, insertTransaction } from "../repositories/transactions";
 import type { PostingRow, TransactionRow } from "../repositories/transactions";
-import { detectAdapter } from "../importers";
+import {
+  resolveImport,
+  readXlsRows,
+  buildRowsFromMapping,
+  suggestColumnMapping,
+  extractCroppedTable,
+  getPageCount,
+} from "../importers";
 import { NotFoundError, TransactionValidationError, UnsupportedImportFormatError } from "./errors";
 import { derivePostings, type PostingInput } from "./transactions";
 
@@ -178,28 +189,47 @@ export interface PreviewImportInput {
 export async function previewImport(db: Db, input: PreviewImportInput): Promise<ImportPreview> {
   const buffer = Buffer.from(input.fileBase64, "base64");
 
-  const adapter = detectAdapter(input.filename, buffer);
-  if (!adapter) {
-    throw new UnsupportedImportFormatError(`could not detect a supported file format for "${input.filename}"`);
-  }
-
-  // MVP is single-currency-per-profile (INR-only, rule #7) — the scale
-  // doesn't depend on which Account the file resolves to.
   const currency = findCurrenciesByProfile(db, input.profileId)[0];
   if (!currency) {
     throw new NotFoundError(`No currency configured for profile ${input.profileId}`);
   }
 
-  const parsed = await adapter.parse(buffer, currency.minorUnitScale, input.password);
+  const { adapter, parsed } = await resolveImport(input.filename, buffer, currency.minorUnitScale, input.password);
   if (parsed.rows.length === 0) {
     throw new UnsupportedImportFormatError("no importable rows found in file");
   }
 
-  const accountResolution = resolveAccountForFile(db, input.profileId, parsed.accountIdentifier, adapter.institutionLabel);
-  const existingAccounts = findAccountsByProfile(db, input.profileId);
+  return buildPreviewFromRows(
+    db,
+    input.profileId,
+    input.fileKey,
+    adapter.id,
+    parsed.rows,
+    parsed.accountIdentifier,
+    adapter.institutionLabel,
+  );
+}
+
+// Ledger Custom Importer delta — the account-resolution + candidate-
+// building logic every import source shares once it's reduced to
+// `NormalizedImportRow[]`, whether those rows came from a registered
+// adapter (`previewImport` above) or a user's own column mapping
+// (`previewCustomXlsImport`/`previewCustomPdfImport` below). Kept as one
+// function so this logic is never duplicated per source.
+function buildPreviewFromRows(
+  db: Db,
+  profileId: string,
+  fileKey: string,
+  source: string,
+  rows: NormalizedImportRow[],
+  accountIdentifier: string | null,
+  institutionLabel: string,
+): ImportPreview {
+  const accountResolution = resolveAccountForFile(db, profileId, accountIdentifier, institutionLabel);
+  const existingAccounts = findAccountsByProfile(db, profileId);
   const newAccountsByKey = new Map<string, NewAccountDescriptor>();
 
-  const candidates: PreviewCandidate[] = parsed.rows.map((row) => {
+  const candidates: PreviewCandidate[] = rows.map((row) => {
     const descriptor = resolveUnknownCounterAccount(row.direction);
     const key = counterAccountKey(descriptor.classification, descriptor.name);
     const existingId = findExistingCounterAccountId(existingAccounts, descriptor.classification, descriptor.name);
@@ -208,7 +238,7 @@ export async function previewImport(db: Db, input: PreviewImportInput): Promise<
     }
 
     return {
-      fileKey: input.fileKey,
+      fileKey,
       date: row.date,
       description: row.description,
       amountMinor: row.amountMinor,
@@ -220,10 +250,10 @@ export async function previewImport(db: Db, input: PreviewImportInput): Promise<
     };
   });
 
-  const dates = parsed.rows.map((row) => row.date).sort();
+  const dates = rows.map((row) => row.date).sort();
 
   return {
-    source: adapter.id,
+    source,
     accountResolution,
     candidates,
     newAccounts: [...newAccountsByKey.values()],
@@ -231,6 +261,96 @@ export async function previewImport(db: Db, input: PreviewImportInput): Promise<
     dateRangeEnd: dates[dates.length - 1] ?? null,
     transactionCount: candidates.length,
   };
+}
+
+export interface PreviewCustomXlsImportInput {
+  profileId: string;
+  filename: string;
+  fileBase64: string;
+  fileKey: string;
+  mapping: ColumnMapping;
+}
+
+// Custom Importer, XLS path — the user has already confirmed a column
+// mapping (via `readRawXlsTable` below feeding the client's mapping form);
+// this just applies it and joins the same account-resolution/candidate-
+// building path every other import source uses.
+export async function previewCustomXlsImport(db: Db, input: PreviewCustomXlsImportInput): Promise<ImportPreview> {
+  const currency = findCurrenciesByProfile(db, input.profileId)[0];
+  if (!currency) {
+    throw new NotFoundError(`No currency configured for profile ${input.profileId}`);
+  }
+
+  const buffer = Buffer.from(input.fileBase64, "base64");
+  const table = readRawXlsTable(buffer);
+  const rows = buildRowsFromMapping(table, input.mapping, currency.minorUnitScale);
+  if (rows.length === 0) {
+    throw new UnsupportedImportFormatError("no importable rows found with this column mapping");
+  }
+
+  return buildPreviewFromRows(db, input.profileId, input.fileKey, "custom.xls.manual", rows, null, "Account");
+}
+
+export interface PreviewCustomPdfImportInput {
+  profileId: string;
+  filename: string;
+  fileBase64: string;
+  fileKey: string;
+  pages: PdfCropPage[];
+  mapping: ColumnMapping;
+  password?: string;
+}
+
+// Custom Importer, PDF path — same shape as the XLS path above, fed by a
+// user-drawn crop per selected page instead of a whole spreadsheet.
+export async function previewCustomPdfImport(db: Db, input: PreviewCustomPdfImportInput): Promise<ImportPreview> {
+  const currency = findCurrenciesByProfile(db, input.profileId)[0];
+  if (!currency) {
+    throw new NotFoundError(`No currency configured for profile ${input.profileId}`);
+  }
+
+  const buffer = Buffer.from(input.fileBase64, "base64");
+  const table = await extractCroppedTable(buffer, input.pages, input.password);
+  const rows = buildRowsFromMapping(table, input.mapping, currency.minorUnitScale);
+  if (rows.length === 0) {
+    throw new UnsupportedImportFormatError("no importable rows found with this crop/column mapping");
+  }
+
+  return buildPreviewFromRows(db, input.profileId, input.fileKey, "custom.pdf.manual", rows, null, "Account");
+}
+
+// Thin wrapper so the client's XLS mapping-step round-trip (fetch a
+// RawTable to build the ColumnMappingForm's preview + suggested mapping,
+// before the user has confirmed one yet) doesn't need to reach past this
+// service layer into `readXlsRows` directly.
+export function readRawXlsTable(buffer: Buffer): RawTable {
+  const rows = readXlsRows(buffer);
+  return { rows, headerRowIndex: rows.length > 0 ? 0 : null };
+}
+
+// Wraps customImportMapping.ts's `suggestColumnMapping` so the action/core
+// layer only ever imports from this one service module for every Custom
+// Importer concern, same as every other import path here.
+export function suggestMappingFor(table: RawTable): Partial<ColumnMapping> {
+  return suggestColumnMapping(table);
+}
+
+// The PDF page-selector's own round-trip (how many pages exist, before any
+// crop is drawn) and the crop editor's own round-trip (what a proposed
+// crop actually extracts, before the user has confirmed a column mapping
+// yet) — thin wrappers over `pdfTextExtraction.ts`, kept in this service
+// layer rather than reached directly from the action/core layer, same
+// convention every other import path in this file follows.
+export function getPdfPageCount(buffer: Buffer, password?: string): Promise<number> {
+  return getPageCount(buffer, password);
+}
+
+export function extractPdfCropPreview(
+  buffer: Buffer,
+  pages: PdfCropPage[],
+  password?: string,
+): Promise<RawTable> {
+  return extractCroppedTable(buffer, pages, password);
 }
 
 // Statement direction always maps to the same Posting sides regardless of

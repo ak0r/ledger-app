@@ -8,6 +8,7 @@ import { createTransaction } from "./transactions";
 import {
   addPanel,
   createStarterDashboard,
+  getDashboardForContext,
   getDefaultDashboardWithPanels,
   getExpenseTotalsByPeriod,
   movePanel,
@@ -73,6 +74,62 @@ describe("createStarterDashboard", () => {
       expect(seen.has(key)).toBe(false);
       seen.add(key);
     }
+  });
+});
+
+// Dashboard System Phase 1 delta (2026-09-06) — one Dashboard per
+// (Profile, context), not one per Profile.
+describe("getDashboardForContext", () => {
+  it("creates one Dashboard per context, each with the right context column", () => {
+    const db = createTestDb();
+    const { profile } = setUp(db);
+
+    const financial = getDashboardForContext(db, profile.id, "FINANCIAL");
+    const spending = getDashboardForContext(db, profile.id, "SPENDING");
+    const income = getDashboardForContext(db, profile.id, "INCOME");
+
+    expect(financial.dashboard.context).toBe("FINANCIAL");
+    expect(spending.dashboard.context).toBe("SPENDING");
+    expect(income.dashboard.context).toBe("INCOME");
+    expect(financial.dashboard.id).not.toBe(spending.dashboard.id);
+    expect(spending.dashboard.id).not.toBe(income.dashboard.id);
+  });
+
+  it("only the Financial context gets the Starter Panel layout — Spending/Income start empty", () => {
+    const db = createTestDb();
+    const { profile } = setUp(db);
+
+    const financial = getDashboardForContext(db, profile.id, "FINANCIAL");
+    const spending = getDashboardForContext(db, profile.id, "SPENDING");
+    const income = getDashboardForContext(db, profile.id, "INCOME");
+
+    expect(financial.panels.length).toBeGreaterThan(0);
+    expect(spending.panels).toEqual([]);
+    expect(income.panels).toEqual([]);
+  });
+
+  it("resolving one context lazily creates all 3, not just the one asked for", () => {
+    const db = createTestDb();
+    const { profile } = setUp(db);
+
+    getDashboardForContext(db, profile.id, "SPENDING");
+
+    // Financial/Income should already exist too, resolvable without a
+    // second lazy-create round-trip.
+    const financial = getDashboardForContext(db, profile.id, "FINANCIAL");
+    const income = getDashboardForContext(db, profile.id, "INCOME");
+    expect(financial.dashboard).toBeDefined();
+    expect(income.dashboard).toBeDefined();
+  });
+
+  it("is idempotent — calling twice for the same context returns the same row, not a duplicate", () => {
+    const db = createTestDb();
+    const { profile } = setUp(db);
+
+    const first = getDashboardForContext(db, profile.id, "SPENDING");
+    const second = getDashboardForContext(db, profile.id, "SPENDING");
+
+    expect(first.dashboard.id).toBe(second.dashboard.id);
   });
 });
 

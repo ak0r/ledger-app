@@ -1,5 +1,6 @@
 import type { ZodError } from "zod";
 import {
+  AmbiguousImportFormatError,
   BudgetAllocationValidationError,
   BudgetScopeValidationError,
   BudgetValidationError,
@@ -17,6 +18,7 @@ import {
   PasswordRequiredError,
   RecurringRuleValidationError,
   TransactionValidationError,
+  UnrecognizedImportFormatError,
   UnsupportedCurrencyError,
   UnsupportedImportFormatError,
   WrongStatementTypeError,
@@ -50,6 +52,9 @@ export function fromThrown(error: unknown): ActionResult<never> {
       code: error.reason === "incorrect" ? "PASSWORD_INCORRECT" : "PASSWORD_REQUIRED",
     };
   }
+  if (error instanceof UnrecognizedImportFormatError) {
+    return { success: false, error: error.message, code: "CUSTOM_IMPORTER_REQUIRED" };
+  }
   if (
     error instanceof TransactionValidationError ||
     error instanceof InvestmentTransactionValidationError ||
@@ -67,6 +72,7 @@ export function fromThrown(error: unknown): ActionResult<never> {
     error instanceof IncorrectCurrentPasswordError ||
     error instanceof EmailAlreadyRegisteredError ||
     error instanceof UnsupportedImportFormatError ||
+    error instanceof AmbiguousImportFormatError ||
     error instanceof PanMismatchError ||
     error instanceof MultiPanStatementError ||
     error instanceof WrongStatementTypeError

@@ -99,6 +99,13 @@
       "when": 1788631585081,
       "tag": "0013_complete_logan",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1788700485050,
+      "tag": "0014_careful_shinko_yamashiro",
+      "breakpoints": true
     }
   ]
 }

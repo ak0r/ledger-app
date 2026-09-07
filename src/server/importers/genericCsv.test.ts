@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { UnsupportedImportFormatError } from "../services/errors";
+import { UnrecognizedImportFormatError } from "../services/errors";
 import { genericCsvAdapter } from "./genericCsv";
 
 describe("genericCsvAdapter", () => {
@@ -33,12 +33,12 @@ describe("genericCsvAdapter", () => {
 
   it("throws when neither column shape is present", async () => {
     const csv = ["Date,Description,Foo", "2026-08-01,Coffee,150"].join("\n");
-    await expect(genericCsvAdapter.parse(Buffer.from(csv), 2)).rejects.toThrow(UnsupportedImportFormatError);
+    await expect(genericCsvAdapter.parse(Buffer.from(csv), 2)).rejects.toThrow(UnrecognizedImportFormatError);
   });
 
   it("throws when date/description columns are missing", async () => {
     const csv = ["Debit,Credit", "150,"].join("\n");
-    await expect(genericCsvAdapter.parse(Buffer.from(csv), 2)).rejects.toThrow(UnsupportedImportFormatError);
+    await expect(genericCsvAdapter.parse(Buffer.from(csv), 2)).rejects.toThrow(UnrecognizedImportFormatError);
   });
 
   it("always detects (the fallback adapter)", () => {

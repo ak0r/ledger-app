@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   PANEL_DEFAULT_CONFIG,
   isPanelKey,
+  spendingHeatmapBand,
   validateDashboard,
   validateDashboardPanelPlacement,
   validatePanelConfiguration,
@@ -123,5 +124,34 @@ describe("validatePanelConfiguration", () => {
         code: "INVALID_LIMIT",
       });
     });
+  });
+});
+
+// Fixed anchors per the Dashboard System Phase 1 delta §9: >1000 is
+// exactly band 3 (50% red), >2500 is band 4 (100% red).
+describe("spendingHeatmapBand", () => {
+  it("returns band 0 for zero or negative spend (empty, no color)", () => {
+    expect(spendingHeatmapBand(0)).toBe(0);
+    expect(spendingHeatmapBand(-5)).toBe(0);
+  });
+
+  it("returns band 1 for (0, 500]", () => {
+    expect(spendingHeatmapBand(1)).toBe(1);
+    expect(spendingHeatmapBand(500)).toBe(1);
+  });
+
+  it("returns band 2 for (500, 1000]", () => {
+    expect(spendingHeatmapBand(501)).toBe(2);
+    expect(spendingHeatmapBand(1000)).toBe(2);
+  });
+
+  it("returns band 3 (the >1000 anchor) for (1000, 2500]", () => {
+    expect(spendingHeatmapBand(1001)).toBe(3);
+    expect(spendingHeatmapBand(2500)).toBe(3);
+  });
+
+  it("returns band 4 (the >2500 anchor) for anything above 2500", () => {
+    expect(spendingHeatmapBand(2501)).toBe(4);
+    expect(spendingHeatmapBand(1_000_000)).toBe(4);
   });
 });

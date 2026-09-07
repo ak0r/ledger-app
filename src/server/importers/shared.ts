@@ -1,5 +1,22 @@
 import * as XLSX from "xlsx";
 
+// Header aliases accepted case-insensitively by genericCsv.ts and, for
+// suggesting a default mapping, Custom Importer's own `suggestColumnMapping`
+// (customImportMapping.ts) — hoisted here so the latter has no reason to
+// import a specific adapter module. Real bank exports vary on naming; this
+// covers the common ones without trying to be exhaustive.
+export const DATE_COLUMNS = ["date"];
+export const DESCRIPTION_COLUMNS = ["description", "narration"];
+export const DEBIT_COLUMNS = ["debit"];
+export const CREDIT_COLUMNS = ["credit"];
+export const AMOUNT_COLUMNS = ["amount"];
+export const DIRECTION_COLUMNS = ["type", "direction"];
+export const REFERENCE_COLUMNS = ["reference", "ref"];
+
+export function findColumn(headers: readonly string[], candidates: readonly string[]): string | undefined {
+  return headers.find((header) => candidates.includes(header.trim().toLowerCase()));
+}
+
 // Byte-identical across every XLS adapter (HDFC/Axis/IDFC FIRST) — no bank
 // knowledge here, just reading a workbook's first sheet into raw string rows.
 export function readXlsRows(buffer: Buffer): string[][] {

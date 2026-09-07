@@ -1,6 +1,6 @@
 import type { Route } from "next";
 import Link from "next/link";
-import { ArrowLeft, Coins, PiggyBank, TrendingUp } from "lucide-react";
+import { Coins, PiggyBank, TrendingUp } from "lucide-react";
 import { fromQuantityMinorUnits, type InstrumentBackedType } from "@/core";
 import { db } from "@/server/persistence/client";
 import { listInvestmentTransactionsForInstrument } from "@/server/services/investmentTransactions";
@@ -71,13 +71,17 @@ export async function PortfolioSecurityDetail({
     <div className="flex flex-col gap-4">
       <div>
         {assetClass && (
-          <Link
-            href={assetClass.href}
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="size-4" aria-hidden="true" />
-            {assetClass.label}
-          </Link>
+          <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-sm text-muted-foreground">
+            <Link href="/portfolio" className="hover:text-foreground">
+              Portfolio
+            </Link>
+            <span aria-hidden="true">/</span>
+            <Link href={assetClass.href} className="hover:text-foreground">
+              {assetClass.label}
+            </Link>
+            <span aria-hidden="true">/</span>
+            <span className="text-foreground">{instrumentName}</span>
+          </nav>
         )}
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-lg font-semibold">{instrumentName}</h1>

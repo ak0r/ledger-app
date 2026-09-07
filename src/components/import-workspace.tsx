@@ -1,10 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TYPES_BY_CLASSIFICATION, type Classification, type ImportDirection, type InstrumentType } from "@/core";
-import type { AccountChoice, AccountResolution } from "@/server/services/imports";
-import { previewImportAction, commitImportAction } from "@/server/actions/imports";
+import type { AccountChoice, AccountResolution, ImportPreview } from "@/server/services/imports";
+import {
+  previewImportAction,
+  commitImportAction,
+  previewCustomXlsImportAction,
+  previewCustomPdfImportAction,
+  readRawXlsTableAction,
+  getPdfPageCountAction,
+  extractPdfCropPreviewAction,
+} from "@/server/actions/imports";
+import type { ColumnMapping, DateFormat, PdfCropPage, PdfRect, RawTable } from "@/core";
+import { DATE_FORMATS } from "@/core";
 import { cn, formatDate, formatMoney, humanizeEnum } from "@/lib/utils";
 import { paginate } from "@/lib/pagination";
 import {
@@ -81,6 +91,12 @@ interface WorkspaceFile {
   identifier: string | null;
   resolution: AccountResolution | null;
   accountChoice: AccountChoice | null;
+  // Retained (unlike before the Ledger Custom Importer delta, which
+  // dropped it once `handleFileUploaded` returned) so "Use Custom Importer
+  // instead" can re-run configuration against the same bytes without
+  // asking the user to re-upload — for a success card as an explicit
+  // opt-out of a matched adapter, for a failed card to retry manually.
+  fileBase64: string;
 }
 
 function isSuccessFile(
@@ -327,6 +343,18 @@ export function ImportWorkspace({
     incorrect: boolean;
   } | null>(null);
 
+  // Ledger Custom Importer delta — mirrors `pendingPasswordFile` above: no
+  // registered adapter recognized this file (`CUSTOM_IMPORTER_REQUIRED`),
+  // or the user explicitly chose "Use Custom Importer instead" on an
+  // already-uploaded file's menu. Holds only what's needed to configure
+  // it; nothing here is persisted until the resulting preview is approved
+  // through the exact same commit path every other file uses.
+  const [pendingCustomImportFile, setPendingCustomImportFile] = useState<{
+    filename: string;
+    fileBase64: string;
+    fileKey: string;
+  } | null>(null);
+
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
   const [candidates, setCandidates] = useState<WorkspaceCandidate[]>([]);
   const [resolutionDialog, setResolutionDialog] = useState<
@@ -523,41 +551,18 @@ export function ImportWorkspace({
     );
   }
 
-  async function handleFileUploaded(
-    filename: string,
-    fileBase64: string,
-    fileKey: string = crypto.randomUUID(),
-    password?: string,
-  ) {
-    setServerError(null);
-    setIsPending(true);
-    const result = await previewImportAction({ filename, fileBase64, fileKey, password });
-    setIsPending(false);
-    if (!result.success) {
-      if (result.code === "PASSWORD_REQUIRED" || result.code === "PASSWORD_INCORRECT") {
-        setPendingPasswordFile({ filename, fileBase64, fileKey, incorrect: result.code === "PASSWORD_INCORRECT" });
-        return;
-      }
-      // A parse/adapter failure still gets its own removable card (spec:
-      // "Parsing status: Success/Failed") — it just never contributes
-      // candidates, so it can't affect any total no matter what. The card
-      // itself already shows the error message, so no need for a second
-      // copy in the standalone banner below (that stays reserved for
-      // errors with no card of their own, e.g. a failed commit).
-      setFiles((prev) => [
-        ...prev,
-        { fileKey, filename, status: "failed", errorMessage: result.error, source: null, identifier: null, resolution: null, accountChoice: null },
-      ]);
-      return;
-    }
-    setPendingPasswordFile(null);
-
-    const { accountResolution } = result.data;
+  // Shared by every import source's success case — a registered adapter
+  // (`handleFileUploaded` below) and both Custom Importer paths
+  // (`handleCustomImportConfigured`) alike, once each has reduced to the
+  // same `ImportPreview` shape. Never forked into a second pipeline
+  // (Ledger Custom Importer delta).
+  function applyImportPreview(fileKey: string, filename: string, fileBase64: string, data: ImportPreview) {
+    const { accountResolution } = data;
     const accountChoice = defaultAccountChoice(accountResolution, accounts);
     const knownAccountId = accountChoiceKnownAccountId(accountChoice);
 
-    const newAccountsByKey = new Map(result.data.newAccounts.map((a) => [a.key, a]));
-    const newCandidates: WorkspaceCandidate[] = result.data.candidates.map((candidate) => ({
+    const newAccountsByKey = new Map(data.newAccounts.map((a) => [a.key, a]));
+    const newCandidates: WorkspaceCandidate[] = data.candidates.map((candidate) => ({
       clientRowId: crypto.randomUUID(),
       fileKey: candidate.fileKey,
       date: candidate.date,
@@ -576,10 +581,85 @@ export function ImportWorkspace({
     }));
 
     setFiles((prev) => [
-      ...prev,
-      { fileKey, filename, status: "success", source: result.data.source, identifier: accountResolution.identifier, resolution: accountResolution, accountChoice },
+      ...prev.filter((f) => f.fileKey !== fileKey),
+      {
+        fileKey,
+        filename,
+        fileBase64,
+        status: "success",
+        source: data.source,
+        identifier: accountResolution.identifier,
+        resolution: accountResolution,
+        accountChoice,
+      },
     ]);
-    setCandidates((prev) => [...prev, ...newCandidates]);
+    setCandidates((prev) => [...prev.filter((c) => c.fileKey !== fileKey), ...newCandidates]);
+  }
+
+  async function handleFileUploaded(
+    filename: string,
+    fileBase64: string,
+    fileKey: string = crypto.randomUUID(),
+    password?: string,
+  ) {
+    setServerError(null);
+    setIsPending(true);
+    const result = await previewImportAction({ filename, fileBase64, fileKey, password });
+    setIsPending(false);
+    if (!result.success) {
+      if (result.code === "PASSWORD_REQUIRED" || result.code === "PASSWORD_INCORRECT") {
+        setPendingPasswordFile({ filename, fileBase64, fileKey, incorrect: result.code === "PASSWORD_INCORRECT" });
+        return;
+      }
+      // No registered adapter recognized this file — offer Custom
+      // Importer instead of a dead-end failed card.
+      if (result.code === "CUSTOM_IMPORTER_REQUIRED") {
+        setPendingCustomImportFile({ filename, fileBase64, fileKey });
+        return;
+      }
+      // A parse/adapter failure still gets its own removable card (spec:
+      // "Parsing status: Success/Failed") — it just never contributes
+      // candidates, so it can't affect any total no matter what. The card
+      // itself already shows the error message, so no need for a second
+      // copy in the standalone banner below (that stays reserved for
+      // errors with no card of their own, e.g. a failed commit).
+      setFiles((prev) => [
+        ...prev,
+        {
+          fileKey,
+          filename,
+          fileBase64,
+          status: "failed",
+          errorMessage: result.error,
+          source: null,
+          identifier: null,
+          resolution: null,
+          accountChoice: null,
+        },
+      ]);
+      return;
+    }
+    setPendingPasswordFile(null);
+    applyImportPreview(fileKey, filename, fileBase64, result.data);
+  }
+
+  // Ledger Custom Importer delta — completes `pendingCustomImportFile`'s
+  // configuration (a confirmed column mapping, plus a crop for PDF) and
+  // feeds the result through the exact same `applyImportPreview` path
+  // `handleFileUploaded`'s success case uses above, rather than a second
+  // preview pipeline.
+  async function handleCustomImportConfigured(
+    result: Awaited<ReturnType<typeof previewCustomXlsImportAction>>,
+  ) {
+    if (!pendingCustomImportFile) return;
+    const { filename, fileBase64, fileKey } = pendingCustomImportFile;
+    setIsPending(false);
+    if (!result.success) {
+      setServerError(result.error);
+      return;
+    }
+    setPendingCustomImportFile(null);
+    applyImportPreview(fileKey, filename, fileBase64, result.data);
   }
 
   async function handleCommit() {
@@ -636,6 +716,9 @@ export function ImportWorkspace({
             file={file}
             stats={fileStatsByKey.get(file.fileKey)}
             onRemove={() => removeFile(file.fileKey)}
+            onUseCustomImporter={() =>
+              setPendingCustomImportFile({ filename: file.filename, fileBase64: file.fileBase64, fileKey: file.fileKey })
+            }
           />
         ))}
         <NewFileImportCard isPending={isPending} onUpload={handleFileUploaded} />
@@ -655,6 +738,18 @@ export function ImportWorkspace({
             )
           }
           onCancel={() => setPendingPasswordFile(null)}
+        />
+      )}
+
+      {pendingCustomImportFile && (
+        <PendingCustomImportDialog
+          filename={pendingCustomImportFile.filename}
+          fileBase64={pendingCustomImportFile.fileBase64}
+          fileKey={pendingCustomImportFile.fileKey}
+          isPending={isPending}
+          onPending={setIsPending}
+          onConfirm={handleCustomImportConfigured}
+          onCancel={() => setPendingCustomImportFile(null)}
         />
       )}
 
@@ -1108,10 +1203,12 @@ function ImportFileCard({
   file,
   stats,
   onRemove,
+  onUseCustomImporter,
 }: {
   file: WorkspaceFile;
   stats?: { count: number; inflowMinor: number; outflowMinor: number; dateStart: string | null; dateEnd: string | null };
   onRemove: () => void;
+  onUseCustomImporter: () => void;
 }) {
   return (
     <div className="flex w-full flex-col gap-1.5 rounded-lg border border-border p-3 text-sm sm:w-64">
@@ -1123,6 +1220,14 @@ function ImportFileCard({
           <Badge variant={file.status === "failed" ? "destructive" : "secondary"}>
             {file.status === "failed" ? "Failed" : "Success"}
           </Badge>
+          <Menu>
+            <MenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" aria-label={`${file.filename} options`} />}>
+              <MoreVertical className="size-3.5" aria-hidden="true" />
+            </MenuTrigger>
+            <MenuContent>
+              <MenuItem onClick={onUseCustomImporter}>Use Custom Importer instead</MenuItem>
+            </MenuContent>
+          </Menu>
           <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${file.filename}`} onClick={onRemove}>
             <X className="size-3.5" aria-hidden="true" />
           </Button>
@@ -1285,6 +1390,558 @@ function PasswordPromptDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Ledger Custom Importer delta — the per-file configuration flow when no
+// registered adapter recognized a file, or the user explicitly chose
+// "Use Custom Importer instead." XLS/CSV goes straight to column mapping;
+// PDF goes page-select -> crop each selected page -> mapping (progressive
+// disclosure — never dumping PDF-only config on a spreadsheet upload).
+// Whatever step ends in a confirmed mapping calls the real preview action
+// and hands the result to `onConfirm`, which feeds it through the exact
+// same success path every other import source uses (see
+// `applyImportPreview` at the top of this file) — never a second pipeline.
+type CustomImportStep =
+  | { kind: "loading" }
+  | { kind: "needsPassword"; incorrect: boolean }
+  | { kind: "pages"; pageCount: number; selected: Set<number> }
+  | { kind: "crop"; pageQueue: number[]; index: number; rects: Map<number, PdfRect> }
+  | { kind: "mapping"; table: RawTable; suggestedMapping: Partial<ColumnMapping>; pages: PdfCropPage[] | null }
+  | { kind: "error"; message: string };
+
+function PendingCustomImportDialog({
+  filename,
+  fileBase64,
+  fileKey,
+  isPending,
+  onPending,
+  onConfirm,
+  onCancel,
+}: {
+  filename: string;
+  fileBase64: string;
+  fileKey: string;
+  isPending: boolean;
+  onPending: (pending: boolean) => void;
+  onConfirm: (result: Awaited<ReturnType<typeof previewCustomXlsImportAction>>) => void;
+  onCancel: () => void;
+}) {
+  const isPdf = filename.toLowerCase().endsWith(".pdf");
+  const [step, setStep] = useState<CustomImportStep>({ kind: "loading" });
+  const [password, setPassword] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (isPdf) {
+        const result = await getPdfPageCountAction({ fileBase64 });
+        if (cancelled) return;
+        if (!result.success) {
+          if (result.code === "PASSWORD_REQUIRED" || result.code === "PASSWORD_INCORRECT") {
+            setStep({ kind: "needsPassword", incorrect: result.code === "PASSWORD_INCORRECT" });
+            return;
+          }
+          setStep({ kind: "error", message: result.error });
+          return;
+        }
+        setStep({ kind: "pages", pageCount: result.data, selected: new Set([1]) });
+      } else {
+        const result = await readRawXlsTableAction({ fileBase64 });
+        if (cancelled) return;
+        if (!result.success) {
+          setStep({ kind: "error", message: result.error });
+          return;
+        }
+        setStep({ kind: "mapping", table: result.data.table, suggestedMapping: result.data.suggestedMapping, pages: null });
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+    // Password-retry re-runs this explicitly via `retryWithPassword` below,
+    // not via this effect re-firing on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function retryWithPassword() {
+    onPending(true);
+    const result = await getPdfPageCountAction({ fileBase64, password });
+    onPending(false);
+    if (!result.success) {
+      setStep({ kind: "needsPassword", incorrect: result.code === "PASSWORD_INCORRECT" });
+      return;
+    }
+    setStep({ kind: "pages", pageCount: result.data, selected: new Set([1]) });
+  }
+
+  async function confirmPages(pageCount: number, selected: Set<number>) {
+    const pageQueue = [...selected].sort((a, b) => a - b);
+    if (pageQueue.length === 0) return;
+    setStep({ kind: "crop", pageQueue, index: 0, rects: new Map() });
+  }
+
+  async function confirmCrop(current: { kind: "crop"; pageQueue: number[]; index: number; rects: Map<number, PdfRect> }, rect: PdfRect) {
+    const rects = new Map(current.rects);
+    rects.set(current.pageQueue[current.index]!, rect);
+    if (current.index + 1 < current.pageQueue.length) {
+      setStep({ kind: "crop", pageQueue: current.pageQueue, index: current.index + 1, rects });
+      return;
+    }
+    const pages: PdfCropPage[] = current.pageQueue.map((pageNumber) => ({ pageNumber, cropRect: rects.get(pageNumber)! }));
+    onPending(true);
+    const result = await extractPdfCropPreviewAction({ fileBase64, pages, password: password || undefined });
+    onPending(false);
+    if (!result.success) {
+      setStep({ kind: "error", message: result.error });
+      return;
+    }
+    setStep({ kind: "mapping", table: result.data.table, suggestedMapping: result.data.suggestedMapping, pages });
+  }
+
+  async function confirmMapping(mapping: ColumnMapping, pages: PdfCropPage[] | null) {
+    onPending(true);
+    const result = pages
+      ? await previewCustomPdfImportAction({ filename, fileBase64, fileKey, pages, mapping, password: password || undefined })
+      : await previewCustomXlsImportAction({ filename, fileBase64, fileKey, mapping });
+    onConfirm(result);
+  }
+
+  return (
+    <Dialog open onOpenChange={(next) => !next && onCancel()}>
+      <DialogContent className="max-h-[85vh] max-w-2xl gap-4 overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Configure &ldquo;{filename}&rdquo; manually</DialogTitle>
+          <DialogDescription>
+            No known importer recognized this file — set it up manually below, then review before anything is
+            imported.
+          </DialogDescription>
+        </DialogHeader>
+
+        {step.kind === "loading" && <p className="text-sm text-muted-foreground">Reading file…</p>}
+
+        {step.kind === "error" && <p className="text-sm text-destructive">{step.message}</p>}
+
+        {step.kind === "needsPassword" && (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void retryWithPassword();
+            }}
+            className="flex flex-col gap-3"
+          >
+            <Input
+              type="password"
+              autoFocus
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Statement password"
+            />
+            {step.incorrect && <p className="text-sm text-destructive">Incorrect password.</p>}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onCancel}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isPending || password.length === 0}>
+                {isPending ? "Checking…" : "Continue"}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
+
+        {step.kind === "pages" && (
+          <PdfPageSelector
+            pageCount={step.pageCount}
+            selected={step.selected}
+            onToggle={(page) => {
+              const next = new Set(step.selected);
+              if (next.has(page)) next.delete(page);
+              else next.add(page);
+              setStep({ ...step, selected: next });
+            }}
+            onCancel={onCancel}
+            onConfirm={() => confirmPages(step.pageCount, step.selected)}
+          />
+        )}
+
+        {step.kind === "crop" && (
+          <PdfPageCropEditor
+            key={step.pageQueue[step.index]}
+            fileBase64={fileBase64}
+            password={password || undefined}
+            pageNumber={step.pageQueue[step.index]!}
+            stepLabel={`Page ${step.index + 1} of ${step.pageQueue.length}`}
+            onCancel={onCancel}
+            onConfirm={(rect) => confirmCrop(step, rect)}
+          />
+        )}
+
+        {step.kind === "mapping" && (
+          <ColumnMappingForm
+            table={step.table}
+            suggestedMapping={step.suggestedMapping}
+            isPending={isPending}
+            onCancel={onCancel}
+            onConfirm={(mapping) => confirmMapping(mapping, step.pages)}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PdfPageSelector({
+  pageCount,
+  selected,
+  onToggle,
+  onConfirm,
+  onCancel,
+}: {
+  pageCount: number;
+  selected: Set<number>;
+  onToggle: (page: number) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-muted-foreground">Which pages have transaction rows?</p>
+      <div className="grid max-h-64 grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-6">
+        {Array.from({ length: pageCount }, (_, i) => i + 1).map((page) => (
+          <label
+            key={page}
+            className="flex items-center justify-center gap-1.5 rounded-md border border-border p-2 text-sm has-[:checked]:border-primary has-[:checked]:bg-accent"
+          >
+            <input type="checkbox" className="size-3.5" checked={selected.has(page)} onChange={() => onToggle(page)} />
+            {page}
+          </label>
+        ))}
+      </div>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="button" disabled={selected.size === 0} onClick={onConfirm}>
+          Continue
+        </Button>
+      </DialogFooter>
+    </div>
+  );
+}
+
+// The one genuinely new interaction pattern in this codebase — renders a
+// PDF page to a canvas client-side (pdfjs-dist's browser build, distinct
+// from the Node "legacy" build server/importers/pdfTextExtraction.ts
+// uses) and lets the user drag out a crop rectangle on top of it with
+// plain pointer events (no new dependency — a resizable-rect overlay is
+// small enough not to justify one). The rectangle is tracked in canvas-
+// pixel space while dragging, then converted to PDF point space via
+// pdfjs's own `PageViewport.convertToPdfPoint` on confirm — the same
+// space server/importers/pdfTextExtraction.ts's extraction already uses,
+// so no coordinate math is duplicated.
+function PdfPageCropEditor({
+  fileBase64,
+  password,
+  pageNumber,
+  stepLabel,
+  onConfirm,
+  onCancel,
+}: {
+  fileBase64: string;
+  password?: string;
+  pageNumber: number;
+  stepLabel: string;
+  onConfirm: (rect: PdfRect) => void;
+  onCancel: () => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<{ convertToPdfPoint: (x: number, y: number) => number[] } | null>(null);
+  const [rendered, setRendered] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [drag, setDrag] = useState<{ startX: number; startY: number; x: number; y: number; width: number; height: number } | null>(
+    null,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    async function render() {
+      try {
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
+        const bytes = Uint8Array.from(atob(fileBase64), (c) => c.charCodeAt(0));
+        const doc = await pdfjsLib.getDocument({ data: bytes, password }).promise;
+        const page = await doc.getPage(pageNumber);
+        const viewport = page.getViewport({ scale: 1.3 });
+        viewportRef.current = viewport;
+        const canvas = canvasRef.current;
+        if (!canvas || cancelled) return;
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const context = canvas.getContext("2d");
+        if (!context) return;
+        await page.render({ canvasContext: context, viewport, canvas }).promise;
+        if (!cancelled) setRendered(true);
+      } catch (error) {
+        if (!cancelled) {
+          console.error("PdfPageCropEditor render failed:", error);
+          setError("Could not render this page — try Custom Importer with a different page selection.");
+        }
+      }
+    }
+    void render();
+    return () => {
+      cancelled = true;
+    };
+  }, [fileBase64, password, pageNumber]);
+
+  function pointerPosition(event: React.PointerEvent<HTMLDivElement>) {
+    const bounds = containerRef.current!.getBoundingClientRect();
+    return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+  }
+
+  function onPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    const { x, y } = pointerPosition(event);
+    setDrag({ startX: x, startY: y, x, y, width: 0, height: 0 });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function onPointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    if (!drag) return;
+    const { x, y } = pointerPosition(event);
+    const left = Math.min(drag.startX, x);
+    const top = Math.min(drag.startY, y);
+    setDrag({ ...drag, x: left, y: top, width: Math.abs(x - drag.startX), height: Math.abs(y - drag.startY) });
+  }
+
+  function onPointerUp() {
+    // Nothing to do — the rect stays in `drag` until Continue/Back.
+  }
+
+  function handleConfirm() {
+    if (!drag || !viewportRef.current || drag.width < 4 || drag.height < 4) return;
+    // Canvas-pixel (x, y) with y measured top-down -> pdfjs point space
+    // (its own convertToPdfPoint handles the y-axis flip internally).
+    const [px0, py0] = viewportRef.current.convertToPdfPoint(drag.x, drag.y + drag.height);
+    const [px1, py1] = viewportRef.current.convertToPdfPoint(drag.x + drag.width, drag.y);
+    onConfirm({ x0: Math.min(px0, px1), y0: Math.min(py0, py1), x1: Math.max(px0, px1), y1: Math.max(py0, py1) });
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-muted-foreground">
+        {stepLabel} — drag a box around the transaction table on this page.
+      </p>
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      <div
+        ref={containerRef}
+        className="relative max-h-[60vh] touch-none overflow-auto rounded-md border border-border"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+      >
+        <canvas ref={canvasRef} className="block" />
+        {!rendered && !error && <p className="p-4 text-sm text-muted-foreground">Loading page…</p>}
+        {drag && (
+          <div
+            className="pointer-events-none absolute border-2 border-primary bg-primary/10"
+            style={{ left: drag.x, top: drag.y, width: drag.width, height: drag.height }}
+          />
+        )}
+      </div>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="button" disabled={!drag || drag.width < 4 || drag.height < 4} onClick={handleConfirm}>
+          Continue
+        </Button>
+      </DialogFooter>
+    </div>
+  );
+}
+
+const AMOUNT_SHAPE_OPTIONS = [
+  { value: "debitCredit", label: "Separate Debit / Credit columns" },
+  { value: "amountDirection", label: "One Amount column + a Direction column" },
+] as const;
+
+const DATE_FORMAT_LABELS: Record<DateFormat, string> = {
+  ISO: "YYYY-MM-DD",
+  DMY_SLASH: "DD/MM/YYYY",
+  MDY_SLASH: "MM/DD/YYYY",
+  DD_MON_YYYY: "DD-Mon-YYYY",
+};
+
+// Shared verbatim by the XLS and PDF Custom Importer paths — the actual
+// "which raw column means what" step, pre-filled from
+// `suggestColumnMapping`'s alias-matching guess (services/imports.ts),
+// fully overridable. Column references are indices, shown with whatever
+// header text (if any) exists at that index — never trusted as a reliable
+// name (core/ledger/statements/customImport.ts's own reasoning).
+function ColumnMappingForm({
+  table,
+  suggestedMapping,
+  isPending,
+  onConfirm,
+  onCancel,
+}: {
+  table: RawTable;
+  suggestedMapping: Partial<ColumnMapping>;
+  isPending: boolean;
+  onConfirm: (mapping: ColumnMapping) => void;
+  onCancel: () => void;
+}) {
+  const columnCount = Math.max(0, ...table.rows.map((row) => row.length));
+  const headerRow = table.headerRowIndex !== null ? table.rows[table.headerRowIndex] : undefined;
+  const columnLabel = (index: number) => {
+    const header = headerRow?.[index]?.trim();
+    return header ? `${header} (Column ${index + 1})` : `Column ${index + 1}`;
+  };
+
+  const [dateColumn, setDateColumn] = useState<number | null>(suggestedMapping.dateColumn ?? null);
+  const [dateFormat, setDateFormat] = useState<DateFormat>(suggestedMapping.dateFormat ?? "ISO");
+  const [descriptionColumn, setDescriptionColumn] = useState<number | null>(suggestedMapping.descriptionColumn ?? null);
+  const [amountShapeKind, setAmountShapeKind] = useState<ColumnMapping["amountShape"]["kind"]>(
+    suggestedMapping.amountShape?.kind ?? "debitCredit",
+  );
+  const [debitColumn, setDebitColumn] = useState<number | null>(
+    suggestedMapping.amountShape?.kind === "debitCredit" ? suggestedMapping.amountShape.debitColumn : null,
+  );
+  const [creditColumn, setCreditColumn] = useState<number | null>(
+    suggestedMapping.amountShape?.kind === "debitCredit" ? suggestedMapping.amountShape.creditColumn : null,
+  );
+  const [amountColumn, setAmountColumn] = useState<number | null>(
+    suggestedMapping.amountShape?.kind === "amountDirection" ? suggestedMapping.amountShape.amountColumn : null,
+  );
+  const [directionColumn, setDirectionColumn] = useState<number | null>(
+    suggestedMapping.amountShape?.kind === "amountDirection" ? suggestedMapping.amountShape.directionColumn : null,
+  );
+  const [referenceColumn, setReferenceColumn] = useState<number | null>(suggestedMapping.referenceColumn ?? null);
+
+  const amountShapeComplete =
+    amountShapeKind === "debitCredit" ? debitColumn !== null && creditColumn !== null : amountColumn !== null && directionColumn !== null;
+  const canConfirm = dateColumn !== null && descriptionColumn !== null && amountShapeComplete;
+
+  function columnSelect(value: number | null, onChange: (value: number) => void, label: string) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <Label>{label}</Label>
+        <Select value={value === null ? "" : String(value)} onValueChange={(v) => v && onChange(Number(v))} items={Array.from({ length: columnCount }, (_, i) => ({ label: columnLabel(i), value: String(i) }))}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select a column" />
+          </SelectTrigger>
+          <SelectContent>
+            {Array.from({ length: columnCount }, (_, i) => (
+              <SelectItem key={i} value={String(i)}>
+                {columnLabel(i)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  }
+
+  const previewRows = table.rows.filter((_, i) => i !== table.headerRowIndex).slice(0, 6);
+
+  return (
+    <div className="flex flex-col gap-4">
+      {previewRows.length > 0 && (
+        <div className="max-h-40 overflow-auto rounded-md border border-border">
+          <Table>
+            <TableBody>
+              {previewRows.map((row, i) => (
+                <TableRow key={i}>
+                  {Array.from({ length: columnCount }, (_, c) => (
+                    <TableCell key={c} className="whitespace-nowrap py-1.5 text-xs text-muted-foreground">
+                      {row[c] ?? ""}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {columnSelect(dateColumn, setDateColumn, "Date column")}
+        <div className="flex flex-col gap-1.5">
+          <Label>Date format</Label>
+          <Select value={dateFormat} onValueChange={(v) => v && setDateFormat(v as DateFormat)} items={DATE_FORMATS.map((f) => ({ label: DATE_FORMAT_LABELS[f], value: f }))}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {DATE_FORMATS.map((f) => (
+                <SelectItem key={f} value={f}>
+                  {DATE_FORMAT_LABELS[f]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {columnSelect(descriptionColumn, setDescriptionColumn, "Description column")}
+        <div className="flex flex-col gap-1.5">
+          <Label>Amount shape</Label>
+          <Select
+            value={amountShapeKind}
+            onValueChange={(v) => v && setAmountShapeKind(v as ColumnMapping["amountShape"]["kind"])}
+            items={AMOUNT_SHAPE_OPTIONS as unknown as { label: string; value: string }[]}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {AMOUNT_SHAPE_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {amountShapeKind === "debitCredit" ? (
+          <>
+            {columnSelect(debitColumn, setDebitColumn, "Debit column")}
+            {columnSelect(creditColumn, setCreditColumn, "Credit column")}
+          </>
+        ) : (
+          <>
+            {columnSelect(amountColumn, setAmountColumn, "Amount column")}
+            {columnSelect(directionColumn, setDirectionColumn, "Direction column")}
+          </>
+        )}
+        {columnSelect(referenceColumn, setReferenceColumn, "Reference column (optional)")}
+      </div>
+
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          disabled={!canConfirm || isPending}
+          onClick={() =>
+            canConfirm &&
+            onConfirm({
+              dateColumn: dateColumn!,
+              dateFormat,
+              descriptionColumn: descriptionColumn!,
+              amountShape:
+                amountShapeKind === "debitCredit"
+                  ? { kind: "debitCredit", debitColumn: debitColumn!, creditColumn: creditColumn! }
+                  : { kind: "amountDirection", amountColumn: amountColumn!, directionColumn: directionColumn! },
+              referenceColumn,
+            })
+          }
+        >
+          {isPending ? "Reviewing…" : "Review"}
+        </Button>
+      </DialogFooter>
+    </div>
   );
 }
 

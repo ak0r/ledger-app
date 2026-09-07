@@ -141,16 +141,51 @@ fixed 1x1/2x2 Bento grid with `@dnd-kit/core` drag-and-drop and a narrow
 swap-or-reject placement heuristic (`resolveDrop`,
 `src/lib/dashboard-grid-layout.ts`), immediate no-confirm panel removal.
 
+Also decided and shipped (2026-09-06, Ledger Dashboard System Phase 1):
+three Dashboard contexts per Profile (Financial/Spending/Income,
+`dashboards.context`), a server-only Panel Eligibility check
+(`src/lib/panel-eligibility.ts`) that can decline to offer/render a panel
+whose data prerequisite isn't met (with a visible reason, never silently
+hidden or auto-removed once placed), a generic GitHub-style Heatmap
+primitive (`src/components/heatmap.tsx`) with a fixed spending color
+scale, and 8 of Phase 1's 10 planned analytical panels: Monthly Snapshot,
+Spending Trend, Recurring Expenses, Daily Spending Heatmap (first pass),
+then Savings Rate, Credit Card Health, Budget Health, What Deserves
+Attention (second pass). Credit Card Health and Budget Health each gained
+a real eligibility check (≥1 Credit Card account / ≥1 Budget). What
+Deserves Attention only ever consumes the other panels' own already-
+computed signals — it never runs a new calculation of its own.
+
 Still future design required for:
 
-- multiple Dashboards per Profile (the data model already allows it —
-  `dashboards.is_default` — but there's no UI to manage more than one)
+- multiple Dashboards per Profile beyond the fixed three contexts (the
+  data model already allows more — `dashboards.is_default` — but there's
+  no UI to manage further ones)
 - a Charts panel category
 - Investment-dependent panels (Recent Investments/Portfolio Value/
   Portfolio NAV) — the Portfolio valuation model they'd read now exists
   (`docs/04-modules.md`), but no such panel has been built yet
 - user-resizable panels
 - separate mobile layouts / touch-friendly hover-control fallback
+- **Income Allocation** (Phase 1, deliberately not built this pass): the
+  delta's own worked example (Needs 46% / Wants 21% / Savings 33% =
+  100%) implies the Savings bucket's "actual" is a residual
+  (100% − Needs% − Wants%), while the same doc also asks the user to
+  configure a Savings-bucket account assignment (Savings Account/
+  Investments/PPF) — ambiguous which one the panel is actually meant to
+  show. Needs a decision before implementation.
+- **Fixed Commitments** change-tracking (Phase 1, deliberately not built
+  this pass): "increased 14% over the last 12 months" needs a
+  12-months-ago snapshot of commitments, but Recurring Rules carry no
+  history (same gap already cut for Recurring Expenses' own
+  change-tracking in the first pass) — needs either a new snapshot
+  mechanism or a scope cut, matching Recurring Expenses.
+- **Category Changes** "significant change" threshold (Phase 1,
+  deliberately not built this pass): the delta says to "prioritize
+  significant changes" with no numeric anchor (unlike the heatmap's exact
+  ₹1000/₹2500 bands) — needs either a specified threshold or an explicit
+  sign-off to pick one by judgment, the same way
+  `BUDGET_REVIEW_WINDOW_DAYS = 7` was picked.
 
 ## Transaction history
 
