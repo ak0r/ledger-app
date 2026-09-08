@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Filter } from "lucide-react";
-import { CLASSIFICATIONS, INSTRUMENT_TYPES, type Classification, type InstrumentType } from "@/core";
+import { CLASSIFICATIONS, ACCOUNT_TYPES, type Classification, type AccountType } from "@/core";
 import { humanizeEnum } from "@/lib/utils";
 import { accountFilterToParams, type AccountFilterState } from "@/lib/account-filter";
 import type { AccountSortState } from "@/lib/account-sort";
@@ -32,16 +32,16 @@ export function AccountFilterDrawer({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [classifications, setClassifications] = useState<Classification[]>(initialState.classifications);
-  const [instrumentTypes, setInstrumentTypes] = useState<InstrumentType[]>(initialState.instrumentTypes);
+  const [accountTypes, setAccountTypes] = useState<AccountType[]>(initialState.accountTypes);
 
-  const activeCount = classifications.length + instrumentTypes.length;
+  const activeCount = classifications.length + accountTypes.length;
 
   function toggle<T>(list: T[], setList: (next: T[]) => void, value: T) {
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
   }
 
   function apply() {
-    const params = accountFilterToParams({ classifications, instrumentTypes, search: initialState.search });
+    const params = accountFilterToParams({ classifications, accountTypes, search: initialState.search });
     if (sortState) {
       params.sort = sortState.field;
       params.dir = sortState.direction;
@@ -53,7 +53,7 @@ export function AccountFilterDrawer({
 
   function clearAll() {
     setClassifications([]);
-    setInstrumentTypes([]);
+    setAccountTypes([]);
   }
 
   return (
@@ -91,11 +91,11 @@ export function AccountFilterDrawer({
 
         <div className="flex flex-col gap-2 px-4">
           <span className="text-sm font-medium">Account Type</span>
-          {INSTRUMENT_TYPES.map((value) => (
+          {ACCOUNT_TYPES.map((value) => (
             <label key={value} className="flex items-center gap-2 text-sm">
               <Checkbox
-                checked={instrumentTypes.includes(value)}
-                onCheckedChange={() => toggle(instrumentTypes, setInstrumentTypes, value)}
+                checked={accountTypes.includes(value)}
+                onCheckedChange={() => toggle(accountTypes, setAccountTypes, value)}
               />
               {humanizeEnum(value)}
             </label>

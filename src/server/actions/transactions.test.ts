@@ -19,18 +19,18 @@ function setUp(db: Db) {
     symbol: "₹",
     minorUnitScale: 2,
   });
-  const account = (name: string, classification: string, instrumentType: string) =>
+  const account = (name: string, classification: string, accountType: string) =>
     createAccount(db, {
       profileId: profile.id,
       currencyId: currency.id,
       name,
       classification: classification as never,
-      instrumentType: instrumentType as never,
+      accountType: accountType as never,
     });
   return {
     profile,
     bank: account("HDFC Bank", "ASSET", "BANK"),
-    food: account("Food Expense", "EXPENSE", "EXPENSE"),
+    food: account("Food Expense", "EXPENSE", "VARIABLE"),
   };
 }
 
@@ -94,7 +94,7 @@ describe("createTransactionCore", () => {
     if (!result.success) expect(result.error).toMatch(/Postings must balance/);
   });
 
-  it("passes a Currency Conversion payload through the Zod boundary unbalanced (domain layer decides)", () => {
+  it("passes a Currency Conversion payload through the Zod boundary based on an explicit rate, not raw-sum shape-guessing", () => {
     const db = createTestDb();
     const { profile, bank } = setUp(db);
     const jpy = createCurrency(db, {
@@ -109,7 +109,44 @@ describe("createTransactionCore", () => {
       currencyId: jpy.id,
       name: "JPY in Hand",
       classification: "ASSET",
-      instrumentType: "CASH",
+      accountType: "CASH",
+    });
+
+    const result = createTransactionCore(db, {
+      profileId: profile.id,
+      date: "2026-09-03",
+      description: "Convert Cash",
+      postings: [
+        { accountId: bank.id, debit: 0, credit: 1000000 },
+        { accountId: jpyCash.id, debit: 15000, credit: 0, rateDecimal: 10000 / 15000 },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a Currency Conversion payload with no explicit rate and a raw-mismatched sum at the Zod boundary", () => {
+    // Transaction Form FX UX delta: the old "2 postings, 1 debit + 1
+    // credit" shape-sniffing heuristic (which used to defer to the domain
+    // layer for *any* 2-leg payload, balanced or not) is retired — a
+    // client must explicitly signal "this leg is priced against a
+    // different currency" via `rateDecimal`, not rely on Zod guessing
+    // intent from shape alone.
+    const db = createTestDb();
+    const { profile, bank } = setUp(db);
+    const jpy = createCurrency(db, {
+      profileId: profile.id,
+      code: "JPY",
+      name: "Japanese Yen",
+      symbol: "¥",
+      minorUnitScale: 0,
+    });
+    const jpyCash = createAccount(db, {
+      profileId: profile.id,
+      currencyId: jpy.id,
+      name: "JPY in Hand",
+      classification: "ASSET",
+      accountType: "CASH",
     });
 
     const result = createTransactionCore(db, {
@@ -122,7 +159,8 @@ describe("createTransactionCore", () => {
       ],
     });
 
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error).toMatch(/Postings must balance/);
   });
 
   it("rejects a posting to another Profile's account — only the domain layer can catch this", () => {

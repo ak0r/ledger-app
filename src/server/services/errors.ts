@@ -37,10 +37,6 @@ function describeTransactionViolation(violation: TransactionViolation): string {
       return "One of the selected accounts doesn't belong to this profile.";
     case "UNSUPPORTED_CURRENCY":
       return `${violation.currencyCode} isn't a supported currency.`;
-    case "MIXED_CURRENCY_UNSUPPORTED":
-      return "This transaction mixes more than one currency — every account in a transaction must use the same currency.";
-    case "QUANTITY_MISMATCH":
-      return "One of the postings has a quantity that doesn't match its amount.";
     case "PRICE_MUST_BE_ONE":
       return "One of the postings has an invalid price.";
   }
@@ -116,6 +112,31 @@ export class BudgetAllocationValidationError extends Error {
     this.name = "BudgetAllocationValidationError";
   }
 }
+
+// A Transaction's `base_amount` reconciles against the Profile's
+// `primaryCurrencyId` (Account Types, Money Representation, Rational
+// Pricing, FX & Liability Details delta) — a Profile can exist before any
+// Currency has been created for it (that stays nullable at the schema
+// level), but a Transaction can never be created/edited until one is
+// resolvable. Thrown before domain validation even runs, same posture as
+// `UnsupportedCurrencyError`.
+export class NoBaseCurrencyError extends Error {
+  constructor() {
+    super("This Profile has no Primary Currency set yet — add one in Currency Settings before creating a transaction.");
+    this.name = "NoBaseCurrencyError";
+  }
+}
+
+// FX Rate UX delta — `UNIQUE(currency_id, date)` at the DB layer already
+// prevents this; caught explicitly at the service layer first so the user
+// sees a clear message instead of a raw SQLite constraint error.
+export class DuplicateCurrencyRateError extends Error {
+  constructor(date: string) {
+    super(`A rate for ${date} already exists — edit or delete it instead of adding another.`);
+    this.name = "DuplicateCurrencyRateError";
+  }
+}
+
 
 export class UnsupportedCurrencyError extends Error {
   constructor(code: string) {

@@ -5,19 +5,14 @@ import { buildTransactionTableRows } from "./transaction-rows";
 
 const now = "2026-09-03T00:00:00.000Z";
 
-function account(
-  id: string,
-  name: string,
-  currencyId: string,
-  instrumentType: string = "BANK",
-): AccountRow {
+function account(id: string, name: string, currencyId: string): AccountRow {
   return {
     id,
     profileId: "profile-1",
     currencyId,
     name,
     classification: "ASSET",
-    instrumentType,
+    accountType: "BANK",
     instrumentId: null,
     instrumentLabel: null,
     tags: null,
@@ -31,7 +26,7 @@ function account(
 
 function transaction(
   id: string,
-  postings: { accountId: string; debit: number; credit: number; quantity?: number; price?: number }[],
+  postings: { accountId: string; debit: number; credit: number; priceNum?: number; priceDenom?: number }[],
 ): TransactionWithPostings {
   return {
     id,
@@ -46,14 +41,15 @@ function transaction(
       id: `posting-${i}`,
       transactionId: id,
       accountId: p.accountId,
-      debit: p.debit,
-      credit: p.credit,
-      // Mirrors the domain's own fallback (price 1, quantity = the
-      // posting's own amount) unless a test explicitly overrides it —
-      // matches what a real, ordinary (non-Instrument, non-Conversion)
-      // posting always looks like.
-      quantity: p.quantity ?? p.debit ?? p.credit,
-      price: p.price ?? 1,
+      units: p.debit - p.credit,
+      // Mirrors the domain's own fallback (1/1, no real FX) unless a test
+      // explicitly overrides it — matches what a real, ordinary
+      // (non-Conversion) posting always looks like. `baseAmount` isn't
+      // read by anything under test here, a same-as-units placeholder is
+      // fine.
+      priceNum: p.priceNum ?? 1,
+      priceDenom: p.priceDenom ?? 1,
+      baseAmount: p.debit - p.credit,
       createdAt: now,
       updatedAt: now,
     })),
@@ -146,10 +142,15 @@ describe("buildTransactionTableRows — FX secondary info (Phase 5 transaction-l
   it("shows the destination currency badge + effective rate for a Currency Conversion To leg", () => {
     const txn = transaction("t1", [
       { accountId: "bank", debit: 0, credit: 1000000 }, // ₹10,000
-      { accountId: "jpy-cash", debit: 15000, credit: 0, price: 10000 / 15000 }, // ¥15,000
+      // priceNum/priceDenom is minor-unit-to-minor-unit into the Base
+      // Currency (₹1,000,000 paise per ¥15,000, both in minor units) —
+      // reduces to "1 JPY = ₹0.6667", the real-world rate this scenario
+      // represents, not the retired legacy `price` column's own (From-
+      // leg-currency-anchored) convention.
+      { accountId: "jpy-cash", debit: 15000, credit: 0, priceNum: 1000000, priceDenom: 15000 }, // ¥15,000
     ]);
-    const [row] = buildTransactionTableRows([txn], accountsById, fallbackCurrency, currenciesById);
-    expect(row!.toLines[0]!.secondary).toEqual({ kind: "fx", currencyCode: "JPY", rate: "1.5" });
+    const [row] = buildTransactionTableRows([txn], accountsById, fallbackCurrency, currenciesById, 2);
+    expect(row!.toLines[0]!.secondary).toEqual({ kind: "fx", currencyCode: "JPY", rate: "0.6667" });
   });
 
   it("shows no secondary info for an ordinary same-currency, non-Instrument transaction", () => {

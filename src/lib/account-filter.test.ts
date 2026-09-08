@@ -12,7 +12,7 @@ function account(
   id: string,
   name: string,
   classification: string,
-  instrumentType: string,
+  accountType: string,
 ): AccountWithBalance {
   return {
     id,
@@ -20,7 +20,7 @@ function account(
     currencyId: "currency-1",
     name,
     classification: classification as never,
-    instrumentType: instrumentType as never,
+    accountType: accountType as never,
     instrumentId: null,
     instrumentLabel: null,
     tags: null,
@@ -41,13 +41,13 @@ describe("parseAccountFilter", () => {
   it("parses valid comma-separated classification/instrument lists", () => {
     const state = parseAccountFilter({ classification: "ASSET,LIABILITY", instrument: "BANK,CASH" });
     expect(state.classifications).toEqual(["ASSET", "LIABILITY"]);
-    expect(state.instrumentTypes).toEqual(["BANK", "CASH"]);
+    expect(state.accountTypes).toEqual(["BANK", "CASH"]);
   });
 
   it("silently drops invalid enum values rather than throwing", () => {
     const state = parseAccountFilter({ classification: "ASSET,BOGUS", instrument: "NONSENSE" });
     expect(state.classifications).toEqual(["ASSET"]);
-    expect(state.instrumentTypes).toEqual([]);
+    expect(state.accountTypes).toEqual([]);
   });
 
   it("trims the search query", () => {
@@ -61,9 +61,9 @@ describe("hasActiveAccountFilter", () => {
   });
 
   it("is true if any dimension is set", () => {
-    expect(hasActiveAccountFilter({ classifications: ["ASSET"], instrumentTypes: [], search: "" })).toBe(true);
-    expect(hasActiveAccountFilter({ classifications: [], instrumentTypes: ["BANK"], search: "" })).toBe(true);
-    expect(hasActiveAccountFilter({ classifications: [], instrumentTypes: [], search: "x" })).toBe(true);
+    expect(hasActiveAccountFilter({ classifications: ["ASSET"], accountTypes: [], search: "" })).toBe(true);
+    expect(hasActiveAccountFilter({ classifications: [], accountTypes: ["BANK"], search: "" })).toBe(true);
+    expect(hasActiveAccountFilter({ classifications: [], accountTypes: [], search: "x" })).toBe(true);
   });
 });
 
@@ -91,7 +91,7 @@ describe("applyAccountFilter", () => {
   it("filters by classification", () => {
     const result = applyAccountFilter([bank, cash, creditCard], {
       classifications: ["ASSET"],
-      instrumentTypes: [],
+      accountTypes: [],
       search: "",
     });
     expect(result.map((a) => a.id)).toEqual(["a1", "a2"]);
@@ -100,7 +100,7 @@ describe("applyAccountFilter", () => {
   it("filters by instrument type", () => {
     const result = applyAccountFilter([bank, cash, creditCard], {
       classifications: [],
-      instrumentTypes: ["CASH"],
+      accountTypes: ["CASH"],
       search: "",
     });
     expect(result.map((a) => a.id)).toEqual(["a2"]);
@@ -109,7 +109,7 @@ describe("applyAccountFilter", () => {
   it("filters by case-insensitive name search", () => {
     const result = applyAccountFilter([bank, cash, creditCard], {
       classifications: [],
-      instrumentTypes: [],
+      accountTypes: [],
       search: "hdfc",
     });
     expect(result.map((a) => a.id)).toEqual(["a1"]);
@@ -118,14 +118,14 @@ describe("applyAccountFilter", () => {
   it("combines classification + instrument + search with AND logic", () => {
     const result = applyAccountFilter([bank, cash, creditCard], {
       classifications: ["ASSET"],
-      instrumentTypes: ["BANK"],
+      accountTypes: ["BANK"],
       search: "hdfc",
     });
     expect(result.map((a) => a.id)).toEqual(["a1"]);
 
     const empty = applyAccountFilter([bank, cash, creditCard], {
       classifications: ["ASSET"],
-      instrumentTypes: ["CREDIT_CARD"],
+      accountTypes: ["CREDIT_CARD"],
       search: "",
     });
     expect(empty).toHaveLength(0);

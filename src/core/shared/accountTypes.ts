@@ -1,14 +1,8 @@
-// ADR-015 — classification determines accounting meaning; instrument type
-// does not. Const arrays (not just union types) so callers — including
-// client-side Zod schemas — can enumerate the values at runtime instead of
-// duplicating the list.
-//
-// Ledger/Portfolio delink (2026-09-05, analysis/folioman-vs-ledger/
-// 06-pwa-validation-and-domain-delink.md) — MUTUAL_FUND/STOCK/COMMODITY
-// (added by the 2026-08-19 delta, AGENTS.md rule #11) are removed from this
-// Ledger-owned taxonomy. An investment is a core/portfolio concept now
-// (PortfolioAccount, not a Ledger Account with one of these types); Ledger
-// Accounts are never Instrument-backed again.
+// Account Types, Money Representation, Rational Pricing, FX & Liability
+// Details delta — replaces the frozen 7-value `INSTRUMENT_TYPES` taxonomy
+// (AGENTS.md rule #11, 2026-08-19) with a real, classification-driven
+// vocabulary. Reverses ADR-015/rule #21's "Income and Expense have no
+// Account Type" posture: every classification now has one, mandatory.
 export const CLASSIFICATIONS = [
   "ASSET",
   "LIABILITY",
@@ -32,29 +26,57 @@ export const CREATABLE_CLASSIFICATIONS: readonly Exclude<Classification, "BALANC
     (classification): classification is Exclude<Classification, "BALANCING"> => classification !== "BALANCING",
   );
 
-export const INSTRUMENT_TYPES = [
-  "BANK",
+export const ACCOUNT_TYPES = [
   "CASH",
+  "BANK",
+  "INVESTMENTS",
+  "WALLET",
+  "RECEIVABLES",
   "CREDIT_CARD",
   "LOAN",
-  "EXPENSE",
-  "INCOME",
-  "BALANCING",
+  "PAYABLES",
+  "EARNED",
+  "PASSIVE",
+  "WINDFALL",
+  "FIXED",
+  "VARIABLE",
+  "DISCRETIONARY",
+  "FINANCIAL",
+  "INITIAL",
 ] as const;
-export type InstrumentType = (typeof INSTRUMENT_TYPES)[number];
+export type AccountType = (typeof ACCOUNT_TYPES)[number];
 
-// Account Type only exists where it changes real behaviour (2026-08-19
-// delta §19.1) — Asset and Liability have meaningfully different types.
-// Income and Expense deliberately have *no* entry here: "Salary" vs.
-// "Freelance Income" vs. "Rent" are account names, not types — they're all
-// accounting-identical (still just `INCOME`/`EXPENSE` under the hood,
-// unchanged from before this delta). Balancing also has no entry (system-
-// managed, no user-facing type choice). A `Partial` map, not a full
-// `Record` — a classification's *absence* from this map is itself the
-// signal the Account Form reads to decide whether to render a Type step
-// at all, and downstream consumers that need "does this classification
-// have types" can just check `in`/`[classification] !== undefined`.
-export const TYPES_BY_CLASSIFICATION: Partial<Record<Classification, readonly InstrumentType[]>> = {
-  ASSET: ["CASH", "BANK"],
-  LIABILITY: ["CREDIT_CARD", "LOAN"],
+// Every Classification has an Account Type vocabulary now — a full
+// `Record`, not the old `Partial` (which only covered ASSET/LIABILITY).
+// BALANCING's single value (`INITIAL`) is never offered in the user-facing
+// New Account form (rule #22 — Balancing stays system-managed), but it's
+// still a real, storable value for the one seeded Balancing account.
+export const ACCOUNT_TYPES_BY_CLASSIFICATION: Record<Classification, readonly AccountType[]> = {
+  ASSET: ["CASH", "BANK", "INVESTMENTS", "WALLET", "RECEIVABLES"],
+  LIABILITY: ["CREDIT_CARD", "LOAN", "PAYABLES"],
+  INCOME: ["EARNED", "PASSIVE", "WINDFALL"],
+  EXPENSE: ["FIXED", "VARIABLE", "DISCRETIONARY", "FINANCIAL"],
+  BALANCING: ["INITIAL"],
 };
+
+// The delta's own internal/search representation —
+// `classification:accountType:name` (e.g. `assets:bank:hdfc`) — lowercase,
+// colon-separated, always derived, never stored (this codebase never
+// persists what it can derive). Not an arbitrary-depth hierarchy; just a
+// display/search string. `name` is slugified: lowercased, non-alphanumeric
+// runs collapsed to a single underscore, leading/trailing underscores
+// trimmed.
+function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+export function toAccountIdentity(account: {
+  classification: Classification;
+  accountType: AccountType;
+  name: string;
+}): string {
+  return `${account.classification.toLowerCase()}:${account.accountType.toLowerCase()}:${slugify(account.name)}`;
+}

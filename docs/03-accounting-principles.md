@@ -5,8 +5,12 @@
 Every persisted Transaction balances:
 
 ```text
-Total Debits = Total Credits
+SUM(base_amount) == 0
 ```
+
+Every Posting's `base_amount` is its own `units` valued into the Profile's
+Base Currency (ADR-047) — for a same-currency Transaction this is
+numerically identical to the older "Total Debits = Total Credits."
 
 ## Transaction invariant
 
@@ -19,14 +23,15 @@ Every persisted Transaction:
 
 ## Posting invariant
 
-Each Posting:
+Each Posting (ADR-047 — replaces the old debit/credit-only shape):
 
 - belongs to exactly one Transaction
 - references exactly one Account
-- has non-negative debit and credit
-- has exactly one positive side
-- cannot have both debit and credit positive
-- cannot have both zero
+- has a nonzero signed `units` (the Account's own currency, minor units)
+- has a positive `price_num` and `price_denom` (the rational valuation
+  ratio into the Profile's Base Currency)
+- has a `base_amount` derived from `units × price_num / price_denom`,
+  rounded half-to-even — never independently entered
 
 ## Ownership
 
@@ -42,14 +47,20 @@ No shared Accounts.
 
 Each Account references exactly one Currency, drawn from the system
 Currency Catalogue (`docs/04-modules.md`). A Profile has a Primary
-Currency (default for new Accounts, changeable, not retroactive); an
-Account's own Currency is independently changeable and authoritative.
+Currency — also its Base Currency, the fixed reconciliation target every
+Transaction's Postings value into (default for new Accounts, changeable,
+not retroactive); an Account's own Currency is independently changeable
+and authoritative.
 
 Posting currency is derived from Account.
 
-No cross-currency Transactions or FX — a Transaction whose postings
-resolve to more than one currency is rejected
-(`MIXED_CURRENCY_UNSUPPORTED`), except the one Currency Conversion shape.
+Any Posting may independently be priced in a currency other than the Base
+Currency (ADR-047) — genuine N-leg cross-currency Transactions are
+supported, not just one fixed 2-posting Conversion shape.
+`MIXED_CURRENCY_UNSUPPORTED` is retired. A dated CurrencyRate (or an
+explicit user-confirmed rate) resolves each such Posting's exact-rational
+price; no FX aggregation beyond that, and an entry that doesn't reconcile
+is rejected (`UNBALANCED`), never silently forced to balance.
 
 ## Classification
 
@@ -63,7 +74,8 @@ BALANCING
 
 Classification determines accounting meaning.
 
-Instrument type does not determine accounting treatment.
+Account type (mandatory on every Classification, ADR-047) does not
+determine accounting treatment — Classification does.
 
 ## Transfers
 

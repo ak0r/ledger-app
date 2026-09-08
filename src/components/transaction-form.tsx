@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Controller, useFieldArray, useForm } from "react-hook-form";
+import { Controller, useFieldArray, useForm, type Control, type UseFormSetValue, type UseFormWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toMinorUnits, type Classification } from "@/core";
@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TagInput } from "@/components/tag-input";
 import { AccountIcon } from "@/components/account-icon";
 import { createTransactionAction, editTransactionAction } from "@/server/actions/transactions";
+import { getActiveProfileBaseCurrencyAction, getDefaultCurrencyRateAction } from "@/server/actions/currencies";
 
 // Shared account shape every TransactionForm call site enriches its
 // account list into — carries each Account's own Currency (Currency
@@ -57,24 +58,29 @@ export interface TransactionFormAccount {
 // across the whole transaction — Accounts can have independently
 // different currencies now (Currency Catalogue delta).
 //
-// Reconciliation gate (2026-09-03 delta): To Amount is always its own
-// editable fact now, never silently derived from From Amount — so the two
-// can end up unequal. Three cases, matched exactly to
-// domain/transaction.ts's own isConversionShape rule so the client never
-// blocks something the server would accept, or vice versa:
-//   1. Same currency, equal amounts — the normal, default case. No gate.
-//   2. Different currencies — a Currency Conversion. Never a sum/balance
-//      check (there's nothing to sum across two currencies) — but must be
-//      explicitly confirmed (`reconciled`) before it can submit.
-//   3. Same currency, unequal amounts — not a valid shape at all (the
-//      domain layer has no "two independent same-currency legs" concept;
-//      that would mean money silently appearing or vanishing). Hard
-//      rejected with a message that tells the user how to fix it, never
-//      silently treated as balanced and never bypassable via `reconciled`.
+// Transaction Form FX UX delta — any destination line can independently be
+// in a different currency from the Profile Base Currency now (no more
+// "split destinations must share From's currency" restriction, no more
+// "Conversion = exactly 2 accounts, never split" restriction). A line
+// whose Account currency differs from the Base Currency needs its own
+// confirmed Rate (`rateDecimal`/`reconciled`, ForeignRateBlock below); the
+// old single top-level `reconciled` + amounts-imply-the-rate model is
+// retired — the Rate now comes from a CurrencyRate default (editable), not
+// derived from the two typed amounts, so raw same-currency-style sum/
+// equality checks are skipped whenever any line is foreign (there's
+// nothing meaningful to sum across currencies) — the real balance
+// enforcement is the server's own (rule #17), this is advisory only.
 export function buildTransactionFormSchema(
   currencyScale: number,
   accountsById: ReadonlyMap<string, TransactionFormAccount>,
+  baseCurrencyId: string | null,
 ) {
+  const isForeignAccount = (accountId: string): boolean => {
+    if (!baseCurrencyId) return false;
+    const account = accountsById.get(accountId);
+    return !!account && account.currencyId !== baseCurrencyId;
+  };
+
   return z
     .object({
       date: z.string().min(1, "Date is required"),
@@ -86,13 +92,14 @@ export function buildTransactionFormSchema(
           z.object({
             accountId: z.string().min(1, "Account is required"),
             amount: z.number().positive("Amount must be greater than zero"),
+            // Standard one-unit quotation ("1 JPY = 0.5800 INR"), only
+            // meaningful (and required) when this line's Account currency
+            // differs from the Base Currency.
+            rateDecimal: z.number().positive().optional(),
+            reconciled: z.boolean().optional(),
           }),
         )
         .min(1, "At least one destination is required"),
-      // UI-only gate, never submitted as part of the Transaction payload
-      // (onSubmit never reads it) — same "convenience, not accounting
-      // fact" posture as the derived Rate display.
-      reconciled: z.boolean(),
     })
     .refine(
       (values) => values.toLines.every((line) => line.accountId !== values.fromAccountId),
@@ -103,11 +110,25 @@ export function buildTransactionFormSchema(
       path: ["date"],
     })
     .superRefine((values, ctx) => {
+      const anyForeign = values.toLines.some((line) => isForeignAccount(line.accountId));
+
+      values.toLines.forEach((line, index) => {
+        if (!isForeignAccount(line.accountId)) return;
+        if (!line.rateDecimal || line.rateDecimal <= 0) {
+          ctx.addIssue({ code: "custom", path: ["toLines", index, "rateDecimal"], message: "Rate is required" });
+        }
+        if (!line.reconciled) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["toLines", index, "reconciled"],
+            message: "Confirm the currency conversion before saving.",
+          });
+        }
+      });
+
+      if (anyForeign) return; // amounts across different currencies aren't summable — server is the real gate
+
       if (values.toLines.length > 1) {
-        // Split: always one currency, N destinations that must add up to
-        // the total — Currency Conversion is exactly two accounts, never
-        // reachable once splitting (the destination picker itself already
-        // only offers From's currency once a second line exists).
         const total = values.toLines.reduce(
           (sum, line) => sum + toMinorUnits(line.amount, currencyScale),
           0,
@@ -133,16 +154,9 @@ export function buildTransactionFormSchema(
           ctx.addIssue({
             code: "custom",
             path: ["toLines"],
-            message:
-              "From Amount and To Amount must match for a same-currency transfer. To record a currency conversion, choose a different-currency destination account instead.",
+            message: "From Amount and To Amount must match for a same-currency transfer.",
           });
         }
-      } else if (!values.reconciled) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["reconciled"],
-          message: "Confirm the currency conversion before saving.",
-        });
       }
     });
 }
@@ -182,6 +196,98 @@ interface TransactionFormProps {
   };
 }
 
+// One destination line's Rate block (Transaction Form FX UX delta) —
+// shown for any To line whose Account currency differs from the Profile
+// Base Currency, in both Simple and Split mode alike (rendered once per
+// qualifying line, not gated to a single "Conversion" case anymore). The
+// standard one-unit quotation ("1 JPY = [ 0.5800 ] INR"), defaulted from
+// the CurrencyRate lookup for this line's Account + the Transaction's own
+// date, editable, with its own "I confirm" gate — same copy/pattern the
+// single-line Conversion case already used, just now a self-contained
+// component so it can repeat per line without re-deriving state N times in
+// the parent. A local `touchedRef` (not `dirtyFields`, which lives on the
+// parent form) stops the default-fetch effect from clobbering a value the
+// user already edited.
+function ForeignRateBlock({
+  control,
+  setValue,
+  watch,
+  index,
+  account,
+  baseCurrencySymbol,
+  date,
+}: {
+  control: Control<TransactionFormValues>;
+  setValue: UseFormSetValue<TransactionFormValues>;
+  watch: UseFormWatch<TransactionFormValues>;
+  index: number;
+  account: TransactionFormAccount;
+  baseCurrencySymbol: string;
+  date: string;
+}) {
+  const currentRate = watch(`toLines.${index}.rateDecimal`);
+  const touchedRef = useRef(false);
+
+  useEffect(() => {
+    touchedRef.current = false;
+    let cancelled = false;
+    getDefaultCurrencyRateAction({ currencyId: account.currencyId, date: date || todayIso() }).then((result) => {
+      if (cancelled || touchedRef.current || !result.success) return;
+      setValue(`toLines.${index}.rateDecimal`, result.data.rateDecimal, { shouldValidate: false });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-fetch only when this line's own Account or the Transaction date changes
+  }, [account.id, date]);
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border p-3">
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor={`transaction-rate-${index}`}>
+          Rate (1 {account.currencySymbol} = ? {baseCurrencySymbol})
+        </Label>
+        <Controller
+          control={control}
+          name={`toLines.${index}.rateDecimal`}
+          render={({ field }) => (
+            <Input
+              id={`transaction-rate-${index}`}
+              type="number"
+              step="any"
+              min="0"
+              placeholder="0.00"
+              value={field.value ?? ""}
+              onChange={(e) => {
+                touchedRef.current = true;
+                const parsed = e.target.valueAsNumber;
+                field.onChange(Number.isFinite(parsed) ? parsed : undefined);
+                setValue(`toLines.${index}.reconciled`, false, { shouldValidate: false });
+              }}
+            />
+          )}
+        />
+      </div>
+      <Controller
+        control={control}
+        name={`toLines.${index}.reconciled`}
+        render={({ field }) => (
+          <div className="flex items-start gap-2">
+            <Checkbox
+              id={`transaction-reconciled-${index}`}
+              checked={field.value ?? false}
+              onCheckedChange={(checked) => field.onChange(checked === true)}
+            />
+            <Label htmlFor={`transaction-reconciled-${index}`} className="text-sm font-normal">
+              I confirm this currency conversion — 1 {account.currencySymbol} = {currentRate ?? "?"} {baseCurrencySymbol}
+            </Label>
+          </div>
+        )}
+      />
+    </div>
+  );
+}
+
 export function TransactionForm({
   accounts,
   mode = "create",
@@ -202,6 +308,17 @@ export function TransactionForm({
   // dirty-check rather than relying on `formState.isDirty` alone.
   const initialTags = useRef(transaction?.tags ?? []).current;
   const accountsById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
+  // Fetched once — every non-Base-Currency destination line needs to know
+  // the Base Currency's id (to detect it's foreign at all) and symbol (to
+  // label its Rate input). `null` while loading/if the Profile has none yet
+  // (no destination is treated as foreign in that window — matches
+  // `isForeignAccount`'s own `!baseCurrencyId` guard in the schema below).
+  const [baseCurrency, setBaseCurrency] = useState<{ id: string; symbol: string } | null>(null);
+  useEffect(() => {
+    getActiveProfileBaseCurrencyAction().then((result) => {
+      if (result.success) setBaseCurrency({ id: result.data.id, symbol: result.data.symbol });
+    });
+  }, []);
   // Fixed, generous internal precision for the split-sums-to-total check
   // (buildTransactionFormSchema) — the real, currency-correct scale for
   // each leg is resolved from that leg's own Account and only applied
@@ -210,7 +327,10 @@ export function TransactionForm({
   // every destination, this internal check only needs *a* consistent
   // precision to compare amounts safely, not the real one — 6 decimal
   // places comfortably covers every real currency's actual scale (0-4).
-  const schema = useMemo(() => buildTransactionFormSchema(6, accountsById), [accountsById]);
+  const schema = useMemo(
+    () => buildTransactionFormSchema(6, accountsById, baseCurrency?.id ?? null),
+    [accountsById, baseCurrency?.id],
+  );
 
   const {
     register,
@@ -238,20 +358,19 @@ export function TransactionForm({
           description: transaction.description,
           fromAccountId: transaction.fromAccountId,
           amount: transaction.amount,
-          toLines: transaction.toLines,
-          // Edit mode: whatever's already saved was already valid — start
-          // reconciled, same posture as "no persisted draft" (only a fresh
-          // change should ever demand re-confirmation, via the reset effect
-          // below). Irrelevant/unused for a same-currency transaction.
-          reconciled: true,
+          // Edit mode never pre-fills a historical rate — a foreign line
+          // always re-fetches today's CurrencyRate default (ForeignRateBlock)
+          // and needs fresh re-confirmation, same "an edit is never trusted
+          // just because the prior version was balanced" posture
+          // `editTransaction` itself already documents server-side.
+          toLines: transaction.toLines.map((line) => ({ ...line, rateDecimal: undefined, reconciled: false })),
         }
       : {
           date: "",
           description: "",
           fromAccountId: defaultFromAccountId ?? "",
           amount: Number.NaN,
-          toLines: [{ accountId: "", amount: 0 }],
-          reconciled: false,
+          toLines: [{ accountId: "", amount: 0, rateDecimal: undefined, reconciled: false }],
         },
   });
 
@@ -270,50 +389,18 @@ export function TransactionForm({
   const currencySymbol = fromAccount?.currencySymbol ?? "";
   const currencyScale = fromAccount?.currencyScale ?? 2;
 
-  // Reconciliation gate (2026-09-03 delta) — To Amount is always its own
-  // editable fact now (never forcibly mirrored once the user touches it),
-  // so From/To can end up unequal. Three cases, matching
-  // buildTransactionFormSchema's superRefine and domain/transaction.ts's
-  // isConversionShape exactly (this is a UI-side read of the same rule,
-  // not a separate source of truth) — never reachable during a *split*
-  // (2+ destinations): "Currency conversion -> exactly two accounts", so
-  // destination pickers only restrict to From's currency once a second
-  // destination line exists.
+  // Transaction Form FX UX delta — a destination line no longer needs to
+  // share From's currency (no more auto-clearing a mismatched split
+  // destination); each is independently checked against the Base Currency
+  // instead, via `isForeignLine` below. `toAccount` stays for Simple mode's
+  // own To-line display, unrelated to foreignness.
   const toAccount = accountsById.get(toLines[0]?.accountId ?? "");
   const toCurrencySymbol = toAccount?.currencySymbol ?? currencySymbol;
-  const toCurrencyScale = toAccount?.currencyScale ?? currencyScale;
-  const toAmount = toLines[0]?.amount;
-  const isSameCurrency = !!fromAccount && !!toAccount && fromAccount.currencyId === toAccount.currencyId;
-  const amountsEqual =
-    toMinorUnits(amount || 0, currencyScale) === toMinorUnits(toAmount || 0, toCurrencyScale);
-  const reconciliationCase: "normal" | "conversion" | "mismatch" = !toAccount
-    ? "normal"
-    : isSameCurrency
-      ? amountsEqual
-        ? "normal"
-        : "mismatch"
-      : "conversion";
-  const isConversion = reconciliationCase === "conversion";
-  const compatibleToAccounts =
-    isSplit && fromAccount ? accounts.filter((account) => account.currencyId === fromAccount.currencyId) : accounts;
-
-  // Clear a destination that no longer matches From's currency — but only
-  // once splitting (2+ destinations): a *single* mismatched destination is
-  // the Conversion case and must never be auto-cleared. Fires when From
-  // changes (its currency might no longer match an existing split leg) or
-  // when a second destination is added while the first was already a
-  // different-currency Conversion pairing (that pairing must collapse
-  // back to unselected the moment splitting makes it invalid, not linger).
-  useEffect(() => {
-    if (!fromAccount || !isSplit) return;
-    toLines.forEach((line, index) => {
-      const account = accountsById.get(line.accountId);
-      if (account && account.currencyId !== fromAccount.currencyId) {
-        setValue(`toLines.${index}.accountId`, "", { shouldValidate: false });
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-check when From's currency or split-ness actually changes, not on every toLines edit
-  }, [fromAccount?.currencyId, isSplit]);
+  const isForeignLine = (accountId: string): boolean => {
+    if (!baseCurrency) return false;
+    const account = accountsById.get(accountId);
+    return !!account && account.currencyId !== baseCurrency.id;
+  };
 
   const tagsChanged =
     tags.length !== initialTags.length || tags.some((tag, index) => tag !== initialTags[index]);
@@ -338,62 +425,22 @@ export function TransactionForm({
   // top-level Amount field — but only until the user edits To Amount
   // themselves (`dirtyFields`, react-hook-form's own per-field tracking;
   // this `setValue` call never sets `shouldDirty`, so it can't falsely
-  // trip its own guard). Reconciliation gate delta (2026-09-03): "Default
-  // behaviour must remain unchanged... but the user must be able to
-  // change To Amount independently" — this is that: same default as
-  // before, now with a real escape hatch instead of forcibly re-mirroring
-  // on every keystroke. `amount` is `NaN` (not `undefined`) on a blank
+  // trip its own guard) — and never for a foreign destination, where
+  // mirroring the same raw number across two different currencies would
+  // be actively misleading. `amount` is `NaN` (not `undefined`) on a blank
   // create-mode mount — the Amount input's empty string runs through
   // `valueAsNumber` before ever being typed into — so this must guard
   // against NaN too, or it fires a spurious `setValue` on mount that marks
   // the untouched form dirty (edit-visual-behaviour delta §12's guard).
   const toAmountTouched = !!dirtyFields.toLines?.[0]?.amount;
+  const firstLineIsForeign = isForeignLine(toLines[0]?.accountId ?? "");
   useEffect(() => {
-    if (!isSplit && !toAmountTouched && amount !== undefined && !Number.isNaN(amount)) {
+    if (!isSplit && !firstLineIsForeign && !toAmountTouched && amount !== undefined && !Number.isNaN(amount)) {
       setValue("toLines.0.amount", amount, { shouldValidate: false });
     }
-  }, [isSplit, amount, toAmountTouched, setValue]);
+  }, [isSplit, firstLineIsForeign, amount, toAmountTouched, setValue]);
 
-  // Reconciliation must be re-confirmed after any change to what's being
-  // reconciled — never let a stale confirmation silently carry over to a
-  // different amount/account pairing. Skips its very first run (mount):
-  // edit mode seeds `reconciled: true` for whatever was already saved,
-  // which this effect must not immediately stomp before the user has
-  // touched anything.
-  const toLineAccountId = toLines[0]?.accountId;
-  const skipReconciledResetRef = useRef(true);
-  useEffect(() => {
-    if (skipReconciledResetRef.current) {
-      skipReconciledResetRef.current = false;
-      return;
-    }
-    setValue("reconciled", false, { shouldValidate: false });
-  }, [fromAccountId, toLineAccountId, amount, toAmount, setValue]);
-
-  // Rate is a display/input convenience over the two real leg amounts,
-  // never submitted directly (onSubmit only ever sends the two `amount`
-  // fields as postings, same as before) — always derived from them, except
-  // for the one tick right after the user edits it themselves
-  // (rateEditedRef), so recomputing right back from the amount it just set
-  // doesn't visibly snap the input to a rounded-off value the instant they
-  // finish typing. The server independently re-derives and persists the
-  // same ratio as the posting's `price` (Revised Investment Model delta,
-  // 2026-09-03, use-cases/transactions.ts's derivePostings) — Rate was
-  // never an accounting fact of its own, and still isn't; it's just no
-  // longer discarded once it reaches the server.
-  const [rateInput, setRateInput] = useState("");
-  const rateEditedRef = useRef(false);
-  useEffect(() => {
-    if (!isConversion) return;
-    if (rateEditedRef.current) {
-      rateEditedRef.current = false;
-      return;
-    }
-    if (amount > 0 && toAmount > 0) {
-      setRateInput(String(Number((toAmount / amount).toFixed(6))));
-    }
-  }, [isConversion, amount, toAmount]);
-
+  const anyLineIsForeign = (toLines ?? []).some((line) => isForeignLine(line.accountId));
   const totalMinorUnits = (toLines ?? []).reduce(
     (sum, line) => sum + toMinorUnits(line.amount || 0, currencyScale),
     0,
@@ -418,6 +465,11 @@ export function TransactionForm({
           accountId: line.accountId,
           debit: toMinorUnits(line.amount, lineScale),
           credit: 0,
+          // Transaction Form FX UX delta — only sent for a line that's
+          // actually foreign; the server falls back to its own
+          // CurrencyRate default otherwise (never needed for a same-Base-
+          // Currency line, which is always priced 1/1).
+          rateDecimal: isForeignLine(line.accountId) ? line.rateDecimal : undefined,
         };
       }),
     ];
@@ -473,18 +525,10 @@ export function TransactionForm({
     </>
   );
   const accountOptions = accountOptionsFor(accounts);
-  const toAccountOptions = accountOptionsFor(compatibleToAccounts);
-
-  const onRateChange = (raw: string) => {
-    setRateInput(raw);
-    const parsedRate = Number(raw);
-    if (Number.isFinite(parsedRate) && parsedRate > 0 && amount > 0) {
-      rateEditedRef.current = true;
-      setValue("toLines.0.amount", Number((amount * parsedRate).toFixed(toCurrencyScale)), {
-        shouldValidate: false,
-      });
-    }
-  };
+  // Transaction Form FX UX delta — a destination is no longer restricted
+  // to From's own currency (any Account can be a valid destination now,
+  // foreign or not); the picker offers every Account unconditionally.
+  const toAccountOptions = accountOptions;
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
@@ -556,15 +600,13 @@ export function TransactionForm({
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
               <Label htmlFor="transaction-to">To</Label>
-              {reconciliationCase === "normal" && (
-                <button
-                  type="button"
-                  onClick={() => append({ accountId: "", amount: 0 })}
-                  className="text-sm text-muted-foreground hover:text-foreground"
-                >
-                  + Split
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => append({ accountId: "", amount: 0 })}
+                className="text-sm text-muted-foreground hover:text-foreground"
+              >
+                + Split
+              </button>
             </div>
             <Controller
               control={control}
@@ -581,114 +623,100 @@ export function TransactionForm({
           </div>
 
           {/* To Amount (2026-09-03 Reconciliation Gate delta) — always its
-              own editable fact now, for every transfer, not only a
-              Currency Conversion. Defaults to mirroring From Amount
-              (effect above) until the user edits it directly. */}
+              own editable fact now, for every transfer. Defaults to
+              mirroring From Amount (effect above) for a same-Base-Currency
+              destination only, until the user edits it directly. */}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="transaction-to-amount">To Amount ({toCurrencySymbol})</Label>
             <Input
               id="transaction-to-amount"
               type="number"
-              step={10 ** -toCurrencyScale}
+              step={10 ** -(toAccount?.currencyScale ?? currencyScale)}
               min="0"
               placeholder="0.00"
               {...register("toLines.0.amount", { valueAsNumber: true })}
             />
           </div>
 
-          {reconciliationCase === "conversion" && (
-            <>
-              {/* Currency Conversion — From and To are independent amounts,
-                  each the real accounting fact for its own leg; Rate is
-                  purely a derived/edit convenience, never submitted
-                  (onSubmit only ever sends the two `amount` fields as
-                  postings). Must be explicitly reconciled before Save. */}
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="transaction-rate">
-                  Rate (1 {currencySymbol} = ? {toCurrencySymbol})
-                </Label>
-                <Input
-                  id="transaction-rate"
-                  type="number"
-                  step="any"
-                  min="0"
-                  placeholder="0.00"
-                  value={rateInput}
-                  onChange={(e) => onRateChange(e.target.value)}
-                />
-              </div>
-              <Controller
-                control={control}
-                name="reconciled"
-                render={({ field }) => (
-                  <div className="flex items-start gap-2">
-                    <Checkbox
-                      id="transaction-reconciled"
-                      checked={field.value}
-                      onCheckedChange={(checked) => field.onChange(checked === true)}
-                    />
-                    <Label htmlFor="transaction-reconciled" className="text-sm font-normal">
-                      I confirm this currency conversion — 1 {currencySymbol} = {rateInput || "?"}{" "}
-                      {toCurrencySymbol}
-                    </Label>
-                  </div>
-                )}
-              />
-              {errors.reconciled && (
-                <p className="text-sm text-destructive">{errors.reconciled.message}</p>
-              )}
-            </>
+          {toAccount && firstLineIsForeign && baseCurrency && (
+            <ForeignRateBlock
+              control={control}
+              setValue={setValue}
+              watch={watch}
+              index={0}
+              account={toAccount}
+              baseCurrencySymbol={baseCurrency.symbol}
+              date={watch("date")}
+            />
           )}
         </div>
       ) : (
         <div className="flex flex-col gap-2">
           <Label>To</Label>
-          {fields.map((field, index) => (
-            <div key={field.id} className="flex flex-col gap-2 sm:flex-row">
-              <Controller
-                control={control}
-                name={`toLines.${index}.accountId`}
-                render={({ field: controllerField }) => (
-                  <Select value={controllerField.value} onValueChange={controllerField.onChange}>
-                    <SelectTrigger
-                      className="sm:flex-1"
-                      aria-label={`Destination account ${index + 1}`}
+          {fields.map((field, index) => {
+            const lineAccountId = toLines[index]?.accountId ?? "";
+            const lineAccount = accountsById.get(lineAccountId);
+            const lineIsForeign = isForeignLine(lineAccountId);
+            return (
+              <div key={field.id} className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Controller
+                    control={control}
+                    name={`toLines.${index}.accountId`}
+                    render={({ field: controllerField }) => (
+                      <Select value={controllerField.value} onValueChange={controllerField.onChange}>
+                        <SelectTrigger
+                          className="sm:flex-1"
+                          aria-label={`Destination account ${index + 1}`}
+                        >
+                          <SelectValue placeholder="Select an account">{accountLabel}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>{toAccountOptions}</SelectContent>
+                      </Select>
+                    )}
+                  />
+                  <div className="flex gap-2">
+                    <Input
+                      aria-label={`Destination amount ${index + 1}`}
+                      type="number"
+                      step={10 ** -(lineAccount?.currencyScale ?? currencyScale)}
+                      min="0"
+                      placeholder="0.00"
+                      className="w-28"
+                      {...register(`toLines.${index}.amount`, { valueAsNumber: true })}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => remove(index)}
+                      disabled={fields.length <= 1}
                     >
-                      <SelectValue placeholder="Select an account">{accountLabel}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>{toAccountOptions}</SelectContent>
-                  </Select>
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+                {(errors.toLines?.[index]?.accountId?.message ||
+                  errors.toLines?.[index]?.amount?.message) && (
+                  <p className="text-sm text-destructive">
+                    {errors.toLines[index]?.accountId?.message ??
+                      errors.toLines[index]?.amount?.message}
+                  </p>
                 )}
-              />
-              <div className="flex gap-2">
-                <Input
-                  aria-label={`Destination amount ${index + 1}`}
-                  type="number"
-                  step={10 ** -currencyScale}
-                  min="0"
-                  placeholder="0.00"
-                  className="w-28"
-                  {...register(`toLines.${index}.amount`, { valueAsNumber: true })}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => remove(index)}
-                  disabled={fields.length <= 1}
-                >
-                  Remove
-                </Button>
+                {lineAccount && lineIsForeign && baseCurrency && (
+                  <ForeignRateBlock
+                    control={control}
+                    setValue={setValue}
+                    watch={watch}
+                    index={index}
+                    account={lineAccount}
+                    baseCurrencySymbol={baseCurrency.symbol}
+                    date={watch("date")}
+                  />
+                )}
               </div>
-              {(errors.toLines?.[index]?.accountId?.message ||
-                errors.toLines?.[index]?.amount?.message) && (
-                <p className="text-sm text-destructive">
-                  {errors.toLines[index]?.accountId?.message ??
-                    errors.toLines[index]?.amount?.message}
-                </p>
-              )}
-            </div>
-          ))}
+            );
+          })}
           <button
             type="button"
             onClick={() => append({ accountId: "", amount: 0 })}
@@ -697,15 +725,21 @@ export function TransactionForm({
             + Add destination
           </button>
 
-          <div className="flex items-center justify-between text-sm">
-            <span>
-              Total: {currencySymbol}
-              {(totalMinorUnits / 10 ** currencyScale).toFixed(currencyScale)}
-            </span>
-            <span className={isBalanced ? "text-success" : "text-destructive"}>
-              {isBalanced ? "✓ Balanced" : "✗ Not balanced"}
-            </span>
-          </div>
+          {/* Raw currency-native amounts aren't summable once any
+              destination is foreign (Transaction Form FX UX delta) — the
+              Total/Balanced indicator only applies to an all-Base-Currency
+              split, same as before this delta for that case. */}
+          {!anyLineIsForeign && (
+            <div className="flex items-center justify-between text-sm">
+              <span>
+                Total: {currencySymbol}
+                {(totalMinorUnits / 10 ** currencyScale).toFixed(currencyScale)}
+              </span>
+              <span className={isBalanced ? "text-success" : "text-destructive"}>
+                {isBalanced ? "✓ Balanced" : "✗ Not balanced"}
+              </span>
+            </div>
+          )}
         </div>
       )}
       {errors.toLines?.root?.message && (

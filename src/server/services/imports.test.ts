@@ -216,14 +216,14 @@ describe("previewImport — account resolution", () => {
       identifier: "00001234567890",
       proposedName: "HDFC Bank ••••7890",
       proposedClassification: "ASSET",
-      proposedInstrumentType: "BANK",
+      proposedAccountType: "BANK",
     });
   });
 
   it("resolves directly on an exact identifier match", async () => {
     const db = createTestDb();
     const { profile, currency } = setUpLedger(db);
-    const bank = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank", classification: "ASSET", instrumentType: "BANK" });
+    const bank = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank", classification: "ASSET", accountType: "BANK" });
     insertAccountIdentifier(db, { id: crypto.randomUUID(), accountId: bank.id, identifier: "00001234567890", createdAt: "now", updatedAt: "now" });
 
     const preview = await previewHdfc(db, profile.id);
@@ -235,7 +235,7 @@ describe("previewImport — account resolution", () => {
   it("flags a possible match for a masked identifier sharing a significant suffix", async () => {
     const db = createTestDb();
     const { profile, currency } = setUpLedger(db);
-    const bank = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank", classification: "ASSET", instrumentType: "BANK" });
+    const bank = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank", classification: "ASSET", accountType: "BANK" });
     insertAccountIdentifier(db, { id: crypto.randomUUID(), accountId: bank.id, identifier: "XX7890", createdAt: "now", updatedAt: "now" });
 
     const preview = await previewHdfc(db, profile.id);
@@ -247,8 +247,8 @@ describe("previewImport — account resolution", () => {
   it("flags ambiguous when a masked identifier matches more than one account", async () => {
     const db = createTestDb();
     const { profile, currency } = setUpLedger(db);
-    const bank1 = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank 1", classification: "ASSET", instrumentType: "BANK" });
-    const bank2 = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank 2", classification: "ASSET", instrumentType: "BANK" });
+    const bank1 = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank 1", classification: "ASSET", accountType: "BANK" });
+    const bank2 = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank 2", classification: "ASSET", accountType: "BANK" });
     insertAccountIdentifier(db, { id: crypto.randomUUID(), accountId: bank1.id, identifier: "XX7890", createdAt: "now", updatedAt: "now" });
     insertAccountIdentifier(db, { id: crypto.randomUUID(), accountId: bank2.id, identifier: "XXX7890", createdAt: "now", updatedAt: "now" });
 
@@ -272,7 +272,7 @@ describe("commitImport", () => {
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
 
     const preview = await previewImport(db, {
@@ -311,7 +311,7 @@ describe("commitImport", () => {
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
 
     const preview1 = await previewImport(db, { profileId: profile.id, filename: "aug.csv", fileBase64: toBase64(CSV), fileKey: "file-1" });
@@ -352,7 +352,7 @@ describe("commitImport", () => {
           filename: "statement.csv",
           source: "generic.any.csv",
           identifier: "00009876543210",
-          accountChoice: { type: "new", name: "HDFC Bank ••••3210", classification: "ASSET", instrumentType: "BANK" },
+          accountChoice: { type: "new", name: "HDFC Bank ••••3210", classification: "ASSET", accountType: "BANK" },
         },
       ],
       candidates: preview.candidates,
@@ -378,7 +378,7 @@ describe("commitImport", () => {
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
 
     const preview = await previewImport(db, { profileId: profile.id, filename: "statement.csv", fileBase64: toBase64(CSV), fileKey: "file-1" });
@@ -401,7 +401,7 @@ describe("commitImport", () => {
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
 
     const preview = await previewImport(db, { profileId: profile.id, filename: "statement.csv", fileBase64: toBase64(CSV), fileKey: "file-1" });

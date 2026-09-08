@@ -15,14 +15,12 @@
 // multi-person household.
 import {
   budgetPeriodWindowAt,
-  fromMinorUnits,
   toMinorUnits,
-  toQuantityMinorUnits,
   validateTransaction,
   type AccountRef,
   type BudgetRecurrenceSchedule,
   type Classification,
-  type InstrumentType,
+  type AccountType,
 } from "@/core";
 import type { CurrencyRow } from "../repositories/currencies";
 import type { AccountRow } from "../repositories/accounts";
@@ -75,29 +73,29 @@ interface AccountSpec {
   key: string;
   name: string;
   classification: Classification;
-  instrumentType: InstrumentType;
+  accountType: AccountType;
 }
 
 const ACCOUNT_SPECS: AccountSpec[] = [
-  { key: "bank1", name: "HDFC Bank", classification: "ASSET", instrumentType: "BANK" },
-  { key: "bank2", name: "SBI Bank", classification: "ASSET", instrumentType: "BANK" },
-  { key: "epf", name: "EPF", classification: "ASSET", instrumentType: "CASH" },
-  { key: "fd", name: "Fixed Deposit", classification: "ASSET", instrumentType: "CASH" },
-  { key: "homeLoan", name: "Home Loan", classification: "LIABILITY", instrumentType: "LOAN" },
-  { key: "creditCard", name: "Credit Card", classification: "LIABILITY", instrumentType: "CREDIT_CARD" },
-  { key: "salary", name: "Salary", classification: "INCOME", instrumentType: "INCOME" },
-  { key: "freelance", name: "Freelance Income", classification: "INCOME", instrumentType: "INCOME" },
-  { key: "interest", name: "Interest Income", classification: "INCOME", instrumentType: "INCOME" },
-  { key: "food", name: "Food", classification: "EXPENSE", instrumentType: "EXPENSE" },
-  { key: "rent", name: "Rent", classification: "EXPENSE", instrumentType: "EXPENSE" },
-  { key: "utilities", name: "Utilities", classification: "EXPENSE", instrumentType: "EXPENSE" },
-  { key: "shopping", name: "Shopping", classification: "EXPENSE", instrumentType: "EXPENSE" },
-  { key: "restaurants", name: "Restaurants", classification: "EXPENSE", instrumentType: "EXPENSE" },
-  { key: "transport", name: "Transport", classification: "EXPENSE", instrumentType: "EXPENSE" },
-  { key: "healthcare", name: "Healthcare", classification: "EXPENSE", instrumentType: "EXPENSE" },
-  { key: "entertainment", name: "Entertainment", classification: "EXPENSE", instrumentType: "EXPENSE" },
-  { key: "homeLoanInterest", name: "Home Loan Interest", classification: "EXPENSE", instrumentType: "EXPENSE" },
-  { key: "balancing", name: "Opening Balance", classification: "BALANCING", instrumentType: "BALANCING" },
+  { key: "bank1", name: "HDFC Bank", classification: "ASSET", accountType: "BANK" },
+  { key: "bank2", name: "SBI Bank", classification: "ASSET", accountType: "BANK" },
+  { key: "epf", name: "EPF", classification: "ASSET", accountType: "CASH" },
+  { key: "fd", name: "Fixed Deposit", classification: "ASSET", accountType: "CASH" },
+  { key: "homeLoan", name: "Home Loan", classification: "LIABILITY", accountType: "LOAN" },
+  { key: "creditCard", name: "Credit Card", classification: "LIABILITY", accountType: "CREDIT_CARD" },
+  { key: "salary", name: "Salary", classification: "INCOME", accountType: "EARNED" },
+  { key: "freelance", name: "Freelance Income", classification: "INCOME", accountType: "EARNED" },
+  { key: "interest", name: "Interest Income", classification: "INCOME", accountType: "EARNED" },
+  { key: "food", name: "Food", classification: "EXPENSE", accountType: "VARIABLE" },
+  { key: "rent", name: "Rent", classification: "EXPENSE", accountType: "VARIABLE" },
+  { key: "utilities", name: "Utilities", classification: "EXPENSE", accountType: "VARIABLE" },
+  { key: "shopping", name: "Shopping", classification: "EXPENSE", accountType: "VARIABLE" },
+  { key: "restaurants", name: "Restaurants", classification: "EXPENSE", accountType: "VARIABLE" },
+  { key: "transport", name: "Transport", classification: "EXPENSE", accountType: "VARIABLE" },
+  { key: "healthcare", name: "Healthcare", classification: "EXPENSE", accountType: "VARIABLE" },
+  { key: "entertainment", name: "Entertainment", classification: "EXPENSE", accountType: "VARIABLE" },
+  { key: "homeLoanInterest", name: "Home Loan Interest", classification: "EXPENSE", accountType: "VARIABLE" },
+  { key: "balancing", name: "Opening Balance", classification: "BALANCING", accountType: "INITIAL" },
 ];
 
 const CC_CATEGORIES = [
@@ -138,17 +136,19 @@ class DatasetBuilder {
   ): void {
     const transactionId = crypto.randomUUID();
     for (const leg of legs) {
+      const units = leg.debit - leg.credit;
       this.postings.push({
         id: crypto.randomUUID(),
         transactionId,
         accountId: leg.accountId,
-        debit: leg.debit,
-        credit: leg.credit,
-        // quantity always mirrors this leg's own amount — demo data is
-        // single-currency (SCALE = 2) with no Conversion/Instrument legs,
-        // so price is always 1 (Revised Investment Model delta, 2026-09-03).
-        quantity: toQuantityMinorUnits(fromMinorUnits(leg.debit || leg.credit, SCALE)),
-        price: 1,
+        // units/priceNum/priceDenom/baseAmount mirror demo data's
+        // single-currency simplicity (Account Types, Money Representation,
+        // Rational Pricing, FX & Liability Details delta) — no Conversion
+        // legs in demo data, so baseAmount always equals units exactly.
+        units,
+        priceNum: 1,
+        priceDenom: 1,
+        baseAmount: units,
         createdAt: this.now,
         updatedAt: this.now,
       });
@@ -333,7 +333,7 @@ function buildAccounts(
       currencyId,
       name: spec.name,
       classification: spec.classification,
-      instrumentType: spec.instrumentType,
+      accountType: spec.accountType,
       instrumentId: null,
       instrumentLabel: null,
       tags: null,
@@ -516,6 +516,7 @@ export function validateDataset(dataset: DemoDataset): void {
         {
           id: account.id,
           profileId: account.profileId,
+          currencyId: account.currencyId,
           currencyCode: currency.code,
           currencyScale: currency.minorUnitScale,
         },
@@ -530,6 +531,12 @@ export function validateDataset(dataset: DemoDataset): void {
     postingsByTransaction.set(posting.transactionId, list);
   }
 
+  const baseCurrency = {
+    id: dataset.currencies[0]!.id,
+    code: dataset.currencies[0]!.code,
+    scale: dataset.currencies[0]!.minorUnitScale,
+  };
+
   for (const transaction of dataset.transactions) {
     const postings = postingsByTransaction.get(transaction.id) ?? [];
     const violations = validateTransaction(
@@ -537,13 +544,14 @@ export function validateDataset(dataset: DemoDataset): void {
         profileId: transaction.profileId,
         postings: postings.map((p) => ({
           accountId: p.accountId,
-          debit: p.debit,
-          credit: p.credit,
-          quantity: p.quantity,
-          price: p.price,
+          units: p.units!,
+          priceNum: p.priceNum!,
+          priceDenom: p.priceDenom!,
+          baseAmount: p.baseAmount!,
         })),
       },
       accountRefs,
+      baseCurrency,
     );
     if (violations.length > 0) {
       throw new Error(

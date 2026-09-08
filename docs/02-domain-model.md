@@ -14,8 +14,9 @@ No separate accounting Category entity. Expense categories are Expense Accounts.
 
 Later modules add their own entities on top of this spine, documented in
 `docs/04-modules.md` rather than repeated here: Recurring Rule, Budget/
-BudgetPeriod/BudgetAllocation, Dashboard/DashboardPanel. The Portfolio
-domain (`core/portfolio`) is a deliberately separate sibling model —
+BudgetPeriod/BudgetAllocation, Dashboard/DashboardPanel, CurrencyRate,
+CreditCardDetails/LoanDetails. The Portfolio domain (`core/portfolio`) is
+a deliberately separate sibling model —
 PortfolioAccount/Folio/InvestmentTransaction/Holding/NAVHistory — see its
 own section below.
 
@@ -54,11 +55,12 @@ maintained Currency Catalogue (`core/shared/currency.ts`, a code-level
 constant, not a DB table — `docs/04-modules.md`).
 
 Each Account references exactly one Currency. A Profile has a Primary
-Currency (default for a new Account, changeable, not retroactive); an
-Account's own Currency is authoritative and independently changeable —
-since Transactions never store a currency of their own, changing an
-Account's Currency immediately reinterprets every existing and future
-Transaction on it.
+Currency — also its Base Currency, the fixed reconciliation target every
+Transaction's Postings value into (default for a new Account, changeable,
+not retroactive); an Account's own Currency is authoritative and
+independently changeable — since Transactions never store a currency of
+their own, changing an Account's Currency immediately reinterprets every
+existing and future Transaction on it.
 
 ```text
 INR
@@ -71,11 +73,12 @@ Currency owns monetary precision. Account owns the relationship to Currency.
 
 Posting does not carry a separate currency field. Posting currency is derived from its Account.
 
-No FX, conversion, or cross-currency aggregation. A Transaction whose
-postings resolve to more than one currency is rejected
-(`MIXED_CURRENCY_UNSUPPORTED`), except the one 2-posting Currency
-Conversion shape, which persists an explicit rate for that transaction
-alone.
+Any Posting may independently be priced in a currency other than the Base
+Currency (ADR-047) — genuine N-leg cross-currency Transactions are
+supported, not just one fixed 2-posting Conversion shape.
+`MIXED_CURRENCY_UNSUPPORTED` is retired. A dated CurrencyRate (or an
+explicit user-confirmed rate) resolves each such Posting's exact-rational
+price into the Base Currency; still no FX aggregation beyond that.
 
 ## Account
 
@@ -87,9 +90,9 @@ Fields/concepts:
 - name
 - profile
 - classification
-- instrument type
-- optional instrument ID
-- optional instrument label
+- account type
+- optional instrument ID (inert)
+- optional instrument label (inert)
 - currency
 - inline account tags
 - archive state
@@ -111,71 +114,82 @@ BALANCING
 
 `BALANCING` serves technical accounting purposes such as opening balances and adjustments.
 
-### Instrument type
+### Account type
 
-Instrument type describes the nature of the Account/instrument. It does not determine accounting treatment.
+Account type describes the nature of the Account within its Classification.
+It does not itself determine accounting treatment — Classification does
+that (see above); Account type is a mandatory, more specific categorisation
+layered on top of it.
 
-Frozen (AGENTS.md rule #11, 2026-08-19 account-model delta):
+Mandatory on every Classification (AGENTS.md rule #30, ADR-047 —
+supersedes the earlier frozen 7-value `instrument_type` taxonomy, rule
+#11/ADR-024, and reverses rule #21's original "only Asset/Liability have
+one" scope):
 
 ```text
-BANK
-CASH
-CREDIT_CARD
-LOAN
-EXPENSE
-INCOME
-BALANCING
+ASSET       CASH, BANK, INVESTMENTS, WALLET, RECEIVABLES
+LIABILITY   CREDIT_CARD, LOAN, PAYABLES
+INCOME      EARNED, PASSIVE, WINDFALL
+EXPENSE     FIXED, VARIABLE, DISCRETIONARY, FINANCIAL
+BALANCING   INITIAL
 ```
 
+`BALANCING`'s `INITIAL` is system-managed only — never offered as a
+choice in the Account form (rule #22).
+
 A Ledger Account can never be Instrument-backed (`MUTUAL_FUND`/`STOCK`/
-`COMMODITY` were part of this list until the Ledger/Portfolio delink,
-ADR-040 — an Asset Account's only types are now `BANK`/`CASH`). Investment
-tracking is a separate sibling domain, Portfolio, with its own
-`InstrumentBackedType` list (`MUTUAL_FUND`/`STOCK`/`COMMODITY`) and its
-own `PortfolioAccount` entity — see "Portfolio domain" below and
+`COMMODITY` were removed from this vocabulary by the earlier Ledger/
+Portfolio delink, ADR-040 — an Asset Account's real types are the five
+above). Investment tracking is a separate sibling domain, Portfolio, with
+its own `InstrumentBackedType` list (`MUTUAL_FUND`/`STOCK`/`COMMODITY`)
+and its own `PortfolioAccount` entity — see "Portfolio domain" below and
 `docs/04-modules.md`.
+
+Enforced by `UNIQUE(profile_id, classification, account_type, name)` — no
+two Accounts in one Profile can share all three.
 
 Examples:
 
 ```text
 HDFC Bank
 classification = ASSET
-instrument_type = BANK
+account_type = BANK
 ```
 
 ```text
 HDFC Credit Card
 classification = LIABILITY
-instrument_type = CREDIT_CARD
+account_type = CREDIT_CARD
 ```
 
 ```text
 Home Loan
 classification = LIABILITY
-instrument_type = LOAN
+account_type = LOAN
 ```
 
 ```text
 Food
 classification = EXPENSE
-instrument_type = EXPENSE
+account_type = VARIABLE
 ```
 
 ```text
 Salary
 classification = INCOME
-instrument_type = INCOME
+account_type = EARNED
 ```
 
 ### Instrument identifiers (inert)
 
 `instrument_id` and `instrument_label` still exist as nullable columns on
-`accounts` (ADR-016) but are no longer written by `createAccount`/
-`editAccount` since the Ledger/Portfolio delink (ADR-040) — left inert
-rather than dropped in a migration, this codebase's established posture
-for a superseded column, pending a real data migration for any Account
-created under the old model. They were, and are, unrelated to the separate
-`Instrument` catalogue entity (shared reference data, not Profile-scoped —
+`accounts` (ADR-016), unaffected by ADR-047. Still threaded through
+`CreateAccountInput`/`UpdateAccountInput` as a technicality (ADR-040 left
+them inert rather than dropped), but nothing in the Account form has
+populated a non-null value since the Ledger/Portfolio delink — no
+Instrument picker exists there anymore. They were, and are, unrelated to
+the separate `Instrument` catalogue entity (shared reference data, not
+Profile-scoped —
 one row per real-world instrument like "HDFC Bank the stock") or to
 `AccountIdentifier` (a bank statement's account-number identifier, used by
 Import account resolution — see `docs/04-modules.md`'s Imports section).
@@ -190,9 +204,12 @@ A Transaction contains at least two Postings.
 
 Every Posting must reference an Account owned by the Transaction's Profile.
 
-A Transaction's postings must resolve to exactly one currency
-(`MIXED_CURRENCY_UNSUPPORTED` otherwise), except the one Currency
-Conversion shape.
+Any Posting may independently be priced in a currency other than the
+Profile's Base Currency (ADR-047) — genuine N-leg cross-currency
+Transactions are domain-valid, not just one fixed 2-posting Conversion
+shape. `MIXED_CURRENCY_UNSUPPORTED` is retired; the real invariant is the
+Double-entry invariant below (`SUM(base_amount) == 0`), which every
+Posting's price resolution feeds into.
 
 Fields/concepts:
 
@@ -217,33 +234,45 @@ No merchant entity. Description/payee remains text.
 
 Posting is one accounting leg of a Transaction.
 
-Conceptually:
+Conceptually (ADR-047 — replaces the old `debit`/`credit`/`quantity`/
+`price` shape outright, not alongside it):
 
 ```text
 Posting
 ├── id
 ├── transaction_id
 ├── account_id
-├── debit
-└── credit
+├── units        (signed integer minor units, Account's own Currency)
+├── price_num    (positive integer)
+├── price_denom  (positive integer)
+└── base_amount  (signed integer minor units, Profile's Base Currency)
 ```
+
+`units` is signed: an Asset Account receiving money is positive, paying
+money out is negative (`units = debit - credit` under the old model).
+`price_num`/`price_denom` is the exact rational valuation ratio converting
+`units` into the Profile's Base Currency's minor units — always `1/1` for
+a Posting whose Account already uses the Base Currency, otherwise the
+resolved CurrencyRate (or an explicit user-confirmed rate) for that
+Transaction's own date. `base_amount = round_half_even(units × price_num
+/ price_denom)` — computed via checked BigInt arithmetic
+(`core/shared/rational.ts`), never a float, never `Math.round`.
 
 Posting rules:
 
 ```text
-debit >= 0
-credit >= 0
-
-exactly one of debit/credit > 0
+units != 0
+price_num > 0
+price_denom > 0
 ```
 
 Therefore:
 
 ```text
-debit = 5000, credit = 0     VALID
-debit = 0, credit = 5000     VALID
-debit = 0, credit = 0        INVALID
-debit = 5000, credit = 5000  INVALID
+units = 5000                          VALID  (a debit-side leg)
+units = -5000                         VALID  (a credit-side leg)
+units = 0                             INVALID
+price_num = 0 or price_denom = 0      INVALID
 ```
 
 ## Double-entry invariant
@@ -251,7 +280,7 @@ debit = 5000, credit = 5000  INVALID
 Every persisted Transaction must satisfy:
 
 ```text
-SUM(debit) == SUM(credit)
+SUM(base_amount) == 0
 ```
 
 and:
@@ -260,7 +289,12 @@ and:
 COUNT(postings) >= 2
 ```
 
-No partially posted or unbalanced Transaction.
+No partially posted or unbalanced Transaction. `SUM(base_amount) == 0`
+generalises the older `SUM(debit) == SUM(credit)` — for a same-currency
+Transaction (every leg's price is `1/1`) the two are numerically
+identical; the residual-ownership rounding rule (ADR-047) guarantees the
+sum is exactly zero by construction even across genuine multi-currency
+legs, never off by a rounding unit.
 
 ## Ownership invariant
 
@@ -341,6 +375,10 @@ Example (INR, scale 2):
 ```
 
 Currency owns the scale.
+
+A rational exchange rate (Posting's `price_num`/`price_denom`, CurrencyRate's
+`rate_num`/`rate_denom`) follows the same never-float rule — GCD-reduced
+integers, never a stored decimal or `REAL` column (ADR-047).
 
 ## Tags
 

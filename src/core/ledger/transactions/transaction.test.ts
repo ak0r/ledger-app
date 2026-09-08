@@ -1,20 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { fromMinorUnits } from "../../shared/money";
-import { toQuantityMinorUnits } from "../../shared/quantity";
-import { validateTransaction, type AccountRef } from "./transaction";
+import { makeRational, type Rational } from "../../shared/rational";
+import { computeBaseAmounts } from "./baseAmount";
+import { validateTransaction, type AccountRef, type BaseCurrency } from "./transaction";
 import type { PostingInput } from "./posting";
 
 // Fixture accounts mirror the worked examples in docs/02-domain-model.md,
 // all owned by the same Profile and all INR unless noted (Currency
-// Catalogue, 2026-09-03 delta — JPY is a real supported currency now,
-// ZZZ is a deliberately-fake code to exercise UNSUPPORTED_CURRENCY).
+// Catalogue, 2026-09-03 delta). ZZZ is a deliberately-fake code to exercise
+// UNSUPPORTED_CURRENCY.
 const PROFILE = "profile-1";
 const OTHER_PROFILE = "profile-2";
+const BASE_CURRENCY: BaseCurrency = { id: "currency-INR", code: "INR", scale: 2 };
 
-const CURRENCY_SCALE: Record<string, number> = { INR: 2, JPY: 0, ZZZ: 2 };
+const CURRENCY_SCALE: Record<string, number> = { INR: 2, JPY: 0, USD: 2, ZZZ: 2 };
 
 function account(id: string, profileId = PROFILE, currencyCode = "INR"): AccountRef {
-  return { id, profileId, currencyCode, currencyScale: CURRENCY_SCALE[currencyCode] };
+  return { id, profileId, currencyId: `currency-${currencyCode}`, currencyCode, currencyScale: CURRENCY_SCALE[currencyCode] };
 }
 
 const accounts = new Map<string, AccountRef>(
@@ -28,66 +29,81 @@ const accounts = new Map<string, AccountRef>(
     account("opening-balance"),
     account("other-profile-bank", OTHER_PROFILE),
     account("jpy-bank", PROFILE, "JPY"),
+    account("usd-bank", PROFILE, "USD"),
     account("zzz-bank", PROFILE, "ZZZ"),
   ].map((a) => [a.id, a]),
 );
 
-// Builds a posting whose quantity mirrors its own amount (in its own
-// account's Currency scale) — true for every posting in these fixtures
-// (Revised Investment Model delta, 2026-09-03). `price` defaults to 1
-// (same-currency case); Conversion-shape tests pass a real ratio
-// explicitly.
-function leg(
-  accountId: string,
-  side: "debit" | "credit",
-  amount: number,
-  price = 1,
-): PostingInput {
-  const scale = accounts.get(accountId)?.currencyScale ?? 2;
-  return {
-    accountId,
-    debit: side === "debit" ? amount : 0,
-    credit: side === "credit" ? amount : 0,
-    quantity: toQuantityMinorUnits(fromMinorUnits(amount, scale)),
-    price,
-  };
+const ONE: Rational = { num: 1, denom: 1 };
+
+// A leg spec for buildTransaction: signed `units` (positive = debit,
+// negative = credit — the new sign convention) and its own price ratio
+// into the Base Currency (defaults to 1/1, the same-currency case).
+interface LegSpec {
+  accountId: string;
+  units: number;
+  price?: Rational;
+}
+
+function debitLeg(accountId: string, amount: number, price: Rational = ONE): LegSpec {
+  return { accountId, units: amount, price };
+}
+function creditLeg(accountId: string, amount: number, price: Rational = ONE): LegSpec {
+  return { accountId, units: -amount, price };
+}
+
+// Builds a real PostingInput[] the way the service layer actually would:
+// baseAmount for every leg is computed via the residual-ownership rule
+// (baseAmount.ts), not hand-picked — so a fixture built this way can never
+// accidentally be "unbalanced" (the construction guarantees SUM === 0).
+// `primaryIndex` defaults to the transaction's one credit-side leg (this
+// codebase's own "From = credit side" convention).
+function buildTransaction(legs: readonly LegSpec[], primaryIndex?: number): PostingInput[] {
+  const resolvedPrimaryIndex = primaryIndex ?? legs.findIndex((leg) => leg.units < 0);
+  const baseAmounts = computeBaseAmounts(
+    legs.map((leg) => ({ units: leg.units, price: leg.price ?? ONE })),
+    resolvedPrimaryIndex,
+  );
+  return legs.map((leg, index) => ({
+    accountId: leg.accountId,
+    units: leg.units,
+    priceNum: (leg.price ?? ONE).num,
+    priceDenom: (leg.price ?? ONE).denom,
+    baseAmount: baseAmounts[index]!,
+  }));
 }
 
 // docs/06-architecture.md "Testing" checklist, treated literally.
 describe("validateTransaction — architecture testing checklist", () => {
   it("accepts a balanced transaction", () => {
     const violations = validateTransaction(
-      {
-        profileId: PROFILE,
-        postings: [leg("food-expense", "debit", 2000), leg("hdfc-bank", "credit", 2000)],
-      },
+      { profileId: PROFILE, postings: buildTransaction([debitLeg("food-expense", 2000), creditLeg("hdfc-bank", 2000)]) },
       accounts,
+      BASE_CURRENCY,
     );
     expect(violations).toEqual([]);
   });
 
-  it("rejects an unbalanced transaction", () => {
+  it("rejects an unbalanced transaction (malformed input, not reachable through normal construction)", () => {
     const violations = validateTransaction(
       {
         profileId: PROFILE,
-        postings: [leg("food-expense", "debit", 2000), leg("hdfc-bank", "credit", 1900)],
+        postings: [
+          { accountId: "food-expense", units: 2000, priceNum: 1, priceDenom: 1, baseAmount: 2000 },
+          { accountId: "hdfc-bank", units: -1900, priceNum: 1, priceDenom: 1, baseAmount: -1900 },
+        ],
       },
       accounts,
+      BASE_CURRENCY,
     );
-    expect(violations).toContainEqual({
-      code: "UNBALANCED",
-      totalDebit: 2000,
-      totalCredit: 1900,
-    });
+    expect(violations).toContainEqual({ code: "UNBALANCED", totalDebit: 2000, totalCredit: 1900 });
   });
 
   it("accepts an expense", () => {
     const violations = validateTransaction(
-      {
-        profileId: PROFILE,
-        postings: [leg("food-expense", "debit", 2000), leg("hdfc-bank", "credit", 2000)],
-      },
+      { profileId: PROFILE, postings: buildTransaction([debitLeg("food-expense", 2000), creditLeg("hdfc-bank", 2000)]) },
       accounts,
+      BASE_CURRENCY,
     );
     expect(violations).toEqual([]);
   });
@@ -96,20 +112,19 @@ describe("validateTransaction — architecture testing checklist", () => {
     const violations = validateTransaction(
       {
         profileId: PROFILE,
-        postings: [leg("hdfc-bank", "debit", 100000), leg("salary-income", "credit", 100000)],
+        postings: buildTransaction([debitLeg("hdfc-bank", 100000), creditLeg("salary-income", 100000)]),
       },
       accounts,
+      BASE_CURRENCY,
     );
     expect(violations).toEqual([]);
   });
 
   it("accepts a transfer", () => {
     const violations = validateTransaction(
-      {
-        profileId: PROFILE,
-        postings: [leg("icici-bank", "debit", 20000), leg("hdfc-bank", "credit", 20000)],
-      },
+      { profileId: PROFILE, postings: buildTransaction([debitLeg("icici-bank", 20000), creditLeg("hdfc-bank", 20000)]) },
       accounts,
+      BASE_CURRENCY,
     );
     expect(violations).toEqual([]);
   });
@@ -118,9 +133,10 @@ describe("validateTransaction — architecture testing checklist", () => {
     const violations = validateTransaction(
       {
         profileId: PROFILE,
-        postings: [leg("food-expense", "debit", 5000), leg("hdfc-credit-card", "credit", 5000)],
+        postings: buildTransaction([debitLeg("food-expense", 5000), creditLeg("hdfc-credit-card", 5000)]),
       },
       accounts,
+      BASE_CURRENCY,
     );
     expect(violations).toEqual([]);
   });
@@ -129,9 +145,10 @@ describe("validateTransaction — architecture testing checklist", () => {
     const violations = validateTransaction(
       {
         profileId: PROFILE,
-        postings: [leg("hdfc-credit-card", "debit", 5000), leg("hdfc-bank", "credit", 5000)],
+        postings: buildTransaction([debitLeg("hdfc-credit-card", 5000), creditLeg("hdfc-bank", 5000)]),
       },
       accounts,
+      BASE_CURRENCY,
     );
     expect(violations).toEqual([]);
   });
@@ -140,13 +157,14 @@ describe("validateTransaction — architecture testing checklist", () => {
     const violations = validateTransaction(
       {
         profileId: PROFILE,
-        postings: [
-          leg("food-expense", "debit", 2000),
-          leg("receivable", "debit", 3000),
-          leg("hdfc-credit-card", "credit", 5000),
-        ],
+        postings: buildTransaction([
+          debitLeg("food-expense", 2000),
+          debitLeg("receivable", 3000),
+          creditLeg("hdfc-credit-card", 5000),
+        ]),
       },
       accounts,
+      BASE_CURRENCY,
     );
     expect(violations).toEqual([]);
   });
@@ -155,72 +173,52 @@ describe("validateTransaction — architecture testing checklist", () => {
     const violations = validateTransaction(
       {
         profileId: PROFILE,
-        postings: [leg("hdfc-bank", "debit", 250000), leg("opening-balance", "credit", 250000)],
+        postings: buildTransaction([debitLeg("hdfc-bank", 250000), creditLeg("opening-balance", 250000)]),
       },
       accounts,
+      BASE_CURRENCY,
     );
     expect(violations).toEqual([]);
   });
 
-  // "Edit" has no persisted draft/partial state (ADR-023) — an edit is a
-  // full replace of the posting set. The domain guarantee edit relies on is
-  // that the *new* posting set is independently revalidated, exactly like a
-  // fresh transaction — it is never trusted just because the prior version
-  // was balanced.
   it("edit preserves balance: a balanced replacement set is accepted", () => {
     const original = {
       profileId: PROFILE,
-      postings: [leg("food-expense", "debit", 2000), leg("hdfc-bank", "credit", 2000)],
+      postings: buildTransaction([debitLeg("food-expense", 2000), creditLeg("hdfc-bank", 2000)]),
     };
-    expect(validateTransaction(original, accounts)).toEqual([]);
+    expect(validateTransaction(original, accounts, BASE_CURRENCY)).toEqual([]);
 
     const edited = {
       profileId: PROFILE,
-      postings: [leg("food-expense", "debit", 2500), leg("hdfc-bank", "credit", 2500)],
+      postings: buildTransaction([debitLeg("food-expense", 2500), creditLeg("hdfc-bank", 2500)]),
     };
-    expect(validateTransaction(edited, accounts)).toEqual([]);
+    expect(validateTransaction(edited, accounts, BASE_CURRENCY)).toEqual([]);
   });
 
-  it("edit preserves balance: an unbalanced replacement set is rejected", () => {
-    const edited = {
-      profileId: PROFILE,
-      postings: [leg("food-expense", "debit", 2500), leg("hdfc-bank", "credit", 2000)],
-    };
-    const violations = validateTransaction(edited, accounts);
-    expect(violations).toContainEqual({
-      code: "UNBALANCED",
-      totalDebit: 2500,
-      totalCredit: 2000,
-    });
-  });
-
-  // Deletion is a hard delete of the whole aggregate, atomically, in Phase 4
-  // (rule #9, ADR-019) — the domain layer performs no persistence. What the
-  // domain guarantees is the flip side: it can never validate a partially
-  // deleted aggregate as balanced. Dropping one posting from an otherwise
-  // balanced transaction — the shape a non-atomic delete would leave behind
-  // — always fails validation, which is why deletion must stay atomic.
   it("delete does not corrupt balance: a partially deleted posting set fails validation", () => {
     const fullyPosted = {
       profileId: PROFILE,
-      postings: [
-        leg("food-expense", "debit", 2000),
-        leg("receivable", "debit", 3000),
-        leg("hdfc-credit-card", "credit", 5000),
-      ],
+      postings: buildTransaction([
+        debitLeg("food-expense", 2000),
+        debitLeg("receivable", 3000),
+        creditLeg("hdfc-credit-card", 5000),
+      ]),
     };
-    expect(validateTransaction(fullyPosted, accounts)).toEqual([]);
+    expect(validateTransaction(fullyPosted, accounts, BASE_CURRENCY)).toEqual([]);
 
+    // Dropping one posting from an otherwise balanced set (the shape a
+    // non-atomic delete would leave behind) — hand-crafted, since a real
+    // partial delete is exactly the malformed-input case buildTransaction
+    // can't produce.
     const afterNonAtomicPartialDelete = {
       profileId: PROFILE,
-      postings: [leg("food-expense", "debit", 2000), leg("hdfc-credit-card", "credit", 5000)],
+      postings: [
+        { accountId: "food-expense", units: 2000, priceNum: 1, priceDenom: 1, baseAmount: 2000 },
+        { accountId: "hdfc-credit-card", units: -5000, priceNum: 1, priceDenom: 1, baseAmount: -5000 },
+      ],
     };
-    const violations = validateTransaction(afterNonAtomicPartialDelete, accounts);
-    expect(violations).toContainEqual({
-      code: "UNBALANCED",
-      totalDebit: 2000,
-      totalCredit: 5000,
-    });
+    const violations = validateTransaction(afterNonAtomicPartialDelete, accounts, BASE_CURRENCY);
+    expect(violations).toContainEqual({ code: "UNBALANCED", totalDebit: 2000, totalCredit: 5000 });
   });
 });
 
@@ -229,29 +227,24 @@ describe("validateTransaction — ownership and currency invariants", () => {
     const violations = validateTransaction(
       {
         profileId: PROFILE,
-        postings: [leg("other-profile-bank", "debit", 1000), leg("food-expense", "credit", 1000)],
+        postings: buildTransaction([debitLeg("other-profile-bank", 1000), creditLeg("food-expense", 1000)]),
       },
       accounts,
+      BASE_CURRENCY,
     );
-    expect(violations).toContainEqual({
-      code: "OWNERSHIP_MISMATCH",
-      accountId: "other-profile-bank",
-    });
+    expect(violations).toContainEqual({ code: "OWNERSHIP_MISMATCH", accountId: "other-profile-bank" });
   });
 
   it("rejects a posting against an account whose currency isn't in the Currency Catalogue", () => {
     const violations = validateTransaction(
       {
         profileId: PROFILE,
-        postings: [leg("zzz-bank", "debit", 1000), leg("food-expense", "credit", 1000)],
+        postings: buildTransaction([debitLeg("zzz-bank", 1000), creditLeg("food-expense", 1000)]),
       },
       accounts,
+      BASE_CURRENCY,
     );
-    expect(violations).toContainEqual({
-      code: "UNSUPPORTED_CURRENCY",
-      accountId: "zzz-bank",
-      currencyCode: "ZZZ",
-    });
+    expect(violations).toContainEqual({ code: "UNSUPPORTED_CURRENCY", accountId: "zzz-bank", currencyCode: "ZZZ" });
   });
 
   it("rejects a posting against an unknown account", () => {
@@ -259,204 +252,130 @@ describe("validateTransaction — ownership and currency invariants", () => {
       {
         profileId: PROFILE,
         postings: [
-          { accountId: "does-not-exist", debit: 1000, credit: 0, quantity: 1000, price: 1 },
-          leg("food-expense", "credit", 1000),
+          { accountId: "does-not-exist", units: 1000, priceNum: 1, priceDenom: 1, baseAmount: 1000 },
+          { accountId: "food-expense", units: -1000, priceNum: 1, priceDenom: 1, baseAmount: -1000 },
         ],
       },
       accounts,
+      BASE_CURRENCY,
     );
-    expect(violations).toContainEqual({
-      code: "ACCOUNT_NOT_FOUND",
-      accountId: "does-not-exist",
-    });
+    expect(violations).toContainEqual({ code: "ACCOUNT_NOT_FOUND", accountId: "does-not-exist" });
   });
 
   it("rejects fewer than two postings", () => {
     const violations = validateTransaction(
-      {
-        profileId: PROFILE,
-        postings: [leg("food-expense", "debit", 2000)],
-      },
+      { profileId: PROFILE, postings: [{ accountId: "food-expense", units: 2000, priceNum: 1, priceDenom: 1, baseAmount: 2000 }] },
       accounts,
+      BASE_CURRENCY,
     );
     expect(violations).toContainEqual({ code: "TOO_FEW_POSTINGS" });
   });
 });
 
-describe("validateTransaction — mixed-currency rejection (non-Conversion shapes)", () => {
-  it("accepts a same-currency balanced transaction", () => {
-    const violations = validateTransaction(
-      {
-        profileId: PROFILE,
-        postings: [leg("food-expense", "debit", 2000), leg("hdfc-bank", "credit", 2000)],
-      },
-      accounts,
-    );
-    expect(violations).toEqual([]);
-  });
-
-  it("rejects three postings across two currencies as MIXED_CURRENCY_UNSUPPORTED (not the recognised 2-posting Conversion shape)", () => {
+describe("validateTransaction — Base Currency price/baseAmount invariants", () => {
+  it("rejects a non-1/1 price on a posting whose account currency matches the Base Currency", () => {
     const violations = validateTransaction(
       {
         profileId: PROFILE,
         postings: [
-          leg("hdfc-bank", "credit", 10000),
-          leg("jpy-bank", "debit", 5000),
-          leg("food-expense", "debit", 5000),
+          { accountId: "food-expense", units: 2000, priceNum: 2, priceDenom: 1, baseAmount: 2000 },
+          { accountId: "hdfc-bank", units: -2000, priceNum: 1, priceDenom: 1, baseAmount: -2000 },
         ],
       },
       accounts,
-    );
-    expect(violations).toContainEqual({ code: "MIXED_CURRENCY_UNSUPPORTED" });
-    expect(violations).not.toContainEqual(expect.objectContaining({ code: "UNBALANCED" }));
-  });
-
-  it("rejects two same-direction postings across two currencies as MIXED_CURRENCY_UNSUPPORTED (not one debit + one credit)", () => {
-    const violations = validateTransaction(
-      {
-        profileId: PROFILE,
-        postings: [leg("hdfc-bank", "debit", 10000), leg("jpy-bank", "debit", 15000)],
-      },
-      accounts,
-    );
-    expect(violations).toContainEqual({ code: "MIXED_CURRENCY_UNSUPPORTED" });
-  });
-
-  it("missing/invalid account handling is unchanged: unknown account still reports ACCOUNT_NOT_FOUND", () => {
-    const violations = validateTransaction(
-      {
-        profileId: PROFILE,
-        postings: [
-          { accountId: "does-not-exist", debit: 1000, credit: 0, quantity: 1000, price: 1 },
-          leg("food-expense", "credit", 1000),
-        ],
-      },
-      accounts,
-    );
-    expect(violations).toContainEqual({ code: "ACCOUNT_NOT_FOUND", accountId: "does-not-exist" });
-    expect(violations).not.toContainEqual(
-      expect.objectContaining({ code: "MIXED_CURRENCY_UNSUPPORTED" }),
-    );
-  });
-
-  it("missing/invalid account handling is unchanged: other-profile ownership mismatch still reported", () => {
-    const violations = validateTransaction(
-      {
-        profileId: PROFILE,
-        postings: [leg("other-profile-bank", "debit", 1000), leg("food-expense", "credit", 1000)],
-      },
-      accounts,
-    );
-    expect(violations).toContainEqual({ code: "OWNERSHIP_MISMATCH", accountId: "other-profile-bank" });
-  });
-});
-
-describe("validateTransaction — Currency Conversion shape", () => {
-  // Revised Investment Model delta (2026-09-03): a Conversion's two legs
-  // are no longer exempt from balancing — they must reconcile via
-  // quantity x price, in the credit leg's currency. This closes a real
-  // gap the old "no balance check applies to Conversions" behaviour left
-  // open (see the rejection test right below, which the old model could
-  // not express at all).
-  it("accepts two postings, two currencies, one debit + one credit, when price makes both sides reconcile", () => {
-    const inrCredit = 1000000; // ₹10,000
-    const jpyDebit = 15000; // ¥15,000
-    const inrPerJpy = fromMinorUnits(inrCredit, 2) / jpyDebit;
-    const violations = validateTransaction(
-      {
-        profileId: PROFILE,
-        postings: [
-          leg("hdfc-bank", "credit", inrCredit),
-          leg("jpy-bank", "debit", jpyDebit, inrPerJpy),
-        ],
-      },
-      accounts,
-    );
-    expect(violations).toEqual([]);
-  });
-
-  it("rejects two postings, two currencies, one debit + one credit, when price does not reconcile the amounts", () => {
-    const violations = validateTransaction(
-      {
-        profileId: PROFILE,
-        postings: [
-          leg("hdfc-bank", "credit", 1000000), // ₹10,000
-          leg("jpy-bank", "debit", 15000, 1), // ¥15,000 @ an obviously-wrong 1:1 price
-        ],
-      },
-      accounts,
-    );
-    expect(violations).toContainEqual(expect.objectContaining({ code: "UNBALANCED" }));
-  });
-
-  it("still enforces ownership/currency-support on each leg of a Conversion", () => {
-    const violations = validateTransaction(
-      {
-        profileId: PROFILE,
-        postings: [leg("hdfc-bank", "credit", 1000000), leg("zzz-bank", "debit", 1500000)],
-      },
-      accounts,
-    );
-    expect(violations).toContainEqual({
-      code: "UNSUPPORTED_CURRENCY",
-      accountId: "zzz-bank",
-      currencyCode: "ZZZ",
-    });
-  });
-
-  it("still enforces posting shape (non-negative, exactly one side) on each leg of a Conversion", () => {
-    const violations = validateTransaction(
-      {
-        profileId: PROFILE,
-        postings: [
-          leg("hdfc-bank", "credit", 1000000),
-          { accountId: "jpy-bank", debit: 1500000, credit: 500000, quantity: 1500000000000, price: 1 },
-        ],
-      },
-      accounts,
-    );
-    expect(violations).toContainEqual({
-      code: "INVALID_POSTING",
-      accountId: "jpy-bank",
-      reason: "NOT_EXACTLY_ONE_SIDE",
-    });
-  });
-
-  it("a same-currency pair is never treated as a Conversion — ordinary balance rule still applies", () => {
-    const violations = validateTransaction(
-      {
-        profileId: PROFILE,
-        postings: [leg("hdfc-bank", "credit", 1000), leg("icici-bank", "debit", 900)],
-      },
-      accounts,
-    );
-    expect(violations).toContainEqual({ code: "UNBALANCED", totalDebit: 900, totalCredit: 1000 });
-  });
-});
-
-describe("validateTransaction — quantity/price invariants (Revised Investment Model delta)", () => {
-  it("rejects a posting whose quantity doesn't mirror its own amount", () => {
-    const violations = validateTransaction(
-      {
-        profileId: PROFILE,
-        postings: [
-          { accountId: "food-expense", debit: 2000, credit: 0, quantity: 999, price: 1 },
-          leg("hdfc-bank", "credit", 2000),
-        ],
-      },
-      accounts,
-    );
-    expect(violations).toContainEqual({ code: "QUANTITY_MISMATCH", accountId: "food-expense" });
-  });
-
-  it("rejects a non-1 price on a posting already in the reconciliation currency", () => {
-    const violations = validateTransaction(
-      {
-        profileId: PROFILE,
-        postings: [leg("food-expense", "debit", 2000, 2), leg("hdfc-bank", "credit", 2000)],
-      },
-      accounts,
+      BASE_CURRENCY,
     );
     expect(violations).toContainEqual({ code: "PRICE_MUST_BE_ONE", accountId: "food-expense" });
+  });
+
+  it("a Base Currency posting's baseAmount deviating from units is not itself a violation (the primary leg legitimately absorbs residual)", () => {
+    // food-expense (non-primary, base currency) baseAmount deliberately off
+    // by 1 from its own units — not independently checked; only the overall
+    // SUM(base_amount) === 0 balance rule can catch a genuinely broken value.
+    const violations = validateTransaction(
+      {
+        profileId: PROFILE,
+        postings: [
+          { accountId: "food-expense", units: 2000, priceNum: 1, priceDenom: 1, baseAmount: 1999 },
+          { accountId: "hdfc-bank", units: -2000, priceNum: 1, priceDenom: 1, baseAmount: -1999 },
+        ],
+      },
+      accounts,
+      BASE_CURRENCY,
+    );
+    expect(violations).toEqual([]);
+  });
+});
+
+describe("validateTransaction — genuine N-leg multi-currency (no currency-count gate)", () => {
+  it("accepts a single foreign leg reconciled exactly against the Base Currency (today's old Conversion shape)", () => {
+    const inrCredit = 1000000; // ₹10,000
+    const jpyDebit = 15000; // ¥15,000
+    const price = makeRational(inrCredit, jpyDebit);
+    const violations = validateTransaction(
+      { profileId: PROFILE, postings: buildTransaction([creditLeg("hdfc-bank", inrCredit), debitLeg("jpy-bank", jpyDebit, price)]) },
+      accounts,
+      BASE_CURRENCY,
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it("accepts a genuine 1-From/N-To transaction with two independently-priced foreign legs", () => {
+    const violations = validateTransaction(
+      {
+        profileId: PROFILE,
+        postings: buildTransaction([
+          creditLeg("hdfc-bank", 1000000), // ₹10,000 primary
+          debitLeg("jpy-bank", 15000, makeRational(1, 3)), // an arbitrary JPY rate
+          debitLeg("usd-bank", 5000, makeRational(83, 1)), // an arbitrary USD rate
+        ]),
+      },
+      accounts,
+      BASE_CURRENCY,
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it("two debit-side foreign legs against one credit-side Base Currency leg still balances", () => {
+    const violations = validateTransaction(
+      {
+        profileId: PROFILE,
+        postings: buildTransaction([
+          creditLeg("hdfc-bank", 20000),
+          debitLeg("jpy-bank", 10000, makeRational(1, 2)),
+          debitLeg("usd-bank", 100, makeRational(150, 1)),
+        ]),
+      },
+      accounts,
+      BASE_CURRENCY,
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it("still enforces ownership/currency-support on each leg", () => {
+    const violations = validateTransaction(
+      {
+        profileId: PROFILE,
+        postings: buildTransaction([creditLeg("hdfc-bank", 1000000), debitLeg("zzz-bank", 1500000)]),
+      },
+      accounts,
+      BASE_CURRENCY,
+    );
+    expect(violations).toContainEqual({ code: "UNSUPPORTED_CURRENCY", accountId: "zzz-bank", currencyCode: "ZZZ" });
+  });
+
+  it("still enforces posting shape (nonzero units) on each leg", () => {
+    const violations = validateTransaction(
+      {
+        profileId: PROFILE,
+        postings: [
+          { accountId: "hdfc-bank", units: -1000000, priceNum: 1, priceDenom: 1, baseAmount: -1000000 },
+          { accountId: "jpy-bank", units: 0, priceNum: 1, priceDenom: 1, baseAmount: 1000000 },
+        ],
+      },
+      accounts,
+      BASE_CURRENCY,
+    );
+    expect(violations).toContainEqual({ code: "INVALID_POSTING", accountId: "jpy-bank", reason: "INVALID_UNITS" });
   });
 });

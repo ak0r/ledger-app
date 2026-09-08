@@ -10,7 +10,7 @@ function account(id: string, classification: string): AccountRow {
     currencyId: "currency-1",
     name: id,
     classification: classification as never,
-    instrumentType: "BANK",
+    accountType: "BANK",
     instrumentId: null,
     instrumentLabel: null,
     tags: null,
@@ -41,11 +41,13 @@ function transaction(
     postings: postings.map((posting, index) => ({
       id: `${id}-p${index}`,
       transactionId: id,
-      quantity: 0,
-      price: 1,
+      accountId: posting.accountId,
+      units: posting.debit - posting.credit,
+      priceNum: 1,
+      priceDenom: 1,
+      baseAmount: posting.debit - posting.credit,
       createdAt: "now",
       updatedAt: "now",
-      ...posting,
     })),
   };
 }

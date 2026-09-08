@@ -7,12 +7,12 @@ import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
+  ACCOUNT_TYPES,
+  ACCOUNT_TYPES_BY_CLASSIFICATION,
   CLASSIFICATIONS,
   CREATABLE_CLASSIFICATIONS,
-  INSTRUMENT_TYPES,
-  TYPES_BY_CLASSIFICATION,
+  type AccountType,
   type Classification,
-  type InstrumentType,
 } from "@/core";
 import { humanizeEnum } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -23,6 +23,7 @@ import { ClassificationCards } from "@/components/classification-cards";
 import { TagInput } from "@/components/tag-input";
 import { IconPicker } from "@/components/icon-picker";
 import { createAccountAction, editAccountAction } from "@/server/actions/accounts";
+import { upsertCreditCardDetailsAction, upsertLoanDetailsAction } from "@/server/actions/liabilityDetails";
 
 // Client-local schema — shape-only, for fast UX feedback. The real
 // enforcement point is createAccountSchema/editAccountSchema in
@@ -34,20 +35,73 @@ const accountFormSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   currencyId: z.string().min(1, "Currency is required"),
   classification: z.enum(CLASSIFICATIONS),
-  instrumentType: z.enum(INSTRUMENT_TYPES),
+  accountType: z.enum(ACCOUNT_TYPES),
 });
 
 type AccountFormValues = z.infer<typeof accountFormSchema>;
 
-// The instrument type a Classification lands on when it has no real Type
-// step of its own (2026-08-19 delta §19.1 — Income/Expense have no Account
-// Type, Balancing is system-managed) — same single value that classification
-// has always used (`INCOME`/`EXPENSE`/`BALANCING`), just made explicit now
-// that there's no picker for the user to (implicitly) confirm it through.
-function defaultInstrumentTypeFor(classification: Classification): InstrumentType {
-  const types = TYPES_BY_CLASSIFICATION[classification];
-  if (types) return types[0];
-  return classification === "INCOME" ? "INCOME" : classification === "EXPENSE" ? "EXPENSE" : "BALANCING";
+// Every Classification has a real Account Type vocabulary now (Account
+// Types, Money Representation, Rational Pricing, FX & Liability Details
+// delta reverses the 2026-08-19 delta §19.1 "Income/Expense have no
+// Account Type" posture) — the first listed type is just a sensible
+// default selection, not a "no picker" fallback the way it used to be.
+function defaultAccountTypeFor(classification: Classification): AccountType {
+  return ACCOUNT_TYPES_BY_CLASSIFICATION[classification][0];
+}
+
+// Liability supporting information (Account Types, Money Representation,
+// Rational Pricing, FX & Liability Details delta §7/§8) — plain string
+// state outside react-hook-form, same posture as Tags/Icon above: these
+// are a secondary, conditionally-rendered concern, not part of the core
+// Account identity the Zod-validated form fields cover. Money/percent
+// fields stay strings while being typed, parsed to a number (or `null`
+// when left blank) only at submit time.
+interface CreditCardFieldsState {
+  creditLimit: string;
+  statementEndDay: string;
+  dueDay: string;
+  network: string;
+  last4: string;
+  expirationDate: string;
+}
+const EMPTY_CREDIT_CARD_FIELDS: CreditCardFieldsState = {
+  creditLimit: "",
+  statementEndDay: "",
+  dueDay: "",
+  network: "",
+  last4: "",
+  expirationDate: "",
+};
+
+interface LoanFieldsState {
+  originalAmount: string;
+  disbursedAmount: string;
+  interestRatePercent: string;
+  tenureMonths: string;
+  emiAmount: string;
+  emiDay: string;
+  startDate: string;
+  maturityDate: string;
+}
+const EMPTY_LOAN_FIELDS: LoanFieldsState = {
+  originalAmount: "",
+  disbursedAmount: "",
+  interestRatePercent: "",
+  tenureMonths: "",
+  emiAmount: "",
+  emiDay: "",
+  startDate: "",
+  maturityDate: "",
+};
+
+function toNumberOrNull(value: string): number | null {
+  if (value.trim() === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toStringOrNull(value: string): string | null {
+  return value.trim() === "" ? null : value.trim();
 }
 
 interface AccountFormProps {
@@ -66,10 +120,32 @@ interface AccountFormProps {
     currencyCode: string;
     name: string;
     classification: Classification;
-    instrumentType: InstrumentType;
+    accountType: AccountType;
     tags: string[] | null;
     icon: string | null;
   };
+  // Edit mode only, and only meaningful when `account.accountType` is
+  // CREDIT_CARD/LOAN respectively — pre-fills the conditional Liability
+  // fields step below. `undefined`/absent is the normal "no details set
+  // yet" case, not an error.
+  creditCardDetails?: {
+    creditLimit: number | null;
+    statementEndDay: number | null;
+    dueDay: number | null;
+    network: string | null;
+    last4: string | null;
+    expirationDate: string | null;
+  } | null;
+  loanDetails?: {
+    originalAmount: number | null;
+    disbursedAmount: number | null;
+    interestRatePercent: number | null;
+    tenureMonths: number | null;
+    emiAmount: number | null;
+    emiDay: number | null;
+    startDate: string | null;
+    maturityDate: string | null;
+  } | null;
   // Modal usage (AccountFormSheet) passes these to close itself instead of
   // navigating — same optional-override posture as TransactionForm's own
   // onCancel/onSuccess (transaction-edit-drawer.tsx). Page usages
@@ -97,6 +173,8 @@ export function AccountForm({
   mode,
   existingTags = [],
   account,
+  creditCardDetails,
+  loanDetails,
   onSuccess,
   onCancel,
   onCreated,
@@ -106,6 +184,32 @@ export function AccountForm({
   const [serverError, setServerError] = useState<string | null>(null);
   const [tags, setTags] = useState<string[]>(account?.tags ?? []);
   const [icon, setIcon] = useState<string | undefined>(account?.icon ?? undefined);
+  const [ccFields, setCcFields] = useState<CreditCardFieldsState>(
+    creditCardDetails
+      ? {
+          creditLimit: creditCardDetails.creditLimit?.toString() ?? "",
+          statementEndDay: creditCardDetails.statementEndDay?.toString() ?? "",
+          dueDay: creditCardDetails.dueDay?.toString() ?? "",
+          network: creditCardDetails.network ?? "",
+          last4: creditCardDetails.last4 ?? "",
+          expirationDate: creditCardDetails.expirationDate ?? "",
+        }
+      : EMPTY_CREDIT_CARD_FIELDS,
+  );
+  const [loanFields, setLoanFields] = useState<LoanFieldsState>(
+    loanDetails
+      ? {
+          originalAmount: loanDetails.originalAmount?.toString() ?? "",
+          disbursedAmount: loanDetails.disbursedAmount?.toString() ?? "",
+          interestRatePercent: loanDetails.interestRatePercent?.toString() ?? "",
+          tenureMonths: loanDetails.tenureMonths?.toString() ?? "",
+          emiAmount: loanDetails.emiAmount?.toString() ?? "",
+          emiDay: loanDetails.emiDay?.toString() ?? "",
+          startDate: loanDetails.startDate ?? "",
+          maturityDate: loanDetails.maturityDate ?? "",
+        }
+      : EMPTY_LOAN_FIELDS,
+  );
   // `tags`/`icon` live outside react-hook-form (plain useState, same as
   // ever) — `formState.isDirty` below only tracks RHF-registered fields,
   // so a Tags/Icon-only change needs its own comparison against the
@@ -132,13 +236,13 @@ export function AccountForm({
           name: account.name,
           currencyId: account.currencyId,
           classification: account.classification,
-          instrumentType: account.instrumentType,
+          accountType: account.accountType,
         }
       : {
           name: "",
           currencyId: defaultCurrencyId ?? currencies[0]?.id ?? "",
           classification: "ASSET",
-          instrumentType: defaultInstrumentTypeFor("ASSET"),
+          accountType: defaultAccountTypeFor("ASSET"),
         },
   });
 
@@ -150,13 +254,13 @@ export function AccountForm({
   }, [isDirty, onDirtyChange]);
 
   const classification = watch("classification");
-  // `undefined` for Income/Expense/Balancing — absence from the map *is*
-  // the "no Type step for this classification" signal (domain's own doc
-  // comment on TYPES_BY_CLASSIFICATION).
-  const typeOptions = TYPES_BY_CLASSIFICATION[classification];
+  const accountType = watch("accountType");
+  const typeOptions = ACCOUNT_TYPES_BY_CLASSIFICATION[classification];
   // Editing an account whose classification is Balancing (only ever the
   // one seeded "Opening Balance" account) shows Classification as static
-  // text instead of the picker — see the JSX below.
+  // text instead of the picker — see the JSX below. Balancing also never
+  // gets an Account Type step (rule #22 — system-managed, its one
+  // `INITIAL` value is set wherever the system seeds it, never picked).
   const isEditingBalancing = mode === "edit" && account?.classification === "BALANCING";
 
   const onSubmit = async (values: AccountFormValues) => {
@@ -168,7 +272,7 @@ export function AccountForm({
             currencyId: values.currencyId,
             name: values.name,
             classification: values.classification,
-            instrumentType: values.instrumentType,
+            accountType: values.accountType,
             tags: tags.length > 0 ? tags : undefined,
             icon,
           })
@@ -177,7 +281,7 @@ export function AccountForm({
             currencyId: values.currencyId,
             name: values.name,
             classification: values.classification,
-            instrumentType: values.instrumentType,
+            accountType: values.accountType,
             tags: tags.length > 0 ? tags : undefined,
             icon,
           });
@@ -186,6 +290,44 @@ export function AccountForm({
       setServerError(result.error);
       return;
     }
+
+    // Liability supporting information — a secondary concern submitted as
+    // its own call right after the Account itself is saved (the Account
+    // must exist first, `accountId` is a real FK). Same account, one form,
+    // two writes — never a competing source of truth for the Account
+    // fields above.
+    if (values.accountType === "CREDIT_CARD") {
+      const detailsResult = await upsertCreditCardDetailsAction({
+        accountId: result.data.id,
+        creditLimit: toNumberOrNull(ccFields.creditLimit),
+        statementEndDay: toNumberOrNull(ccFields.statementEndDay),
+        dueDay: toNumberOrNull(ccFields.dueDay),
+        network: toStringOrNull(ccFields.network),
+        last4: toStringOrNull(ccFields.last4),
+        expirationDate: toStringOrNull(ccFields.expirationDate),
+      });
+      if (!detailsResult.success) {
+        setServerError(detailsResult.error);
+        return;
+      }
+    } else if (values.accountType === "LOAN") {
+      const detailsResult = await upsertLoanDetailsAction({
+        accountId: result.data.id,
+        originalAmount: toNumberOrNull(loanFields.originalAmount),
+        disbursedAmount: toNumberOrNull(loanFields.disbursedAmount),
+        interestRatePercent: toNumberOrNull(loanFields.interestRatePercent),
+        tenureMonths: toNumberOrNull(loanFields.tenureMonths),
+        emiAmount: toNumberOrNull(loanFields.emiAmount),
+        emiDay: toNumberOrNull(loanFields.emiDay),
+        startDate: toStringOrNull(loanFields.startDate),
+        maturityDate: toStringOrNull(loanFields.maturityDate),
+      });
+      if (!detailsResult.success) {
+        setServerError(detailsResult.error);
+        return;
+      }
+    }
+
     if (mode === "create") {
       onCreated?.(result.data);
     }
@@ -259,7 +401,7 @@ export function AccountForm({
                 classifications={CREATABLE_CLASSIFICATIONS}
                 onChange={(next) => {
                   field.onChange(next);
-                  setValue("instrumentType", defaultInstrumentTypeFor(next));
+                  setValue("accountType", defaultAccountTypeFor(next));
                 }}
               />
             )}
@@ -267,15 +409,14 @@ export function AccountForm({
         )}
       </div>
 
-      {/* Only Asset/Liability have a real Type step (2026-08-19 delta
-          §19.1) — Income/Expense go straight from Classification to Name/
-          Currency, no Account Type field at all. */}
-      {typeOptions && (
+      {/* Every Classification has a real Type step now except Balancing
+          (rule #22 — system-managed, never user-picked). */}
+      {classification !== "BALANCING" && (
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="account-type">Account Type</Label>
           <Controller
             control={control}
-            name="instrumentType"
+            name="accountType"
             render={({ field }) => (
               // `key={classification}` forces a fresh base-ui Select
               // instance whenever the option set actually changes —
@@ -293,7 +434,7 @@ export function AccountForm({
                 <SelectTrigger id="account-type">
                   {/* `value` can still be `null` for the instance's first
                       render, briefly, before react-hook-form's `setValue`
-                      call (which resets `instrumentType` to match the new
+                      call (which resets `accountType` to match the new
                       classification) commits — base-ui passes `null` here
                       rather than an unmatched string in that window. */}
                   <SelectValue>{(value: string | null) => (value ? humanizeEnum(value) : "")}</SelectValue>
@@ -308,6 +449,169 @@ export function AccountForm({
               </Select>
             )}
           />
+        </div>
+      )}
+
+      {/* Liability supporting information (delta §7/§8) — Credit Card
+          fields for CREDIT_CARD, Loan fields for LOAN, nothing extra for
+          PAYABLES (the delta's own "no specialised form required"). */}
+      {accountType === "CREDIT_CARD" && (
+        <div className="flex flex-col gap-3 rounded-lg border p-3">
+          <Label>Credit Card Details</Label>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="cc-credit-limit">Credit Limit</Label>
+              <Input
+                id="cc-credit-limit"
+                type="number"
+                step="any"
+                min="0"
+                value={ccFields.creditLimit}
+                onChange={(e) => setCcFields({ ...ccFields, creditLimit: e.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="cc-network">Network</Label>
+              <Input
+                id="cc-network"
+                placeholder="e.g. Visa"
+                value={ccFields.network}
+                onChange={(e) => setCcFields({ ...ccFields, network: e.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="cc-statement-day">Statement Day</Label>
+              <Input
+                id="cc-statement-day"
+                type="number"
+                min="1"
+                max="31"
+                value={ccFields.statementEndDay}
+                onChange={(e) => setCcFields({ ...ccFields, statementEndDay: e.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="cc-due-day">Due Day</Label>
+              <Input
+                id="cc-due-day"
+                type="number"
+                min="1"
+                max="31"
+                value={ccFields.dueDay}
+                onChange={(e) => setCcFields({ ...ccFields, dueDay: e.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="cc-last4">Last 4 Digits</Label>
+              <Input
+                id="cc-last4"
+                maxLength={4}
+                value={ccFields.last4}
+                onChange={(e) => setCcFields({ ...ccFields, last4: e.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="cc-expiration">Expiration</Label>
+              <Input
+                id="cc-expiration"
+                placeholder="MM/YY"
+                value={ccFields.expirationDate}
+                onChange={(e) => setCcFields({ ...ccFields, expirationDate: e.target.value })}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {accountType === "LOAN" && (
+        <div className="flex flex-col gap-3 rounded-lg border p-3">
+          <Label>Loan Details</Label>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="loan-original-amount">Original Amount</Label>
+              <Input
+                id="loan-original-amount"
+                type="number"
+                step="any"
+                min="0"
+                value={loanFields.originalAmount}
+                onChange={(e) => setLoanFields({ ...loanFields, originalAmount: e.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="loan-disbursed-amount">Disbursed Amount</Label>
+              <Input
+                id="loan-disbursed-amount"
+                type="number"
+                step="any"
+                min="0"
+                value={loanFields.disbursedAmount}
+                onChange={(e) => setLoanFields({ ...loanFields, disbursedAmount: e.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="loan-interest-rate">Interest Rate (%)</Label>
+              <Input
+                id="loan-interest-rate"
+                type="number"
+                step="any"
+                min="0"
+                value={loanFields.interestRatePercent}
+                onChange={(e) => setLoanFields({ ...loanFields, interestRatePercent: e.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="loan-tenure">Tenure (months)</Label>
+              <Input
+                id="loan-tenure"
+                type="number"
+                min="1"
+                step="1"
+                value={loanFields.tenureMonths}
+                onChange={(e) => setLoanFields({ ...loanFields, tenureMonths: e.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="loan-emi-amount">EMI Amount</Label>
+              <Input
+                id="loan-emi-amount"
+                type="number"
+                step="any"
+                min="0"
+                value={loanFields.emiAmount}
+                onChange={(e) => setLoanFields({ ...loanFields, emiAmount: e.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="loan-emi-day">EMI Day</Label>
+              <Input
+                id="loan-emi-day"
+                type="number"
+                min="1"
+                max="31"
+                value={loanFields.emiDay}
+                onChange={(e) => setLoanFields({ ...loanFields, emiDay: e.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="loan-start-date">Start Date</Label>
+              <Input
+                id="loan-start-date"
+                type="date"
+                value={loanFields.startDate}
+                onChange={(e) => setLoanFields({ ...loanFields, startDate: e.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="loan-maturity-date">Maturity Date</Label>
+              <Input
+                id="loan-maturity-date"
+                type="date"
+                value={loanFields.maturityDate}
+                onChange={(e) => setLoanFields({ ...loanFields, maturityDate: e.target.value })}
+              />
+            </div>
+          </div>
         </div>
       )}
 

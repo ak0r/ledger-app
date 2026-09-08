@@ -90,7 +90,7 @@ export default async function AccountLayout({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-lg font-semibold">
-            <AccountIcon classification={account.classification} icon={account.icon} className="size-5" />
+            <AccountIcon classification={account.classification} accountType={account.accountType} icon={account.icon} className="size-5" />
             {account.name}
             {account.isArchived && (
               <Badge variant="outline" className="ml-1">
@@ -113,7 +113,7 @@ export default async function AccountLayout({
       </div>
 
       <AccountMetricCards
-        instrumentType={account.instrumentType}
+        accountType={account.accountType ?? "BANK"}
         currencySymbol={accountCurrency.symbol}
         currencyScale={accountCurrency.minorUnitScale}
         period={{

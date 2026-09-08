@@ -10,7 +10,7 @@ import {
   updateAccountFields,
   type AccountRow,
 } from "../repositories/accounts";
-import type { Classification, InstrumentType } from "../persistence/schema";
+import type { AccountType, Classification } from "../persistence/schema";
 import { NotFoundError } from "./errors";
 
 export interface CreateAccountInput {
@@ -18,7 +18,7 @@ export interface CreateAccountInput {
   currencyId: string;
   name: string;
   classification: Classification;
-  instrumentType: InstrumentType;
+  accountType: AccountType;
   instrumentId?: string;
   instrumentLabel?: string;
   tags?: string[];
@@ -50,7 +50,7 @@ export function createAccount(db: DbOrTx, input: CreateAccountInput): AccountRow
     currencyId: input.currencyId,
     name: input.name,
     classification: input.classification,
-    instrumentType: input.instrumentType,
+    accountType: input.accountType,
     instrumentId: input.instrumentId ?? null,
     instrumentLabel: input.instrumentLabel ?? null,
     tags: input.tags ?? null,
@@ -98,7 +98,7 @@ export interface EditAccountInput {
   currencyId: string;
   name: string;
   classification: Classification;
-  instrumentType: InstrumentType;
+  accountType: AccountType;
   instrumentId?: string;
   instrumentLabel?: string;
   tags?: string[];
@@ -129,7 +129,7 @@ export function editAccount(db: Db, input: EditAccountInput): AccountRow {
   const fields = {
     name: input.name,
     classification: input.classification,
-    instrumentType: input.instrumentType,
+    accountType: input.accountType,
     instrumentId: input.instrumentId ?? null,
     instrumentLabel: input.instrumentLabel ?? null,
     tags: input.tags ?? null,
@@ -225,7 +225,7 @@ export function bulkUpdateAccountTags(db: Db, input: BulkUpdateAccountTagsInput)
       updateAccountFields(tx, target.id, input.profileId, {
         name: target.name,
         classification: target.classification,
-        instrumentType: target.instrumentType,
+        accountType: target.accountType,
         instrumentId: target.instrumentId,
         instrumentLabel: target.instrumentLabel,
         tags: merged.length > 0 ? merged : null,

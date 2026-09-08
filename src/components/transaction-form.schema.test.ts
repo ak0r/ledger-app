@@ -13,7 +13,7 @@ function account(id: string, currencyId: string, currencyScale = 2): Transaction
     classification: "ASSET",
     icon: null,
     currencyId,
-    currencySymbol: currencyId === "INR" ? "₹" : "¥",
+    currencySymbol: currencyId === "INR" ? "₹" : currencyId === "JPY" ? "¥" : "$",
     currencyScale,
   };
 }
@@ -21,8 +21,10 @@ function account(id: string, currencyId: string, currencyScale = 2): Transaction
 const inrBank = account("inr-bank", "INR", 2);
 const inrOther = account("inr-other", "INR", 2);
 const jpyCash = account("jpy-cash", "JPY", 0);
+const usdCash = account("usd-cash", "USD", 2);
 
-const accountsById = new Map([inrBank, inrOther, jpyCash].map((a) => [a.id, a]));
+const accountsById = new Map([inrBank, inrOther, jpyCash, usdCash].map((a) => [a.id, a]));
+const BASE_CURRENCY_ID = "INR";
 
 function baseValues(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -31,69 +33,25 @@ function baseValues(overrides: Partial<Record<string, unknown>> = {}) {
     fromAccountId: "inr-bank",
     amount: 10000,
     toLines: [{ accountId: "inr-other", amount: 10000 }],
-    reconciled: false,
     ...overrides,
   };
 }
 
-describe("buildTransactionFormSchema — reconciliation gate (2026-09-03 delta)", () => {
-  const schema = buildTransactionFormSchema(6, accountsById);
+describe("buildTransactionFormSchema — same-Base-Currency transfers (no FX involved)", () => {
+  const schema = buildTransactionFormSchema(6, accountsById, BASE_CURRENCY_ID);
 
-  it("accepts a normal same-currency transfer with equal amounts, no reconciliation needed", () => {
+  it("accepts a normal same-currency transfer with equal amounts", () => {
     const result = schema.safeParse(baseValues());
     expect(result.success).toBe(true);
   });
 
-  it("rejects a same-currency transfer with unequal amounts (mismatch), even if 'reconciled' is true", () => {
-    const result = schema.safeParse(
-      baseValues({
-        toLines: [{ accountId: "inr-other", amount: 9900 }],
-        reconciled: true,
-      }),
-    );
+  it("rejects a same-currency transfer with unequal amounts", () => {
+    const result = schema.safeParse(baseValues({ toLines: [{ accountId: "inr-other", amount: 9900 }] }));
     expect(result.success).toBe(false);
     if (!result.success) {
       const issue = result.error.issues.find((i) => i.path.join(".") === "toLines");
       expect(issue?.message).toMatch(/must match for a same-currency transfer/i);
     }
-  });
-
-  it("rejects an INR -> JPY conversion when not reconciled", () => {
-    const result = schema.safeParse(
-      baseValues({
-        toLines: [{ accountId: "jpy-cash", amount: 15000 }],
-        reconciled: false,
-      }),
-    );
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const issue = result.error.issues.find((i) => i.path.join(".") === "reconciled");
-      expect(issue?.message).toMatch(/confirm the currency conversion/i);
-    }
-  });
-
-  it("accepts an INR -> JPY conversion once reconciled, with independent (editable) amounts", () => {
-    const result = schema.safeParse(
-      baseValues({
-        amount: 10000,
-        toLines: [{ accountId: "jpy-cash", amount: 15000 }], // deliberately not a 1:1 mirror
-        reconciled: true,
-      }),
-    );
-    expect(result.success).toBe(true);
-  });
-
-  it("allows To Amount to differ from From Amount only in the reconciled cross-currency case", () => {
-    // Same scenario, unreconciled — must still fail even though the shape
-    // (account currencies) is identical to the test above.
-    const result = schema.safeParse(
-      baseValues({
-        amount: 10000,
-        toLines: [{ accountId: "jpy-cash", amount: 15000 }],
-        reconciled: false,
-      }),
-    );
-    expect(result.success).toBe(false);
   });
 
   it("rejects From and To being the same account", () => {
@@ -121,22 +79,22 @@ describe("buildTransactionFormSchema — reconciliation gate (2026-09-03 delta)"
     expect(result.success).toBe(true);
   });
 
-  it("still requires a split (2+ destinations) to sum to the total, unaffected by the reconciliation gate", () => {
+  it("still requires an all-same-currency split (2+ destinations) to sum to the total", () => {
     const result = schema.safeParse(
       baseValues({
         toLines: [
           { accountId: "inr-other", amount: 6000 },
-          { accountId: "inr-bank", amount: 3000 }, // deliberately short of 10000; also same as From but that's fine per-line here since the from/to-distinct check applies per line below
+          { accountId: "inr-bank", amount: 3000 },
         ],
       }),
     );
     expect(result.success).toBe(false);
   });
 
-  it("still accepts a valid split whose destinations sum to the total", () => {
+  it("still accepts a valid all-same-currency split whose destinations sum to the total", () => {
     const anotherFrom = account("inr-third", "INR", 2);
     const withThird = new Map([...accountsById, [anotherFrom.id, anotherFrom]]);
-    const splitSchema = buildTransactionFormSchema(6, withThird);
+    const splitSchema = buildTransactionFormSchema(6, withThird, BASE_CURRENCY_ID);
     const result = splitSchema.safeParse(
       baseValues({
         toLines: [
@@ -146,5 +104,75 @@ describe("buildTransactionFormSchema — reconciliation gate (2026-09-03 delta)"
       }),
     );
     expect(result.success).toBe(true);
+  });
+});
+
+describe("buildTransactionFormSchema — a foreign destination line (Transaction Form FX UX delta)", () => {
+  const schema = buildTransactionFormSchema(6, accountsById, BASE_CURRENCY_ID);
+
+  it("rejects a foreign line with neither a rate nor a confirmation", () => {
+    const result = schema.safeParse(baseValues({ toLines: [{ accountId: "jpy-cash", amount: 15000 }] }));
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path.join(".") === "toLines.0.rateDecimal")).toBe(true);
+      expect(result.error.issues.some((i) => i.path.join(".") === "toLines.0.reconciled")).toBe(true);
+    }
+  });
+
+  it("rejects a foreign line with a rate but no confirmation", () => {
+    const result = schema.safeParse(
+      baseValues({ toLines: [{ accountId: "jpy-cash", amount: 15000, rateDecimal: 0.65 }] }),
+    );
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path.join(".") === "toLines.0.reconciled")).toBe(true);
+    }
+  });
+
+  it("accepts a foreign line with a positive rate and an explicit confirmation, independent of any amount relationship", () => {
+    const result = schema.safeParse(
+      baseValues({
+        amount: 10000,
+        toLines: [{ accountId: "jpy-cash", amount: 15000, rateDecimal: 0.65, reconciled: true }],
+      }),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it("never requires the raw amount sum to match once any line is foreign — currencies aren't summable", () => {
+    const result = schema.safeParse(
+      baseValues({
+        amount: 999999,
+        toLines: [{ accountId: "jpy-cash", amount: 15000, rateDecimal: 0.65, reconciled: true }],
+      }),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a genuine N-leg split with two independently-priced foreign lines", () => {
+    const result = schema.safeParse(
+      baseValues({
+        toLines: [
+          { accountId: "jpy-cash", amount: 9000, rateDecimal: 0.65, reconciled: true },
+          { accountId: "usd-cash", amount: 5000, rateDecimal: 83, reconciled: true },
+        ],
+      }),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a genuine N-leg split when only one of two foreign lines is confirmed", () => {
+    const result = schema.safeParse(
+      baseValues({
+        toLines: [
+          { accountId: "jpy-cash", amount: 9000, rateDecimal: 0.65, reconciled: true },
+          { accountId: "usd-cash", amount: 5000, rateDecimal: 83 },
+        ],
+      }),
+    );
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path.join(".") === "toLines.1.reconciled")).toBe(true);
+    }
   });
 });

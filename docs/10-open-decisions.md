@@ -44,18 +44,23 @@ Still future design required for:
 
 ## Multi-currency / FX
 
-Decided and shipped (2026-09-03 Settings/Backup/Data Management delta —
-see `docs/04-modules.md`'s Currency Catalogue section): a Currency
-Catalogue, a Profile Primary Currency, an independently changeable Account
-Currency.
+Decided and shipped:
+
+- 2026-09-03 Settings/Backup/Data Management delta (`docs/04-modules.md`'s
+  Currency Catalogue section): a Currency Catalogue, a Profile Primary
+  Currency, an independently changeable Account Currency.
+- 2026-09-06/08 Account Types, Money Representation, Rational Pricing, FX
+  & Liability Details delta (ADR-047): dated CurrencyRates, genuine N-leg
+  cross-currency Transactions reconciled against the Profile's Base
+  Currency (replaces the old one-shape-only Currency Conversion),
+  exact-rational Posting pricing.
 
 Still future design required for:
 
-- FX rates / conversion between currencies
-- FX gain/loss
-- cross-currency Transaction aggregation (the one Currency Conversion
-  2-posting shape persists an explicit rate for that transaction alone —
-  not a general conversion engine)
+- FX gain/loss (realized/unrealized) reporting
+- historical rate charting/trend display beyond the raw rate-history table
+- any pricing-provider integration for CurrencyRate (still 100% manual
+  entry)
 
 ## Spaces
 

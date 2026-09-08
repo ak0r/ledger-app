@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { TYPES_BY_CLASSIFICATION, type Classification, type ImportDirection, type InstrumentType } from "@/core";
+import { ACCOUNT_TYPES_BY_CLASSIFICATION, type AccountType, type Classification, type ImportDirection } from "@/core";
 import type { AccountChoice, AccountResolution, ImportPreview } from "@/server/services/imports";
 import {
   previewImportAction,
@@ -126,12 +126,12 @@ function defaultAccountChoice(resolution: AccountResolution, accounts: AccountOp
     return { type: "existing", accountId: resolution.candidates[0].accountId };
   }
   if (resolution.status === "new" && resolution.proposedName) {
-    return { type: "new", name: resolution.proposedName, classification: resolution.proposedClassification, instrumentType: resolution.proposedInstrumentType };
+    return { type: "new", name: resolution.proposedName, classification: resolution.proposedClassification, accountType: resolution.proposedAccountType };
   }
   // "unidentified" (e.g. generic CSV) — no statement-derived identity at all.
   return accounts[0]
     ? { type: "existing", accountId: accounts[0].id }
-    : { type: "new", name: "", classification: "ASSET", instrumentType: "BANK" };
+    : { type: "new", name: "", classification: "ASSET", accountType: "BANK" };
 }
 
 function accountChoiceKnownAccountId(choice: AccountChoice): string | null {
@@ -139,16 +139,18 @@ function accountChoiceKnownAccountId(choice: AccountChoice): string | null {
 }
 
 // Unified editing shape for the "Change Account" dialog, used for both
-// source-account cards (Asset/Liability + instrument type) and counterpart-
-// account cards (Expense/Income, no instrument type — rule #21). Converts
-// to/from the server's two distinct shapes (`AccountChoice`/`Counterpart`)
-// only at the edges (see the `*To*`/`*From*` helpers below).
+// source-account cards (Asset/Liability + Account Type) and counterpart-
+// account cards (Expense/Income — the picker itself is hidden for these,
+// `showAccountType={false}`, but the server still assigns a default
+// Account Type per classification, imports.ts). Converts to/from the
+// server's two distinct shapes (`AccountChoice`/`Counterpart`) only at the
+// edges (see the `*To*`/`*From*` helpers below).
 interface ResolutionChoice {
   type: "existing" | "new";
   accountId?: string;
   name?: string;
   classification?: Classification;
-  instrumentType?: InstrumentType;
+  accountType?: AccountType;
 }
 
 function classificationLabel(classification: string): string {
@@ -173,19 +175,28 @@ function maskIdentifier(identifier: string): string {
 function accountChoiceToResolutionChoice(choice: AccountChoice): ResolutionChoice {
   return choice.type === "existing"
     ? { type: "existing", accountId: choice.accountId }
-    : { type: "new", name: choice.name, classification: choice.classification, instrumentType: choice.instrumentType };
+    : { type: "new", name: choice.name, classification: choice.classification, accountType: choice.accountType };
 }
 
 function resolutionChoiceToAccountChoice(choice: ResolutionChoice): AccountChoice {
   if (choice.type === "existing") return { type: "existing", accountId: choice.accountId ?? "" };
   const classification = choice.classification === "LIABILITY" ? "LIABILITY" : "ASSET";
-  return { type: "new", name: choice.name ?? "", classification, instrumentType: choice.instrumentType ?? "BANK" };
+  return { type: "new", name: choice.name ?? "", classification, accountType: choice.accountType ?? "BANK" };
 }
 
+// Counterpart accounts (Expense/Income catch-alls) carry no Account Type
+// of their own — the picker is hidden for these cards (`showAccountType`
+// below), same default-bucket mapping as the server's own
+// (imports.ts, "same default bucket as the accountType backfill migration").
 function counterpartToResolutionChoice(counterpart: Counterpart): ResolutionChoice {
   return counterpart.type === "existing"
     ? { type: "existing", accountId: counterpart.accountId }
-    : { type: "new", name: counterpart.name, classification: counterpart.classification, instrumentType: counterpart.classification };
+    : {
+        type: "new",
+        name: counterpart.name,
+        classification: counterpart.classification,
+        accountType: counterpart.classification === "EXPENSE" ? "VARIABLE" : "EARNED",
+      };
 }
 
 function resolutionChoiceToCounterpart(choice: ResolutionChoice): Counterpart {
@@ -272,8 +283,8 @@ function toFilterableTransaction(
     createdAt: "",
     updatedAt: "",
     postings: [
-      { id: `${candidate.clientRowId}-credit`, transactionId: candidate.clientRowId, accountId: creditAccountId, debit: 0, credit: candidate.amountMinor, quantity: 0, price: 1, createdAt: "", updatedAt: "" },
-      { id: `${candidate.clientRowId}-debit`, transactionId: candidate.clientRowId, accountId: debitAccountId, debit: candidate.amountMinor, credit: 0, quantity: 0, price: 1, createdAt: "", updatedAt: "" },
+      { id: `${candidate.clientRowId}-credit`, transactionId: candidate.clientRowId, accountId: creditAccountId, units: -candidate.amountMinor, priceNum: 1, priceDenom: 1, baseAmount: -candidate.amountMinor, createdAt: "", updatedAt: "" },
+      { id: `${candidate.clientRowId}-debit`, transactionId: candidate.clientRowId, accountId: debitAccountId, units: candidate.amountMinor, priceNum: 1, priceDenom: 1, baseAmount: candidate.amountMinor, createdAt: "", updatedAt: "" },
     ],
   };
 }
@@ -2024,34 +2035,49 @@ function CounterpartPicker({
 // The "Change Account" interaction, generalized (Account Resolution delta):
 // one control offering "choose an existing account" or "create new account"
 // followed by whichever fields that choice needs — used for both source-
-// account cards (Asset/Liability + instrument type) and counterpart-account
-// cards (Expense/Income, no instrument type — rule #21). Note this only
+// account cards (Asset/Liability + Account Type) and counterpart-account
+// cards (Expense/Income — the picker is hidden, `showAccountType={false}`,
+// same default-bucket mapping as the server, imports.ts). Note this only
 // edits the *proposed* resolution held in workspace state; the real
 // `accounts` row is created solely by `commitImport` on Approve, never from
 // here — keeps the whole import atomic (transient preview, one commit).
+// Counterpart cards (Expense/Income) never show the picker, so their
+// default must match the server's own silent choice (imports.ts's "same
+// default bucket as the accountType backfill migration") rather than just
+// "first option" — a visible source-account picker can use the plain
+// first-option default since the user sees and can change it right there.
+function defaultAccountTypeForClassification(classification: Classification, showAccountType: boolean): AccountType {
+  if (!showAccountType) {
+    return classification === "EXPENSE" ? "VARIABLE" : "EARNED";
+  }
+  return ACCOUNT_TYPES_BY_CLASSIFICATION[classification][0];
+}
+
 function AccountResolutionPicker({
   value,
   accounts,
   allowedClassifications,
-  showInstrumentType,
+  showAccountType,
   onChange,
 }: {
   value: ResolutionChoice;
   accounts: AccountOption[];
   allowedClassifications: readonly Classification[];
-  showInstrumentType: boolean;
+  showAccountType: boolean;
   onChange: (value: ResolutionChoice) => void;
 }) {
   const accountsById = new Map(accounts.map((account) => [account.id, account]));
   const selectValue = value.type === "existing" ? (value.accountId ?? "") : NEW_ACCOUNT;
   const classification = value.classification ?? allowedClassifications[0];
-  const typeOptions = showInstrumentType ? TYPES_BY_CLASSIFICATION[classification] ?? ["BANK"] : [];
+  const typeOptions = showAccountType ? ACCOUNT_TYPES_BY_CLASSIFICATION[classification] : [];
 
   function withClassification(nextClassification: Classification): ResolutionChoice {
-    const instrumentType: InstrumentType = showInstrumentType
-      ? (TYPES_BY_CLASSIFICATION[nextClassification] ?? ["BANK"])[0]
-      : (nextClassification as InstrumentType);
-    return { type: "new", name: value.name ?? "", classification: nextClassification, instrumentType };
+    return {
+      type: "new",
+      name: value.name ?? "",
+      classification: nextClassification,
+      accountType: defaultAccountTypeForClassification(nextClassification, showAccountType),
+    };
   }
 
   return (
@@ -2101,8 +2127,8 @@ function AccountResolutionPicker({
                 ))}
               </SelectContent>
             </Select>
-            {showInstrumentType && (
-              <Select value={value.instrumentType} onValueChange={(v) => onChange({ ...value, instrumentType: v as InstrumentType })}>
+            {showAccountType && (
+              <Select value={value.accountType} onValueChange={(v) => onChange({ ...value, accountType: v as AccountType })}>
                 <SelectTrigger className="w-32">
                   <SelectValue>{(v: string | null) => (v ? humanizeEnum(v) : "")}</SelectValue>
                 </SelectTrigger>
@@ -2157,7 +2183,7 @@ function AccountResolutionDialog({
           value={choice}
           accounts={accounts}
           allowedClassifications={allowedClassifications}
-          showInstrumentType={scope === "source"}
+          showAccountType={scope === "source"}
           onChange={setChoice}
         />
         {identifier !== null && (

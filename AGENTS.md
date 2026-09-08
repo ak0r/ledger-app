@@ -8,20 +8,31 @@
 6. Every Profile-scoped repository/query requires explicit `profileId`.
 7. Currency: a system-maintained Currency Catalogue (code-level constant,
    `domain/currency.ts`, not a DB table) replaces the earlier INR-only
-   freeze (2026-09-03 Settings/Backup/Data Management delta, full rule
-   pending the delta's docs closing pass). Profile has a Primary Currency
-   (default for new Accounts, changeable, not retroactive). Account has its
-   own Currency (authoritative, changeable — not retroactively snapshotted;
-   since Transactions never store a currency, changing an Account's
-   currency immediately changes how every existing and future Transaction
-   on it is interpreted). No FX/conversion/cross-currency aggregation; a
-   Transaction whose postings resolve to more than one currency is rejected
-   (`MIXED_CURRENCY_UNSUPPORTED`).
+   freeze (2026-09-03 Settings/Backup/Data Management delta). Profile has
+   a Primary Currency — also the Profile's Base Currency, the fixed target
+   every Transaction reconciles against (default for new Accounts,
+   changeable, not retroactive). Account has its own Currency
+   (authoritative, changeable — not retroactively snapshotted; since
+   Transactions never store a currency, changing an Account's currency
+   immediately changes how every existing and future Transaction on it is
+   interpreted). Genuine N-leg cross-currency Transactions are supported
+   (2026-09-06/08 Account Types, Money Representation, Rational Pricing,
+   FX & Liability Details delta, ADR-047 — see rule #30; supersedes and
+   retires the earlier one-shape-only Currency Conversion and
+   `MIXED_CURRENCY_UNSUPPORTED`): any Posting whose Account currency
+   differs from the Base Currency carries its own exact-rational price
+   into it, resolved from a dated CurrencyRate or an explicit user-
+   confirmed rate at entry time. Still no FX conversion/aggregation beyond
+   that — an entry that doesn't reconcile is rejected (`UNBALANCED`),
+   never silently forced to balance.
 8. Money is integer minor units.
 9. Transactions are hard-deleted.
 10. No persisted transaction draft/status.
-11. MVP instrument types are frozen (2026-08-19 account-model delta):
-   BANK, CASH, CREDIT_CARD, LOAN, EXPENSE, INCOME, BALANCING, MUTUAL_FUND, STOCK, COMMODITY.
+11. MVP instrument taxonomy (2026-08-19 account-model delta) is
+   superseded by the mandatory Account Type vocabulary — see rule #30.
+   `MUTUAL_FUND`/`STOCK`/`COMMODITY` were removed earlier still (Ledger/
+   Portfolio delink, ADR-040) — a Ledger Account can never be Instrument-
+   backed.
 12. LOAN is a plain liability ledger account only.
 13. Tags are inline `string[]` (a flat list of opaque strings — product-polish
     pass, superseded the earlier `Record<string,string>` shape).
@@ -32,9 +43,11 @@
 18. Do not implement deferred modules without an explicit architecture decision.
 19. Prefer small, testable changes.
 20. If a requirement conflicts with docs, stop and report the conflict before coding.
-21. Account Type exists only where it changes real behaviour — currently only Asset
-    and Liability have one. Income and Expense have no Account Type; account names
-    (e.g. "Salary", "Rent") are user categorisation, never architectural types.
+21. Account Type is mandatory on every Classification now (2026-09-06/08
+    delta, rule #30 — supersedes this rule's original "only Asset/Liability
+    have one, Income/Expense have none" scope). Account names (e.g.
+    "Salary", "Rent") stay free-text user categorisation layered on top of
+    their own Account Type, never a replacement for one.
 22. BALANCING is a system-managed classification (the opening-balance mechanism) —
     not offered as a normal user-creatable classification in the Account form.
 23. Import privacy (2026-08-26 Import Framework & Account Resolution delta) —
@@ -132,6 +145,43 @@
     - Empty panels stay visible with an explanatory empty state; a panel
       must never silently disappear or invent a default selection (e.g.
       Balances' "no accounts selected" is never read as "all accounts").
+30. Account Types, Money Representation, Rational Pricing, FX & Liability
+    Details (2026-09-06/08 delta, archived in `docs/completed/`; see
+    ADR-047 in `docs/07-decisions.md`):
+    - Account Type is mandatory on every Classification (supersedes rule
+      #21's original "only Asset/Liability" scope and rule #11's frozen
+      taxonomy): ASSET gets CASH/BANK/INVESTMENTS/WALLET/RECEIVABLES;
+      LIABILITY gets CREDIT_CARD/LOAN/PAYABLES; INCOME gets EARNED/
+      PASSIVE/WINDFALL; EXPENSE gets FIXED/VARIABLE/DISCRETIONARY/
+      FINANCIAL; BALANCING gets INITIAL (system-managed only, never
+      user-creatable — rule #22 unchanged). Enforced by a real
+      `UNIQUE(profile_id, classification, account_type, name)` index, not
+      just app-level validation.
+    - A Posting's money is an exact rational, not a float: `units`
+      (signed integer minor units in the Account's own currency) and
+      `priceNum`/`priceDenom` (positive integers, the valuation ratio
+      into the Profile's Base Currency) multiply via checked BigInt
+      arithmetic and round half-to-even into `baseAmount` (signed integer
+      Base Currency minor units) — never `Math.round` on a float.
+      `SUM(base_amount) == 0` is the real balance invariant now, not
+      `SUM(debit) == SUM(credit)`. The old `debit`/`credit`/`quantity`/
+      `price` posting columns and `accounts.instrument_type` are fully
+      dropped (not just left inert) — `accounts.instrumentId`/
+      `instrumentLabel` stay inert per ADR-040, untouched by this delta.
+    - CurrencyRate is a dated, per-Currency exchange rate (`rate_num`/
+      `rate_denom`, GCD-reduced, `UNIQUE(currency_id, date)`) maintained
+      inline on Settings → Currencies (Show/Hide Rates, Add/Edit/Delete)
+      — never a standalone FX page or a calculator/converter. Lookup rule:
+      exact date, else latest-before, else 1/1 parity — never a
+      future-dated row. A Transaction's resolved rate is copied into its
+      Postings at creation time; editing or deleting a CurrencyRate later
+      never changes an already-committed Transaction's own numbers.
+    - Liability Details (`credit_card_details`/`loan_details`, 1:1 with an
+      Account via `accountId`) hold supporting fields only (credit limit,
+      statement/due day, network/last4; original/disbursed amount,
+      interest rate, tenure, EMI day) — no derived balance column on
+      either; outstanding balance always comes from `getAccountBalances`,
+      same as any other Account.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

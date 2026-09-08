@@ -4,7 +4,9 @@ import { CURRENCY_CATALOG } from "@/core";
 import { db } from "@/server/persistence/client";
 import { requireActiveProfile } from "@/server/authz";
 import { listCurrencies } from "@/server/services/currencies";
+import { listCurrencyRatesForCurrency } from "@/server/services/currencyRates";
 import { AddCurrencyDialog } from "@/components/add-currency-dialog";
+import { CurrencyRateRow } from "@/components/currency-rate-row";
 import { Badge } from "@/components/ui/badge";
 
 // SQLite is a live local resource — never statically prerender a route that
@@ -17,11 +19,16 @@ export const dynamic = "force-dynamic";
 // Currencies (`currencies`, listed below). PRIMARY only ever refers to the
 // active Profile's own primaryCurrencyId — delta §6.1: "must not imply a
 // globally primary currency."
+//
+// FX Rate UX delta — no separate FX Rates page/nav item: each non-Primary
+// Currency's rate history expands inline via "Show Rates"/"Hide Rates"
+// (CurrencyRateRow), right where the Currency itself already lives.
 export default async function CurrenciesPage() {
   const { profile } = await requireActiveProfile();
   const currencies = listCurrencies(db, profile.id);
   const addedCodes = new Set(currencies.map((c) => c.code));
   const available = CURRENCY_CATALOG.filter((c) => !addedCodes.has(c.code));
+  const primaryCurrency = profile.primaryCurrencyId ? currencies.find((c) => c.id === profile.primaryCurrencyId) : undefined;
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-4">
@@ -45,18 +52,31 @@ export default async function CurrenciesPage() {
         <p className="text-sm text-muted-foreground">No Currencies yet — add one to create Accounts.</p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {currencies.map((currency) => (
-            <li
-              key={currency.id}
-              className="flex items-center justify-between rounded-lg border px-4 py-3"
-            >
-              <span>
-                <span className="font-mono">{currency.symbol}</span> {currency.code} —{" "}
-                {currency.name}
-              </span>
-              {currency.id === profile.primaryCurrencyId && <Badge variant="secondary">Primary</Badge>}
-            </li>
-          ))}
+          {currencies.map((currency) => {
+            const isPrimary = currency.id === profile.primaryCurrencyId;
+            if (isPrimary || !primaryCurrency) {
+              return (
+                <li
+                  key={currency.id}
+                  className="flex items-center justify-between rounded-lg border px-4 py-3"
+                >
+                  <span>
+                    <span className="font-mono">{currency.symbol}</span> {currency.code} —{" "}
+                    {currency.name}
+                  </span>
+                  {isPrimary && <Badge variant="secondary">Primary</Badge>}
+                </li>
+              );
+            }
+            return (
+              <CurrencyRateRow
+                key={currency.id}
+                currency={currency}
+                baseCurrencyCode={primaryCurrency.code}
+                rates={listCurrencyRatesForCurrency(db, currency.id, profile.id)}
+              />
+            );
+          })}
         </ul>
       )}
     </div>

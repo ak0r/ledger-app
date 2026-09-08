@@ -54,9 +54,7 @@ function accountPostingsChronological(db: Db, profileId: string, accountId: stri
     const matches = postingsByTransaction.get(transaction.id);
     if (!matches) continue;
     for (const posting of matches) {
-      const delta = debitNormal
-        ? posting.debit - posting.credit
-        : posting.credit - posting.debit;
+      const delta = debitNormal ? posting.units : -posting.units;
       entries.push({ date: transaction.date, delta });
     }
   }

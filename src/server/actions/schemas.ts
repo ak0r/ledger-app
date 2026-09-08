@@ -14,7 +14,7 @@ import {
   CLASSIFICATIONS,
   CREATABLE_CLASSIFICATIONS,
   INSTRUMENT_BACKED_TYPES,
-  INSTRUMENT_TYPES,
+  ACCOUNT_TYPES,
   PANEL_KEYS,
   RECENT_EXPENSES_PERIODS,
   RECURRING_FREQUENCIES,
@@ -84,6 +84,52 @@ export const addCurrencySchema = z.object({
   code: z.string().length(3, "Currency code must be 3 letters"),
 });
 
+export const upsertCurrencyRateSchema = z.object({
+  id: z.string().min(1).optional(),
+  profileId: z.string().min(1),
+  currencyId: z.string().min(1),
+  date: z.string().min(1),
+  rateDecimal: z.number().positive(),
+});
+
+export const deleteCurrencyRateSchema = z.object({
+  profileId: z.string().min(1),
+  currencyId: z.string().min(1),
+  rateId: z.string().min(1),
+});
+
+export const getDefaultCurrencyRateSchema = z.object({
+  profileId: z.string().min(1),
+  currencyId: z.string().min(1),
+  date: z.string().min(1),
+});
+
+const dayOfMonthSchema = z.number().int().min(1).max(31).nullable().optional();
+
+export const upsertCreditCardDetailsSchema = z.object({
+  profileId: z.string().min(1),
+  accountId: z.string().min(1),
+  creditLimit: z.number().positive().nullable().optional(),
+  statementEndDay: dayOfMonthSchema,
+  dueDay: dayOfMonthSchema,
+  network: z.string().trim().min(1).nullable().optional(),
+  last4: z.string().trim().min(1).nullable().optional(),
+  expirationDate: z.string().trim().min(1).nullable().optional(),
+});
+
+export const upsertLoanDetailsSchema = z.object({
+  profileId: z.string().min(1),
+  accountId: z.string().min(1),
+  originalAmount: z.number().positive().nullable().optional(),
+  disbursedAmount: z.number().positive().nullable().optional(),
+  interestRatePercent: z.number().positive().nullable().optional(),
+  tenureMonths: z.number().int().positive().nullable().optional(),
+  emiAmount: z.number().positive().nullable().optional(),
+  emiDay: dayOfMonthSchema,
+  startDate: z.string().trim().min(1).nullable().optional(),
+  maturityDate: z.string().trim().min(1).nullable().optional(),
+});
+
 // Simple opaque tags — a flat list, not key/value (rule #13/#14). Each tag
 // trimmed/non-empty; duplicates are a UI concern (TagInput dedupes), not
 // rejected here.
@@ -100,7 +146,7 @@ export const createAccountSchema = z.object({
   currencyId: z.string().min(1),
   name: z.string().trim().min(1),
   classification: z.enum(CREATABLE_CLASSIFICATIONS),
-  instrumentType: z.enum(INSTRUMENT_TYPES),
+  accountType: z.enum(ACCOUNT_TYPES),
   instrumentId: z.string().trim().min(1).optional(),
   instrumentLabel: z.string().trim().min(1).optional(),
   tags: tagsSchema,
@@ -114,7 +160,7 @@ export const editAccountSchema = z.object({
   currencyId: z.string().min(1),
   name: z.string().trim().min(1),
   classification: z.enum(CLASSIFICATIONS),
-  instrumentType: z.enum(INSTRUMENT_TYPES),
+  accountType: z.enum(ACCOUNT_TYPES),
   instrumentId: z.string().trim().min(1).optional(),
   instrumentLabel: z.string().trim().min(1).optional(),
   tags: tagsSchema,
@@ -171,6 +217,13 @@ const postingSchema = z
     // every ordinary posting; the use-case layer falls back to its own
     // mirror-derivation when absent (src/server/services/transactions.ts).
     quantity: z.number().int().positive().optional(),
+    // Transaction Form FX UX delta — the standard one-unit quotation ("1
+    // JPY = 0.5800 INR") for a posting whose Account currency differs from
+    // the Profile Base Currency, confirmed by the user at entry. Omitted
+    // for a same-currency posting, or when the caller wants the server's
+    // own CurrencyRate default (`resolveCurrencyRate`) rather than an
+    // explicit value.
+    rateDecimal: z.number().positive().optional(),
   })
   .refine((posting) => (posting.debit > 0 ? 1 : 0) + (posting.credit > 0 ? 1 : 0) === 1, {
     message: "Exactly one of debit/credit must be positive",
@@ -184,25 +237,24 @@ const transactionFieldsSchema = z.object({
   postings: z.array(postingSchema).min(2, "A transaction needs at least two postings"),
 });
 
-// Shape-only mirror of domain/transaction.ts's isConversionShape check —
-// this schema layer never sees Account rows (rule #17's own boundary:
+// This schema layer never sees Account rows (rule #17's own boundary:
 // "Ownership and currency-support checks need Account rows from the DB
 // and can only happen in the domain/use-case layer"), so it can't confirm
-// the two postings actually resolve to different currencies the way the
-// domain layer can. Exempting the raw shape here isn't a hole: a
-// same-currency 2-posting mismatch that slips past this fast check is
-// still caught by the domain layer's own (currency-aware) balance rule —
-// this only defers *where* it's caught, never *whether*.
-function isPossibleConversionShape(transaction: z.infer<typeof transactionFieldsSchema>): boolean {
-  return (
-    transaction.postings.length === 2 &&
-    transaction.postings.filter((posting) => posting.debit > 0).length === 1 &&
-    transaction.postings.filter((posting) => posting.credit > 0).length === 1
-  );
+// currencies itself the way the domain layer can — it only reads the
+// client's own explicit signal that a posting is priced against a
+// different currency (`rateDecimal` present, Transaction Form FX UX
+// delta). A raw same-currency-only sum is meaningless once any posting
+// carries a rate (summing JPY + USD + INR minor units directly has no
+// meaning), so this check is skipped entirely whenever *any* posting has
+// one — deferred to the domain layer's own currency-aware balance rule,
+// same "defers where it's caught, never whether" posture the narrower
+// 2-posting Conversion-only version of this check always had.
+function hasExplicitRate(transaction: z.infer<typeof transactionFieldsSchema>): boolean {
+  return transaction.postings.some((posting) => posting.rateDecimal !== undefined);
 }
 
 function isBalanced(transaction: z.infer<typeof transactionFieldsSchema>): boolean {
-  if (isPossibleConversionShape(transaction)) return true;
+  if (hasExplicitRate(transaction)) return true;
   const totalDebit = transaction.postings.reduce((sum, posting) => sum + posting.debit, 0);
   const totalCredit = transaction.postings.reduce((sum, posting) => sum + posting.credit, 0);
   return totalDebit === totalCredit;
@@ -409,7 +461,7 @@ const accountChoiceSchema = z.discriminatedUnion("type", [
     type: z.literal("new"),
     name: z.string().trim().min(1),
     classification: z.enum(["ASSET", "LIABILITY"]),
-    instrumentType: z.enum(INSTRUMENT_TYPES),
+    accountType: z.enum(ACCOUNT_TYPES),
   }),
 ]);
 

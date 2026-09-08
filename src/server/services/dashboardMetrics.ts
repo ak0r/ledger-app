@@ -18,8 +18,8 @@ import { calculateBudgetActuals, listBudgetsWithSummary } from "./budgets";
 // an INCOME account is credit-normal (a credit posting is money
 // received). Mirrors getExpenseTotalsByPeriod's own existing convention,
 // generalized to also serve Income (Monthly Snapshot needs both).
-function postingAmountFor(classification: "EXPENSE" | "INCOME", debit: number, credit: number): number {
-  return classification === "EXPENSE" ? debit : credit;
+function postingAmountFor(classification: "EXPENSE" | "INCOME", units: number): number {
+  return classification === "EXPENSE" ? Math.max(units, 0) : Math.max(-units, 0);
 }
 
 // Sums one classification's activity within `[startIso, endIsoExclusive)`.
@@ -38,7 +38,7 @@ export function getClassificationTotalForWindow(
   for (const transaction of transactions) {
     for (const posting of transaction.postings) {
       if (accountsById.get(posting.accountId)?.classification !== classification) continue;
-      total += postingAmountFor(classification, posting.debit, posting.credit);
+      total += postingAmountFor(classification, posting.units);
     }
   }
   return total;
@@ -75,8 +75,8 @@ export function getDailyExpenseTotals(db: Db, profileId: string, fromIso: string
   for (const transaction of transactions) {
     for (const posting of transaction.postings) {
       if (accountsById.get(posting.accountId)?.classification !== "EXPENSE") continue;
-      if (posting.debit <= 0) continue;
-      totals.set(transaction.date, (totals.get(transaction.date) ?? 0) + posting.debit);
+      if (posting.units <= 0) continue;
+      totals.set(transaction.date, (totals.get(transaction.date) ?? 0) + posting.units);
     }
   }
   return totals;
@@ -207,10 +207,10 @@ export interface CreditCardHealth {
 // A Credit Card purchase credits the card account (increases the
 // liability) — docs/03-accounting-principles.md's own worked example
 // (Purchase: Expense DEBIT, Credit Card CREDIT). Scoped to
-// `instrumentType === "CREDIT_CARD"` specifically, not every LIABILITY
+// `accountType === "CREDIT_CARD"` specifically, not every LIABILITY
 // account (a Loan is a liability too, but not a card) — the delta's own
 // rule: "must be explicitly configured/tagged as such," which
-// `instrumentType` already is (a real user choice at account creation,
+// `accountType` already is (a real user choice at account creation,
 // never inferred from a name).
 function getCreditCardSpendForWindow(db: Db, profileId: string, cardAccountIds: ReadonlySet<string>, window: MonthWindow): number {
   const transactions = listTransactions(db, profileId).filter((t) => t.date >= window.startIso && t.date < window.endIsoExclusive);
@@ -218,7 +218,7 @@ function getCreditCardSpendForWindow(db: Db, profileId: string, cardAccountIds: 
   for (const transaction of transactions) {
     for (const posting of transaction.postings) {
       if (!cardAccountIds.has(posting.accountId)) continue;
-      total += posting.credit;
+      total += Math.max(-posting.units, 0);
     }
   }
   return total;
@@ -229,7 +229,7 @@ function getCreditCardSpendForWindow(db: Db, profileId: string, cardAccountIds: 
 // for one line, cut alongside this same panel's original scoping
 // decision) — spend trend and outstanding balance only.
 export function getCreditCardHealth(db: Db, profileId: string, monthCount = 3, today: Date = new Date()): CreditCardHealth {
-  const cardAccounts = findAccountsByProfile(db, profileId).filter((account) => account.instrumentType === "CREDIT_CARD");
+  const cardAccounts = findAccountsByProfile(db, profileId).filter((account) => account.accountType === "CREDIT_CARD");
   const cardAccountIds = new Set(cardAccounts.map((account) => account.id));
 
   const thisMonthSpendMinor = getCreditCardSpendForWindow(db, profileId, cardAccountIds, monthWindow(today.getUTCFullYear(), today.getUTCMonth()));
@@ -237,7 +237,7 @@ export function getCreditCardHealth(db: Db, profileId: string, monthCount = 3, t
   const averageSpendMinor = average(priorWindows.map((window) => getCreditCardSpendForWindow(db, profileId, cardAccountIds, window)));
 
   const outstandingBalanceMinor = getAccountBalances(db, profileId)
-    .filter((account) => account.instrumentType === "CREDIT_CARD")
+    .filter((account) => account.accountType === "CREDIT_CARD")
     .reduce((sum, account) => sum + account.balance, 0);
 
   return {

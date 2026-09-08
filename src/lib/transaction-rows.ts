@@ -1,4 +1,4 @@
-import { fromMinorUnits, toMinorUnits } from "@/core";
+import { fromMinorUnits, toMinorUnits, minorRationalToDecimalRate } from "@/core";
 import type { AccountRow } from "@/server/repositories/accounts";
 import type { TransactionWithPostings } from "@/server/services/transactions";
 import type { TransactionTableRow, ToLineSecondary } from "@/components/transaction-table";
@@ -13,22 +13,26 @@ function trimmedNumber(value: number, maxDecimals = 4): string {
   return Number(value.toFixed(maxDecimals)).toString();
 }
 
-// FX-rate secondary info for a Currency Conversion's To leg (Revised
-// Investment Model delta, Phase 5, 2026-09-03) — the reconciliation
-// currency is always the From leg's own currency
-// (core/ledger/transactions/transaction.ts), so a differing price only
-// ever shows up on a To posting whose currency differs from the From leg.
+// FX-rate secondary info for a To leg genuinely priced away from the
+// Profile Base Currency (Transaction Form FX UX delta) — `priceNum ===
+// priceDenom` (reduced 1/1) is this leg's own signal for "no real FX
+// here," the same one `derivePostings`' `hasGenuineFx` uses server-side;
+// unlike the old legacy `price` column (retired — dropped by migration
+// 0020), this doesn't need to compare against the From leg's currency,
+// since a posting's price is always relative to the Base Currency
+// regardless of which leg happens to be From.
 function toLineSecondary(
-  posting: { price: number },
+  posting: { priceNum: number; priceDenom: number },
   postingCurrency: { code: string; symbol: string; minorUnitScale: number },
-  fromCurrency: { code: string; symbol: string; minorUnitScale: number },
+  baseCurrencyScale: number,
 ): ToLineSecondary | undefined {
-  const isConversion = postingCurrency.code !== fromCurrency.code;
-  if (isConversion && posting.price > 0) {
-    return { kind: "fx", currencyCode: postingCurrency.code, rate: trimmedNumber(1 / posting.price) };
-  }
-
-  return undefined;
+  if (posting.priceNum === posting.priceDenom) return undefined;
+  const rate = minorRationalToDecimalRate(
+    { num: posting.priceNum, denom: posting.priceDenom },
+    postingCurrency.minorUnitScale,
+    baseCurrencyScale,
+  );
+  return { kind: "fx", currencyCode: postingCurrency.code, rate: trimmedNumber(rate) };
 }
 
 // Shared by the Member-scoped Transactions page and the Account detail
@@ -52,6 +56,7 @@ export function buildTransactionTableRows(
   accountsById: ReadonlyMap<string, AccountRow>,
   currency: { code: string; symbol: string; minorUnitScale: number },
   currenciesById: ReadonlyMap<string, { code: string; symbol: string; minorUnitScale: number }> = new Map(),
+  baseCurrencyScale: number = currency.minorUnitScale,
 ): TransactionTableRow[] {
   // Each posting's own Account's Currency, not the one shared `currency`
   // default (Currency Catalogue delta, 2026-09-03) — Accounts can have
@@ -65,24 +70,25 @@ export function buildTransactionTableRows(
   };
 
   return transactions.map((transaction) => {
-    const toPostings = transaction.postings.filter((posting) => posting.debit > 0);
-    const fromPostings = transaction.postings.filter((posting) => posting.credit > 0);
+    const toPostings = transaction.postings.filter((posting) => posting.units > 0);
+    const fromPostings = transaction.postings.filter((posting) => posting.units < 0);
     // Safe to sum raw minor units directly: a multi-posting `fromPostings`
     // (Merge's "common From" case) is only reachable for a same-currency
-    // N-posting transaction — a Currency Conversion is always exactly one
-    // From posting (domain/transaction.ts's isConversionShape), so there's
-    // never more than one currency to sum across here.
-    const totalFromAmount = fromPostings.reduce((sum, posting) => sum + posting.credit, 0);
+    // N-posting transaction — rule #15's UI only ever creates one From
+    // posting per transaction, so multiple From legs only ever arise from
+    // Merge, which requires every input to already share one currency
+    // (checkMergeEligibility) — never more than one currency to sum here.
+    const totalFromAmount = fromPostings.reduce((sum, posting) => sum + -posting.units, 0);
     const fromCurrency = currencyFor(fromPostings[0]?.accountId ?? "");
 
     return {
       id: transaction.id,
       date: transaction.date,
       description: transaction.description,
-      // The From leg's Currency code — a Currency Conversion is always
-      // exactly one From posting (domain/transaction.ts's
-      // isConversionShape), so this is unambiguous even though `fromLines`
-      // itself supports Merge's multi-From case.
+      // The From leg's Currency code — unambiguous for the same reason
+      // `totalFromAmount` above is (rule #15's UI + Merge's own currency
+      // constraint), even though `fromLines` itself supports Merge's
+      // multi-From case.
       fromCurrencyCode: fromCurrency.code,
       fromLines: fromPostings.map((posting) => {
         const account = accountsById.get(posting.accountId);
@@ -91,7 +97,7 @@ export function buildTransactionTableRows(
           account: account?.name ?? "—",
           classification: account?.classification,
           icon: account?.icon,
-          amount: formatMoney(posting.credit, postingCurrency.symbol, postingCurrency.minorUnitScale),
+          amount: formatMoney(-posting.units, postingCurrency.symbol, postingCurrency.minorUnitScale),
         };
       }),
       fromAmount: formatMoney(totalFromAmount, fromCurrency.symbol, fromCurrency.minorUnitScale),
@@ -102,9 +108,9 @@ export function buildTransactionTableRows(
           account: account?.name ?? "—",
           classification: account?.classification,
           icon: account?.icon,
-          amount: formatMoney(posting.debit, postingCurrency.symbol, postingCurrency.minorUnitScale),
+          amount: formatMoney(posting.units, postingCurrency.symbol, postingCurrency.minorUnitScale),
           currencyCode: postingCurrency.code,
-          secondary: toLineSecondary(posting, postingCurrency, fromCurrency),
+          secondary: toLineSecondary(posting, postingCurrency, baseCurrencyScale),
         };
       }),
       tags: transaction.tags,
@@ -118,12 +124,12 @@ export function buildTransactionTableRows(
       // stays non-optional rather than requiring every reader to null-check.
       edit: {
         fromAccountId: fromPostings[0]?.accountId ?? "",
-        amount: fromMinorUnits(fromPostings[0]?.credit ?? 0, fromCurrency.minorUnitScale),
+        amount: fromMinorUnits(-(fromPostings[0]?.units ?? 0), fromCurrency.minorUnitScale),
         toLines: toPostings.map((posting) => {
           const postingCurrency = currencyFor(posting.accountId);
           return {
             accountId: posting.accountId,
-            amount: fromMinorUnits(posting.debit, postingCurrency.minorUnitScale),
+            amount: fromMinorUnits(posting.units, postingCurrency.minorUnitScale),
           };
         }),
       },
@@ -141,11 +147,10 @@ export function toMergeCandidate(row: TransactionTableRow, currencyScale: number
     id: row.id,
     date: row.date,
     postings: [
-      { accountId: row.edit.fromAccountId, debit: 0, credit: toMinorUnits(row.edit.amount, currencyScale) },
+      { accountId: row.edit.fromAccountId, units: -toMinorUnits(row.edit.amount, currencyScale) },
       ...row.edit.toLines.map((line) => ({
         accountId: line.accountId,
-        debit: toMinorUnits(line.amount, currencyScale),
-        credit: 0,
+        units: toMinorUnits(line.amount, currencyScale),
       })),
     ],
   };

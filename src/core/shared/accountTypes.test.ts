@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACCOUNT_TYPES,
+  ACCOUNT_TYPES_BY_CLASSIFICATION,
   CLASSIFICATIONS,
   CREATABLE_CLASSIFICATIONS,
-  INSTRUMENT_TYPES,
-  TYPES_BY_CLASSIFICATION,
+  toAccountIdentity,
 } from "./accountTypes";
 
 describe("CREATABLE_CLASSIFICATIONS", () => {
@@ -20,30 +21,50 @@ describe("CREATABLE_CLASSIFICATIONS", () => {
   });
 });
 
-describe("TYPES_BY_CLASSIFICATION", () => {
-  it("has entries for exactly Asset and Liability — the only classifications with a real Type layer", () => {
-    expect(Object.keys(TYPES_BY_CLASSIFICATION).sort()).toEqual(["ASSET", "LIABILITY"]);
+describe("ACCOUNT_TYPES_BY_CLASSIFICATION", () => {
+  it("has an entry for every Classification — Account Type is mandatory on all five now", () => {
+    expect(Object.keys(ACCOUNT_TYPES_BY_CLASSIFICATION).sort()).toEqual([...CLASSIFICATIONS].sort());
   });
 
-  it("Income/Expense/Balancing are absent — that absence is the 'no Type step' signal", () => {
-    expect(TYPES_BY_CLASSIFICATION.INCOME).toBeUndefined();
-    expect(TYPES_BY_CLASSIFICATION.EXPENSE).toBeUndefined();
-    expect(TYPES_BY_CLASSIFICATION.BALANCING).toBeUndefined();
-  });
-
-  it("every listed type is a real member of INSTRUMENT_TYPES", () => {
-    for (const types of Object.values(TYPES_BY_CLASSIFICATION)) {
-      for (const type of types ?? []) {
-        expect(INSTRUMENT_TYPES).toContain(type);
+  it("every listed type is a real member of ACCOUNT_TYPES", () => {
+    for (const types of Object.values(ACCOUNT_TYPES_BY_CLASSIFICATION)) {
+      for (const type of types) {
+        expect(ACCOUNT_TYPES).toContain(type);
       }
     }
   });
 
-  it("Asset is Cash/Bank only — no Instrument-backed types (Ledger/Portfolio delink)", () => {
-    expect(TYPES_BY_CLASSIFICATION.ASSET).toEqual(["CASH", "BANK"]);
+  it("Asset: Cash/Bank/Investments/Wallet/Receivables — no Instrument-backed types (Ledger/Portfolio delink)", () => {
+    expect(ACCOUNT_TYPES_BY_CLASSIFICATION.ASSET).toEqual(["CASH", "BANK", "INVESTMENTS", "WALLET", "RECEIVABLES"]);
   });
 
-  it("Liability is unchanged (Credit Card, Loan only)", () => {
-    expect(TYPES_BY_CLASSIFICATION.LIABILITY).toEqual(["CREDIT_CARD", "LOAN"]);
+  it("Liability: Credit Card/Loan/Payables", () => {
+    expect(ACCOUNT_TYPES_BY_CLASSIFICATION.LIABILITY).toEqual(["CREDIT_CARD", "LOAN", "PAYABLES"]);
+  });
+
+  it("Income: Earned/Passive/Windfall", () => {
+    expect(ACCOUNT_TYPES_BY_CLASSIFICATION.INCOME).toEqual(["EARNED", "PASSIVE", "WINDFALL"]);
+  });
+
+  it("Expense: Fixed/Variable/Discretionary/Financial", () => {
+    expect(ACCOUNT_TYPES_BY_CLASSIFICATION.EXPENSE).toEqual(["FIXED", "VARIABLE", "DISCRETIONARY", "FINANCIAL"]);
+  });
+
+  it("Balancing: Initial only (never offered in the New Account form — rule #22)", () => {
+    expect(ACCOUNT_TYPES_BY_CLASSIFICATION.BALANCING).toEqual(["INITIAL"]);
+  });
+});
+
+describe("toAccountIdentity", () => {
+  it("builds the lowercase colon-separated internal representation", () => {
+    expect(toAccountIdentity({ classification: "ASSET", accountType: "BANK", name: "HDFC Bank" })).toBe(
+      "asset:bank:hdfc_bank",
+    );
+  });
+
+  it("slugifies non-alphanumeric characters in the name", () => {
+    expect(toAccountIdentity({ classification: "LIABILITY", accountType: "CREDIT_CARD", name: "Scapia (Visa)" })).toBe(
+      "liability:credit_card:scapia_visa",
+    );
   });
 });

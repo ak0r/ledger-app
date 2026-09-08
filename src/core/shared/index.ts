@@ -7,8 +7,25 @@ export { isNonNegativeInteger, sum, toMinorUnits, fromMinorUnits } from "./money
 export type { Quantity } from "./quantity";
 export { QUANTITY_SCALE, toQuantityMinorUnits, fromQuantityMinorUnits } from "./quantity";
 
-export { CLASSIFICATIONS, CREATABLE_CLASSIFICATIONS, INSTRUMENT_TYPES, TYPES_BY_CLASSIFICATION } from "./accountTypes";
-export type { Classification, InstrumentType } from "./accountTypes";
+export type { Rational } from "./rational";
+export {
+  RationalOverflowError,
+  makeRational,
+  multiplyRationalByInt,
+  roundHalfEvenToInt,
+  decimalToRational,
+  decimalRateToMinorRational,
+  minorRationalToDecimalRate,
+} from "./rational";
+
+export {
+  CLASSIFICATIONS,
+  CREATABLE_CLASSIFICATIONS,
+  ACCOUNT_TYPES,
+  ACCOUNT_TYPES_BY_CLASSIFICATION,
+  toAccountIdentity,
+} from "./accountTypes";
+export type { Classification, AccountType } from "./accountTypes";
 
 export {
   PANEL_CATEGORIES,

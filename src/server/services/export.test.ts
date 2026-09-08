@@ -20,14 +20,14 @@ function setUp(db: ReturnType<typeof createTestDb>) {
     currencyId: currency.id,
     name: "HDFC Bank",
     classification: "ASSET",
-    instrumentType: "BANK",
+    accountType: "BANK",
   });
   const food = createAccount(db, {
     profileId: profile.id,
     currencyId: currency.id,
     name: "Food",
     classification: "EXPENSE",
-    instrumentType: "EXPENSE",
+    accountType: "VARIABLE",
   });
   return { profile, currency, bank, food };
 }

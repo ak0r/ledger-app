@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { TransactionValidationError } from "./errors";
 
 describe("TransactionValidationError", () => {
-  it("surfaces a specific message for MIXED_CURRENCY_UNSUPPORTED", () => {
-    const error = new TransactionValidationError([{ code: "MIXED_CURRENCY_UNSUPPORTED" }]);
-    expect(error.message).toMatch(/mixes more than one currency/i);
+  it("surfaces a specific message for PRICE_MUST_BE_ONE", () => {
+    const error = new TransactionValidationError([{ code: "PRICE_MUST_BE_ONE", accountId: "a" }]);
+    expect(error.message).toMatch(/invalid price/i);
   });
 
   it("surfaces a specific message for UNBALANCED", () => {

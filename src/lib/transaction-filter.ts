@@ -64,17 +64,18 @@ export interface TransactionFilterState {
 export const EMPTY_FILTER_STATE: TransactionFilterState = { match: "ALL", conditions: [] };
 
 function getFromAccountId(transaction: TransactionWithPostings): string | undefined {
-  return transaction.postings.find((posting) => posting.credit > 0)?.accountId;
+  return transaction.postings.find((posting) => posting.units < 0)?.accountId;
 }
 
 function getToAccountIds(transaction: TransactionWithPostings): string[] {
-  return transaction.postings.filter((posting) => posting.debit > 0).map((posting) => posting.accountId);
+  return transaction.postings.filter((posting) => posting.units > 0).map((posting) => posting.accountId);
 }
 
 // The transaction's total — the credited amount, same figure the list
 // already displays as "From Amount" (single credit posting, rule #15).
 function getAmount(transaction: TransactionWithPostings): number {
-  return transaction.postings.find((posting) => posting.credit > 0)?.credit ?? 0;
+  const from = transaction.postings.find((posting) => posting.units < 0);
+  return from ? -from.units : 0;
 }
 
 function matchesDescription(

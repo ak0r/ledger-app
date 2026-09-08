@@ -11,8 +11,8 @@ import { checkPanelEligibility, listEligiblePanelsForContext } from "./panel-eli
 function setUp(db: Db) {
   const profile = createProfile(db, { name: "Amit" });
   const currency = createCurrency(db, { profileId: profile.id, code: "INR", name: "Indian Rupee", symbol: "₹", minorUnitScale: 2 });
-  const bank = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank", classification: "ASSET", instrumentType: "BANK" });
-  const rent = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Rent", classification: "EXPENSE", instrumentType: "EXPENSE" });
+  const bank = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank", classification: "ASSET", accountType: "BANK" });
+  const rent = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Rent", classification: "EXPENSE", accountType: "VARIABLE" });
   return { profile, bank, rent };
 }
 
@@ -71,7 +71,7 @@ describe("checkPanelEligibility", () => {
     expect(checkPanelEligibility(db, profile.id, "CREDIT_CARD_HEALTH").eligible).toBe(false);
 
     const currency = createCurrency(db, { profileId: profile.id, code: "USD", name: "US Dollar", symbol: "$", minorUnitScale: 2 });
-    createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Card", classification: "LIABILITY", instrumentType: "CREDIT_CARD" });
+    createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Card", classification: "LIABILITY", accountType: "CREDIT_CARD" });
 
     expect(checkPanelEligibility(db, profile.id, "CREDIT_CARD_HEALTH")).toEqual({ eligible: true });
   });

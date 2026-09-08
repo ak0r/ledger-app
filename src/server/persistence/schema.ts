@@ -6,11 +6,12 @@
 // dates are ISO 8601 strings. Classification/instrument-type enums are
 // validated by the domain layer (rule #17) — this file only pins their TS
 // shape via `.$type<...>()`; SQLite stores them as plain text.
-import { sqliteTable, text, integer, real, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, check, unique, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
 import {
   CLASSIFICATIONS,
   CREATABLE_CLASSIFICATIONS,
-  INSTRUMENT_TYPES,
+  ACCOUNT_TYPES,
   INSTRUMENT_BACKED_TYPES,
   RECURRING_FREQUENCIES,
   BUDGET_TYPES,
@@ -27,7 +28,7 @@ import {
 } from "@/core";
 import type {
   Classification,
-  InstrumentType,
+  AccountType,
   InstrumentBackedType,
   ImportStatus,
   RecurringFrequency,
@@ -48,7 +49,7 @@ import type {
 export {
   CLASSIFICATIONS,
   CREATABLE_CLASSIFICATIONS,
-  INSTRUMENT_TYPES,
+  ACCOUNT_TYPES,
   INSTRUMENT_BACKED_TYPES,
   RECURRING_FREQUENCIES,
   BUDGET_TYPES,
@@ -65,7 +66,7 @@ export {
 };
 export type {
   Classification,
-  InstrumentType,
+  AccountType,
   InstrumentBackedType,
   ImportStatus,
   RecurringFrequency,
@@ -159,6 +160,98 @@ export const currencies = sqliteTable("currencies", {
   ...timestamps,
 });
 
+// Daily FX reference/spot rates (Account Types, Money Representation,
+// Rational Pricing, FX & Liability Details delta §5, refined by the FX
+// Rate UX delta) — defaults/reference data only, never the historical
+// source of truth for an already-committed Transaction (a Posting's own
+// `price_num`/`price_denom` is that — copied from the resolved rate at
+// creation time, never a live reference back to this table). Exact
+// rational, same reasoning as Posting pricing (ADR-022's "no floating
+// point" extended to rates generally). No `profileId` column — a
+// CurrencyRate belongs to exactly one Currency, which is itself already
+// Profile-scoped; every write path re-verifies that Currency belongs to
+// the caller's Profile at the service layer (rule #6) before touching
+// this table, the same way a nested child table would via its parent join.
+// `onDelete: "cascade"` — a Currency's rate history is meaningless once
+// the Currency itself is gone, same posture as `postings.transactionId`/
+// `credit_card_details.account_id`.
+export const currencyRates = sqliteTable(
+  "currency_rates",
+  {
+    id: id(),
+    currencyId: text("currency_id")
+      .notNull()
+      .references(() => currencies.id, { onDelete: "cascade" }),
+    date: text("date").notNull(),
+    rateNum: integer("rate_num").notNull(),
+    rateDenom: integer("rate_denom").notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    unique("uniq_currency_rate_currency_date").on(table.currencyId, table.date),
+    check("currency_rate_num_positive", sql`${table.rateNum} > 0`),
+    check("currency_rate_denom_positive", sql`${table.rateDenom} > 0`),
+  ],
+);
+
+// Liability supporting information (Account Types, Money Representation,
+// Rational Pricing, FX & Liability Details delta §7) — structured facts
+// kept separate from generic `accounts.metadata`, one table per Liability
+// Account Type that actually has a defined shape (Payables has none, per
+// the delta's own explicit "no specialised detail model required"). 1:1
+// via `accountId` (`.unique()` + `onDelete: "cascade"`, already precedented
+// by `postings.transactionId`) — both new/empty tables, so their CHECK
+// constraints land in the same migration that creates them, no staged
+// add -> enforce dance needed the way `accounts`/`postings` required.
+// Deliberately no derived-balance column on either table — outstanding
+// balance keeps coming from `getAccountBalances`, never duplicated here.
+export const creditCardDetails = sqliteTable(
+  "credit_card_details",
+  {
+    id: id(),
+    accountId: text("account_id")
+      .notNull()
+      .unique()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    creditLimitMinor: integer("credit_limit_minor"),
+    statementEndDay: integer("statement_end_day"),
+    dueDay: integer("due_day"),
+    network: text("network"),
+    last4: text("last4"),
+    expirationDate: text("expiration_date"),
+    ...timestamps,
+  },
+  (table) => [
+    check("credit_card_statement_end_day_range", sql`${table.statementEndDay} IS NULL OR (${table.statementEndDay} BETWEEN 1 AND 31)`),
+    check("credit_card_due_day_range", sql`${table.dueDay} IS NULL OR (${table.dueDay} BETWEEN 1 AND 31)`),
+  ],
+);
+
+export const loanDetails = sqliteTable(
+  "loan_details",
+  {
+    id: id(),
+    accountId: text("account_id")
+      .notNull()
+      .unique()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    originalAmountMinor: integer("original_amount_minor"),
+    disbursedAmountMinor: integer("disbursed_amount_minor"),
+    // Basis points (850 = 8.50%), not a second rational-pair type —
+    // interest rate never participates in Posting balancing, so it doesn't
+    // need exact-rational storage the way price_num/price_denom does; a
+    // plain integer avoids floating point without inventing a new shape.
+    interestRateBps: integer("interest_rate_bps"),
+    tenureMonths: integer("tenure_months"),
+    emiAmountMinor: integer("emi_amount_minor"),
+    emiDay: integer("emi_day"),
+    startDate: text("start_date"),
+    maturityDate: text("maturity_date"),
+    ...timestamps,
+  },
+  (table) => [check("loan_emi_day_range", sql`${table.emiDay} IS NULL OR (${table.emiDay} BETWEEN 1 AND 31)`)],
+);
+
 // Instrument Model delta (2026-08-21) §2/§18 — NOT Profile-scoped, unlike
 // every other table in this file. An Instrument ("HDFC Bank the stock")
 // is shared external reference data, not per-Profile data: every Profile
@@ -208,7 +301,13 @@ export const accounts = sqliteTable("accounts", {
     .references(() => currencies.id),
   name: text("name").notNull(),
   classification: text("classification").notNull().$type<Classification>(),
-  instrumentType: text("instrument_type").notNull().$type<InstrumentType>(),
+  // The mandatory-on-every-Classification vocabulary (Account Types, Money
+  // Representation, Rational Pricing, FX & Liability Details delta),
+  // superseding the old 7-value `instrument_type` column — backfilled by
+  // migration 0016 (deterministic CASE from that column, since dropped by
+  // migration 0020) and enforced NOT NULL + `UNIQUE(profile_id,
+  // classification, account_type, name)` by migration 0019.
+  accountType: text("account_type").notNull().$type<AccountType>(),
   // Revised Investment Model delta (2026-09-03) — deliberately NOT a DB-
   // level FK. SQLite can only add a foreign key to an existing table via a
   // full table-recreate requiring `PRAGMA foreign_keys=OFF`, which is a
@@ -233,7 +332,9 @@ export const accounts = sqliteTable("accounts", {
     .default(false),
   metadata: text("metadata"),
   ...timestamps,
-});
+}, (table) => [
+  unique("uniq_account_identity").on(table.profileId, table.classification, table.accountType, table.name),
+]);
 
 // Account Resolution delta (2026-08-26) §11 — a child entity, not a JSON/
 // list property on `accounts` (explicitly ruled out by §11): "an account
@@ -409,34 +510,23 @@ export const postings = sqliteTable("postings", {
   accountId: text("account_id")
     .notNull()
     .references(() => accounts.id),
-  debit: integer("debit").notNull().default(0),
-  credit: integer("credit").notNull().default(0),
-  // Revised Investment Model delta (2026-09-03) — posting-level, not
-  // instrument-only ("quantity/price should remain generic posting-level
-  // fields, not instrument-only"). `debit`/`credit` above stay exactly as
-  // they were — still the sole, unchanged source of truth for account
-  // balances/exports/everything already built. quantity/price are
-  // additive facts, always validated consistent with debit/credit, never
-  // a competing source of truth.
-  //
-  // quantity: integer-scaled at a fixed 6 decimal places (domain/
-  // quantity.ts), same reasoning as Money's own integer-minor-units rule
-  // (ADR-022) — it gets summed across transactions for holdings
-  // derivation, where float drift would compound. For a cash/FX posting,
-  // numerically identical to that leg's own decimal amount; for an
-  // Instrument posting, the independent fact (units acquired/disposed).
-  quantity: integer("quantity").notNull().default(0),
-  // price: value of 1 unit of `quantity`, expressed in the transaction's
-  // reconciliation currency (the credit-side posting's own currency) —
-  // always exactly 1 for a posting already in that currency (every leg of
-  // a normal/split/Investment transaction), the real exchange rate only
-  // for the debit leg of a cross-currency Conversion. Multiplied once
-  // then immediately rounded to the reconciliation currency's own scale,
-  // never summed/accumulated the way Money or quantity are — REAL/float
-  // carries no meaningful precision risk here.
-  price: real("price").notNull().default(1),
+  // Account Types, Money Representation, Rational Pricing, FX & Liability
+  // Details delta — the exact-rational replacement for the old `debit`/
+  // `credit`/`quantity`/`price` columns (dropped by migration 0020, after
+  // every reader moved to these). `units = debit - credit` (signed);
+  // `priceNum`/`priceDenom` are the exact rational valuation ratio into
+  // the Profile Base Currency (always positive integers); `baseAmount` is
+  // the signed integer Base Currency minor-unit result (core/ledger/
+  // transactions/baseAmount.ts's residual-ownership rounding rule).
+  units: integer("units").notNull(),
+  priceNum: integer("price_num").notNull(),
+  priceDenom: integer("price_denom").notNull(),
+  baseAmount: integer("base_amount").notNull(),
   ...timestamps,
-});
+}, (table) => [
+  check("posting_price_num_positive", sql`${table.priceNum} > 0`),
+  check("posting_price_denom_positive", sql`${table.priceDenom} > 0`),
+]);
 
 // Dashboard and Panels delta (docs/completed/2026-09-02-Dashboard-and-Panels.md)
 // §27 — a UI composition layer, not a financial data store. Extended by

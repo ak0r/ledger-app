@@ -22,7 +22,7 @@ function hasActiveRecurringRule(db: Db, profileId: string): boolean {
 }
 
 function hasCreditCardAccount(db: Db, profileId: string): boolean {
-  return findAccountsByProfile(db, profileId).some((account) => account.instrumentType === "CREDIT_CARD");
+  return findAccountsByProfile(db, profileId).some((account) => account.accountType === "CREDIT_CARD");
 }
 
 function hasAnyBudget(db: Db, profileId: string): boolean {

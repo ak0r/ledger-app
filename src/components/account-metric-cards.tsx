@@ -1,10 +1,10 @@
-import type { InstrumentType } from "@/core";
+import type { AccountType } from "@/core";
 import { formatMoney } from "@/lib/utils";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 
 // Account-type-driven secondary metric cards for the Account Detail header
 // (product cleanup pass). Deliberately *not* a generic "This Month" card
-// bolted onto every account — the metrics shown vary by `instrumentType`,
+// bolted onto every account — the metrics shown vary by `accountType`,
 // limited to what's actually computable from postings alone. Two real
 // domain constraints keep this list short (AGENTS.md rule #20 — flagged,
 // not silently worked around):
@@ -45,21 +45,28 @@ function MetricCard({ label, value }: { label: string; value: string }) {
 }
 
 export function AccountMetricCards({
-  instrumentType,
+  accountType,
   period,
   currencySymbol,
   currencyScale,
 }: {
-  instrumentType: InstrumentType;
+  accountType: AccountType;
   period: AccountMetricPeriod;
   currencySymbol: string;
   currencyScale: number;
 }) {
   const money = (amount: number) => formatMoney(amount, currencySymbol, currencyScale);
 
-  switch (instrumentType) {
+  switch (accountType) {
+    // Asset cash-like types (Account Types delta adds INVESTMENTS/WALLET/
+    // RECEIVABLES alongside the original BANK/CASH — same generic
+    // inflow/outflow cashflow treatment, no type-specific metric exists
+    // for any of them yet).
     case "BANK":
     case "CASH":
+    case "INVESTMENTS":
+    case "WALLET":
+    case "RECEIVABLES":
       return (
         <div className="flex flex-wrap gap-3">
           <MetricCard label="Inflow (this month)" value={money(period.thisMonthInflow)} />
@@ -76,23 +83,36 @@ export function AccountMetricCards({
           <MetricCard label="This Month (spend)" value={money(period.thisMonthInflow)} />
         </div>
       );
+    // PAYABLES (a running amount owed, Account Types delta) gets the same
+    // "paid down this month" framing as Loan — no specialised treatment
+    // exists for it yet either.
     case "LOAN":
+    case "PAYABLES":
       return (
         <div className="flex flex-wrap gap-3">
           <MetricCard label="This Month (paid)" value={money(period.thisMonthOutflow)} />
         </div>
       );
-    case "INCOME":
-    case "EXPENSE":
+    // Every Income/Expense Account Type (Earned/Passive/Windfall,
+    // Fixed/Variable/Discretionary/Financial) gets the same This Month/YTD
+    // treatment the old flat INCOME/EXPENSE types had — the sub-type is a
+    // categorisation, not a different accounting/metric treatment.
+    case "EARNED":
+    case "PASSIVE":
+    case "WINDFALL":
+    case "FIXED":
+    case "VARIABLE":
+    case "DISCRETIONARY":
+    case "FINANCIAL":
       return (
         <div className="flex flex-wrap gap-3">
           <MetricCard label="This Month" value={money(period.thisMonthInflow)} />
           <MetricCard label="Year to Date" value={money(period.ytdInflow)} />
         </div>
       );
-    // BALANCING (opening-balance mechanism, not a browsable day-to-day
+    // INITIAL (opening-balance mechanism, not a browsable day-to-day
     // account) keeps today's plain Name + Balance header, no card row.
-    case "BALANCING":
+    case "INITIAL":
       return null;
   }
 }

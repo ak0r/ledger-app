@@ -20,14 +20,14 @@ function setUp(db: Db) {
     currencyId: currency.id,
     name: "HDFC Bank",
     classification: "ASSET",
-    instrumentType: "BANK",
+    accountType: "BANK",
   });
   const toAccount = createAccount(db, {
     profileId: profile.id,
     currencyId: currency.id,
     name: "Home Loan Interest",
     classification: "EXPENSE",
-    instrumentType: "EXPENSE",
+    accountType: "VARIABLE",
   });
   return { profile, fromAccount, toAccount };
 }

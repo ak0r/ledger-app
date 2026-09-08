@@ -31,14 +31,14 @@ describe("Phase 5 exit criteria: end-to-end through the action layer", () => {
       currencyId: currency.data.id,
       name: "HDFC Bank",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
     const food = createAccountCore(db, {
       profileId: profile.data.id,
       currencyId: currency.data.id,
       name: "Food Expense",
       classification: "EXPENSE",
-      instrumentType: "EXPENSE",
+      accountType: "VARIABLE",
     });
     expect(bank.success).toBe(true);
     expect(food.success).toBe(true);

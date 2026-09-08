@@ -71,7 +71,7 @@ export function TransactionQuickEditRow({
     // Currency Conversion detection has nothing to apply to here, so an
     // empty map is correct, not a stand-in: it simply keeps the ordinary
     // same-currency sum check active, same as before this option existed.
-    resolver: zodResolver(buildTransactionFormSchema(currencyScale, new Map())),
+    resolver: zodResolver(buildTransactionFormSchema(currencyScale, new Map(), null)),
     defaultValues: {
       date: row.date,
       description: row.description,

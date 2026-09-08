@@ -87,7 +87,8 @@ export default async function TransactionsPage(props: PageProps<"/transactions">
   const { items: pageItems, total, totalPages } = paginate(transactions, page, pageSize);
 
   const currenciesById = new Map(currencies.map((c) => [c.id, c]));
-  const rows = buildTransactionTableRows(pageItems, accountsById, currency, currenciesById);
+  const baseCurrency = (defaultCurrencyId && currenciesById.get(defaultCurrencyId)) || currency;
+  const rows = buildTransactionTableRows(pageItems, accountsById, currency, currenciesById, baseCurrency.minorUnitScale);
   const existingTags = listDistinctTags(db, profile.id);
   const accountOptions = accounts.map((account) => {
     const accountCurrency = currenciesById.get(account.currencyId);

@@ -21,10 +21,10 @@ function setUp(db: Db) {
   const profile = createProfile(db, { name: "Amit" });
   const otherProfile = createProfile(db, { name: "Other" });
   const currency = createCurrency(db, { profileId: profile.id, code: "INR", name: "Indian Rupee", symbol: "₹", minorUnitScale: 2 });
-  const bank = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank", classification: "ASSET", instrumentType: "BANK" });
-  const food = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Food", classification: "EXPENSE", instrumentType: "EXPENSE" });
-  const travel = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Travel", classification: "EXPENSE", instrumentType: "EXPENSE" });
-  const salary = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Salary", classification: "INCOME", instrumentType: "INCOME" });
+  const bank = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank", classification: "ASSET", accountType: "BANK" });
+  const food = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Food", classification: "EXPENSE", accountType: "VARIABLE" });
+  const travel = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Travel", classification: "EXPENSE", accountType: "VARIABLE" });
+  const salary = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Salary", classification: "INCOME", accountType: "EARNED" });
   return { profile, otherProfile, bank, food, travel, salary };
 }
 
@@ -92,7 +92,7 @@ describe("createBudget", () => {
     const db = createTestDb();
     const { profile, otherProfile } = setUp(db);
     const otherCurrency = createCurrency(db, { profileId: otherProfile.id, code: "INR", name: "Indian Rupee", symbol: "₹", minorUnitScale: 2 });
-    const otherFood = createAccount(db, { profileId: otherProfile.id, currencyId: otherCurrency.id, name: "Food", classification: "EXPENSE", instrumentType: "EXPENSE" });
+    const otherFood = createAccount(db, { profileId: otherProfile.id, currencyId: otherCurrency.id, name: "Food", classification: "EXPENSE", accountType: "VARIABLE" });
 
     expect(() =>
       createBudget(db, {

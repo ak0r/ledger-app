@@ -1,11 +1,10 @@
-import { CLASSIFICATIONS, INSTRUMENT_TYPES, type Classification, type InstrumentType } from "@/core";
+import { CLASSIFICATIONS, ACCOUNT_TYPES, type Classification, type AccountType } from "@/core";
 import type { AccountWithBalance } from "@/server/services/accounts";
 
 // Accounts list filter — deliberately *not* Transactions' generic
 // condition-builder model (transaction-filter.ts's field/operator/value
-// conditions): Classification and Instrument Type are each a small fixed
-// enum (5 and 7 values respectively — AGENTS.md rule #11's frozen
-// taxonomy), so "pick any of these values" checklists cover the real need
+// conditions): Classification and Account Type are each a small fixed
+// enum, so "pick any of these values" checklists cover the real need
 // without a condition-builder's extra UI/mental overhead. Plain
 // comma-separated query params (`classification=ASSET,LIABILITY`,
 // `instrument=BANK,CASH`, `q=hdfc`) rather than transaction-filter's single
@@ -13,13 +12,13 @@ import type { AccountWithBalance } from "@/server/services/accounts";
 // simpler encoding loses.
 export interface AccountFilterState {
   classifications: Classification[];
-  instrumentTypes: InstrumentType[];
+  accountTypes: AccountType[];
   search: string;
 }
 
 export const EMPTY_ACCOUNT_FILTER: AccountFilterState = {
   classifications: [],
-  instrumentTypes: [],
+  accountTypes: [],
   search: "",
 };
 
@@ -39,13 +38,13 @@ export function parseAccountFilter(params: {
 }): AccountFilterState {
   return {
     classifications: parseEnumList(params.classification, CLASSIFICATIONS),
-    instrumentTypes: parseEnumList(params.instrument, INSTRUMENT_TYPES),
+    accountTypes: parseEnumList(params.instrument, ACCOUNT_TYPES),
     search: params.q?.trim() ?? "",
   };
 }
 
 export function hasActiveAccountFilter(state: AccountFilterState): boolean {
-  return state.classifications.length > 0 || state.instrumentTypes.length > 0 || state.search.length > 0;
+  return state.classifications.length > 0 || state.accountTypes.length > 0 || state.search.length > 0;
 }
 
 // Shared by every href-builder that must preserve the current filter
@@ -55,7 +54,7 @@ export function hasActiveAccountFilter(state: AccountFilterState): boolean {
 export function accountFilterToParams(state: AccountFilterState): Record<string, string> {
   const params: Record<string, string> = {};
   if (state.classifications.length > 0) params.classification = state.classifications.join(",");
-  if (state.instrumentTypes.length > 0) params.instrument = state.instrumentTypes.join(",");
+  if (state.accountTypes.length > 0) params.instrument = state.accountTypes.join(",");
   if (state.search) params.q = state.search;
   return params;
 }
@@ -69,7 +68,7 @@ export function applyAccountFilter(
     if (state.classifications.length > 0 && !state.classifications.includes(account.classification)) {
       return false;
     }
-    if (state.instrumentTypes.length > 0 && !state.instrumentTypes.includes(account.instrumentType)) {
+    if (state.accountTypes.length > 0 && (!account.accountType || !state.accountTypes.includes(account.accountType))) {
       return false;
     }
     if (search && !account.name.toLowerCase().includes(search)) {

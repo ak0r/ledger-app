@@ -10,7 +10,7 @@ import {
   type RawTable,
 } from "@/core";
 import type { Db } from "../persistence/client";
-import type { InstrumentType } from "../persistence/schema";
+import type { AccountType } from "../persistence/schema";
 import {
   createAccount,
   type CreateAccountInput,
@@ -35,7 +35,7 @@ import {
   getPageCount,
 } from "../importers";
 import { NotFoundError, TransactionValidationError, UnsupportedImportFormatError } from "./errors";
-import { derivePostings, type PostingInput } from "./transactions";
+import { derivePostings, resolveBaseCurrency, type PostingInput } from "./transactions";
 
 // A catch-all counter-account is identified by classification+name, not id,
 // until Account Resolution finds (or Commit creates) the real row — same
@@ -106,14 +106,14 @@ export interface AccountResolution {
   candidates: AccountResolutionCandidate[];
   proposedName: string | null;
   proposedClassification: "ASSET" | "LIABILITY";
-  proposedInstrumentType: InstrumentType;
+  proposedAccountType: AccountType;
 }
 
 function resolveAccountForFile(db: Db, profileId: string, identifier: string | null, institutionLabel: string): AccountResolution {
   const base = {
     proposedName: null as string | null,
     proposedClassification: "ASSET" as const,
-    proposedInstrumentType: "BANK" as InstrumentType,
+    proposedAccountType: "BANK" as AccountType,
   };
 
   if (!identifier) {
@@ -150,7 +150,7 @@ function resolveAccountForFile(db: Db, profileId: string, identifier: string | n
     candidates: [],
     proposedName: `${institutionLabel} ••••${last4}`,
     proposedClassification: "ASSET",
-    proposedInstrumentType: "BANK",
+    proposedAccountType: "BANK",
   };
 }
 
@@ -374,7 +374,7 @@ function buildPostingAmounts(direction: ImportDirection, amountMinor: number) {
 // but for the known/source side, and never restricted to Expense/Income.
 export type AccountChoice =
   | { type: "existing"; accountId: string }
-  | { type: "new"; name: string; classification: "ASSET" | "LIABILITY"; instrumentType: InstrumentType };
+  | { type: "new"; name: string; classification: "ASSET" | "LIABILITY"; accountType: AccountType };
 
 export interface CommitImportFile {
   fileKey: string;
@@ -433,7 +433,10 @@ export function commitImport(db: Db, input: CommitImportInput): ImportFileRow[] 
           currencyId: currency.id,
           name: descriptor.name,
           classification: descriptor.classification,
-          instrumentType: descriptor.classification,
+          // Same default bucket as the accountType backfill migration
+          // (Expense -> Variable, Income -> Earned) — individually
+          // re-classifiable afterward via the normal Account edit form.
+          accountType: descriptor.classification === "EXPENSE" ? "VARIABLE" : "EARNED",
         };
         const created = createAccount(tx, newAccountInput);
         createdCounterAccountIds.set(descriptor.key, created.id);
@@ -487,7 +490,7 @@ export function commitImport(db: Db, input: CommitImportInput): ImportFileRow[] 
           currencyId: currency.id,
           name: file.accountChoice.name,
           classification: file.accountChoice.classification,
-          instrumentType: file.accountChoice.instrumentType,
+          accountType: file.accountChoice.accountType,
         });
         resolvedAccountId = created.id;
         newAccountCount = 1;
@@ -563,13 +566,15 @@ export function commitImport(db: Db, input: CommitImportInput): ImportFileRow[] 
     }
 
     const accountRefs = findAccountRefs(tx, [...accountIdsToValidate]);
+    const baseCurrency = resolveBaseCurrency(tx, input.profileId);
     const allPostingRows: PostingRow[] = [];
     for (const transactionRow of allTransactionRows) {
       const legs = pendingPostingsByTransactionId.get(transactionRow.id) ?? [];
-      const derivedPostings = derivePostings(legs, accountRefs);
+      const derivedPostings = derivePostings(tx, legs, accountRefs, baseCurrency, transactionRow.date);
       const violations = validateTransaction(
         { profileId: input.profileId, postings: derivedPostings },
         accountRefs,
+        baseCurrency,
       );
       if (violations.length > 0) {
         throw new TransactionValidationError(violations);
@@ -579,10 +584,10 @@ export function commitImport(db: Db, input: CommitImportInput): ImportFileRow[] 
           id: crypto.randomUUID(),
           transactionId: transactionRow.id,
           accountId: posting.accountId,
-          debit: posting.debit,
-          credit: posting.credit,
-          quantity: posting.quantity,
-          price: posting.price,
+          units: posting.units,
+          priceNum: posting.priceNum,
+          priceDenom: posting.priceDenom,
+          baseAmount: posting.baseAmount,
           createdAt: now,
           updatedAt: now,
         });

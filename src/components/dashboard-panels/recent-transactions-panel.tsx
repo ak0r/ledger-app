@@ -42,8 +42,8 @@ export async function RecentTransactionsPanel({
       </TableHeader>
       <TableBody>
         {transactions.map((transaction) => {
-          const toPostings = transaction.postings.filter((p) => p.debit > 0);
-          const amount = toPostings.reduce((sum, p) => sum + p.debit, 0);
+          const toPostings = transaction.postings.filter((p) => p.units > 0);
+          const amount = toPostings.reduce((sum, p) => sum + p.units, 0);
           return (
             <TableRow key={transaction.id}>
               <TableCell className="py-2 whitespace-nowrap text-muted-foreground">{formatDate(transaction.date)}</TableCell>

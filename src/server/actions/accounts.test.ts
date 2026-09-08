@@ -27,7 +27,7 @@ describe("createAccountCore", () => {
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
 
     expect(result.success).toBe(true);
@@ -42,7 +42,7 @@ describe("createAccountCore", () => {
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "NOT_A_REAL_CLASSIFICATION",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
 
     expect(result.success).toBe(false);
@@ -57,7 +57,7 @@ describe("createAccountCore", () => {
       currencyId: currency.id,
       name: "Should be rejected",
       classification: "BALANCING",
-      instrumentType: "BALANCING",
+      accountType: "INITIAL",
     });
 
     expect(result.success).toBe(false);
@@ -73,7 +73,7 @@ describe("createAccountCore", () => {
       currencyId: currency.id,
       name: "Should fail",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
 
     expect(result.success).toBe(false);
@@ -89,7 +89,7 @@ describe("archiveAccountCore", () => {
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
     if (!created.success) throw new Error("setup failed");
 
@@ -112,7 +112,7 @@ describe("editAccountCore", () => {
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
     if (!created.success) throw new Error("setup failed");
 
@@ -122,7 +122,7 @@ describe("editAccountCore", () => {
       currencyId: currency.id,
       name: "HDFC Bank — Salary",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
 
     expect(result.success).toBe(true);
@@ -141,7 +141,7 @@ describe("editAccountCore", () => {
       currencyId: currency.id,
       name: "Opening Balance",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
     if (!balancing.success) throw new Error("setup failed");
 
@@ -151,7 +151,7 @@ describe("editAccountCore", () => {
       currencyId: currency.id,
       name: "Opening Balance — renamed",
       classification: "BALANCING",
-      instrumentType: "BALANCING",
+      accountType: "INITIAL",
     });
 
     expect(result.success).toBe(true);
@@ -166,7 +166,7 @@ describe("editAccountCore", () => {
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
     if (!created.success) throw new Error("setup failed");
 
@@ -175,7 +175,7 @@ describe("editAccountCore", () => {
       accountId: created.data.id,
       name: "Hijacked",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
 
     expect(result.success).toBe(false);

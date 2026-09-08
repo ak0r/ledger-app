@@ -102,12 +102,15 @@ function firstAccountName(
   accountsById: ReadonlyMap<string, AccountRow>,
   side: "from" | "to",
 ): string {
-  const posting = transaction.postings.find((posting) => (side === "from" ? posting.credit > 0 : posting.debit > 0));
+  const posting = transaction.postings.find((posting) => (side === "from" ? posting.units < 0 : posting.units > 0));
   return posting ? (accountsById.get(posting.accountId)?.name ?? "") : "";
 }
 
 function totalAmount(transaction: TransactionWithPostings, side: "from" | "to"): number {
-  return transaction.postings.reduce((sum, posting) => sum + (side === "from" ? posting.credit : posting.debit), 0);
+  return transaction.postings.reduce(
+    (sum, posting) => sum + (side === "from" ? Math.max(-posting.units, 0) : Math.max(posting.units, 0)),
+    0,
+  );
 }
 
 // Tags have no defined ordering (AGENTS.md rule #13: inline

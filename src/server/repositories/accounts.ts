@@ -1,4 +1,4 @@
-import { and, eq, inArray, sum as sqlSum } from "drizzle-orm";
+import { and, eq, inArray, sql, sum as sqlSum } from "drizzle-orm";
 import type { AccountRef } from "@/core";
 import type { DbOrTx } from "../persistence/client";
 import { accounts, currencies, postings } from "../persistence/schema";
@@ -51,7 +51,7 @@ export type EditableAccountFields = Pick<
   AccountRow,
   | "name"
   | "classification"
-  | "instrumentType"
+  | "accountType"
   | "instrumentId"
   | "instrumentLabel"
   | "tags"
@@ -88,6 +88,7 @@ export function findAccountRefs(
     .select({
       id: accounts.id,
       profileId: accounts.profileId,
+      currencyId: accounts.currencyId,
       currencyCode: currencies.code,
       currencyScale: currencies.minorUnitScale,
     })
@@ -114,8 +115,8 @@ export function findPostingTotalsByProfile(
   const rows = db
     .select({
       accountId: postings.accountId,
-      totalDebit: sqlSum(postings.debit).mapWith(Number),
-      totalCredit: sqlSum(postings.credit).mapWith(Number),
+      totalDebit: sqlSum(sql`CASE WHEN ${postings.units} > 0 THEN ${postings.units} ELSE 0 END`).mapWith(Number),
+      totalCredit: sqlSum(sql`CASE WHEN ${postings.units} < 0 THEN -${postings.units} ELSE 0 END`).mapWith(Number),
     })
     .from(postings)
     .innerJoin(accounts, eq(postings.accountId, accounts.id))

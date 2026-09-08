@@ -12,7 +12,7 @@ const PROFILE = "profile-1";
 const OTHER_PROFILE = "profile-2";
 
 function account(id: string, profileId = PROFILE): AccountRef {
-  return { id, profileId, currencyCode: "INR", currencyScale: 2 };
+  return { id, profileId, currencyId: `${id}-currency`, currencyCode: "INR", currencyScale: 2 };
 }
 
 const accounts = new Map<string, AccountRef>(

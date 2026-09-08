@@ -21,21 +21,21 @@ function setUp(db: ReturnType<typeof createTestDb>) {
     currencyId: currency.id,
     name: "Bank",
     classification: "ASSET",
-    instrumentType: "BANK",
+    accountType: "BANK",
   });
   const salary = createAccount(db, {
     profileId: profile.id,
     currencyId: currency.id,
     name: "Salary",
     classification: "INCOME",
-    instrumentType: "INCOME",
+    accountType: "EARNED",
   });
   const food = createAccount(db, {
     profileId: profile.id,
     currencyId: currency.id,
     name: "Food",
     classification: "EXPENSE",
-    instrumentType: "EXPENSE",
+    accountType: "VARIABLE",
   });
   return { profile, bank, salary, food };
 }

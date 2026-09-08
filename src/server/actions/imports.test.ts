@@ -20,7 +20,7 @@ function setUp(db: Db) {
     currencyId: currency.id,
     name: "HDFC Bank",
     classification: "ASSET",
-    instrumentType: "BANK",
+    accountType: "BANK",
   });
   return { profile, bank };
 }

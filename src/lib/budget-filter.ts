@@ -24,7 +24,7 @@ function getExpenseAccountIds(
   accountsById: ReadonlyMap<string, AccountRow>,
 ): string[] {
   return transaction.postings
-    .filter((posting) => posting.debit > 0 && accountsById.get(posting.accountId)?.classification === "EXPENSE")
+    .filter((posting) => posting.units > 0 && accountsById.get(posting.accountId)?.classification === "EXPENSE")
     .map((posting) => posting.accountId);
 }
 

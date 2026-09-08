@@ -23,9 +23,9 @@ function setUp(db: Db) {
   const profile = createProfile(db, { name: "Amit" });
   const otherProfile = createProfile(db, { name: "Other" });
   const currency = createCurrency(db, { profileId: profile.id, code: "INR", name: "Indian Rupee", symbol: "₹", minorUnitScale: 2 });
-  const bank = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank", classification: "ASSET", instrumentType: "BANK" });
-  const food = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Food", classification: "EXPENSE", instrumentType: "EXPENSE" });
-  const travel = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Travel", classification: "EXPENSE", instrumentType: "EXPENSE" });
+  const bank = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank", classification: "ASSET", accountType: "BANK" });
+  const food = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Food", classification: "EXPENSE", accountType: "VARIABLE" });
+  const travel = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Travel", classification: "EXPENSE", accountType: "VARIABLE" });
   return { profile, otherProfile, bank, food, travel };
 }
 
@@ -262,7 +262,7 @@ describe("updatePanelConfiguration", () => {
     const db = createTestDb();
     const { profile, otherProfile } = setUp(db);
     const otherCurrency = createCurrency(db, { profileId: otherProfile.id, code: "INR", name: "Indian Rupee", symbol: "₹", minorUnitScale: 2 });
-    const otherAccount = createAccount(db, { profileId: otherProfile.id, currencyId: otherCurrency.id, name: "Other Bank", classification: "ASSET", instrumentType: "BANK" });
+    const otherAccount = createAccount(db, { profileId: otherProfile.id, currencyId: otherCurrency.id, name: "Other Bank", classification: "ASSET", accountType: "BANK" });
     const { panels } = getDefaultDashboardWithPanels(db, profile.id);
     const balances = panels.find((p) => p.key === "BALANCES")!;
 

@@ -62,7 +62,7 @@ export default async function AccountInsightsPage(
 
   // Opening-balance mechanism, not a day-to-day browsable account (same
   // call made for the header's own metric cards) — no Insights content.
-  if (account.instrumentType === "BALANCING") {
+  if (account.accountType === "INITIAL") {
     return (
       <div className="flex flex-col gap-4">
         <InsightsRangeSelector baseHref={baseHref} current={rangePreset} />
@@ -88,9 +88,12 @@ export default async function AccountInsightsPage(
 
   let content: React.ReactNode;
 
-  switch (account.instrumentType) {
+  switch (account.accountType) {
     case "BANK":
-    case "CASH": {
+    case "CASH":
+    case "INVESTMENTS":
+    case "WALLET":
+    case "RECEIVABLES": {
       content = (
         <>
           <div className="grid gap-4 md:grid-cols-2">
@@ -134,7 +137,8 @@ export default async function AccountInsightsPage(
       );
       break;
     }
-    case "LOAN": {
+    case "LOAN":
+    case "PAYABLES": {
       // No secondary chart — Principal vs. Interest would need a field
       // this domain doesn't have (see file-level comment). Outstanding
       // trend + a stats strip is everything actually knowable.
@@ -154,8 +158,13 @@ export default async function AccountInsightsPage(
       );
       break;
     }
-    case "INCOME":
-    case "EXPENSE": {
+    case "EARNED":
+    case "PASSIVE":
+    case "WINDFALL":
+    case "FIXED":
+    case "VARIABLE":
+    case "DISCRETIONARY":
+    case "FINANCIAL": {
       const monthly = getMonthlyCashflow(db, profile.id, accountId, range);
       const trend = monthly.map((point) => ({
         month: point.month,

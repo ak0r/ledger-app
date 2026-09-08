@@ -374,11 +374,11 @@ export function calculateBudgetActuals(db: Db, budgetPeriodId: string, profileId
   for (const transaction of transactions) {
     const transactionMatchesFilter = hasFilter && matchesBudgetFilter(transaction, accountsById, filter);
     for (const posting of transaction.postings) {
-      if (posting.debit <= 0) continue;
+      if (posting.units <= 0) continue;
       if (accountsById.get(posting.accountId)?.classification !== "EXPENSE") continue;
       const included = explicitAccountIds.includes(posting.accountId) || transactionMatchesFilter;
       if (!included) continue;
-      actualsByAccount.set(posting.accountId, (actualsByAccount.get(posting.accountId) ?? 0) + posting.debit);
+      actualsByAccount.set(posting.accountId, (actualsByAccount.get(posting.accountId) ?? 0) + posting.units);
     }
   }
 

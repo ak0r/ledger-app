@@ -116,7 +116,7 @@ export function AccountTable({
               {sortableHeader("Classification", "classification")}
             </TableHead>
             <TableHead role="columnheader" className="text-xs font-semibold text-foreground/90">
-              {sortableHeader("Type", "instrumentType")}
+              {sortableHeader("Type", "accountType")}
             </TableHead>
             <TableHead role="columnheader" className="text-right text-xs font-semibold text-foreground/90">
               {sortableHeader("Balance", "balance", "end")}
@@ -140,7 +140,7 @@ export function AccountTable({
                   href={`/accounts/${account.id}`}
                   className="flex items-center gap-2 text-primary hover:underline"
                 >
-                  <AccountIcon classification={account.classification} icon={account.icon} />
+                  <AccountIcon classification={account.classification} accountType={account.accountType} icon={account.icon} />
                   <span className="font-medium">{account.name}</span>
                 </Link>
                 {account.isArchived && (
@@ -163,7 +163,7 @@ export function AccountTable({
                 {humanizeEnum(account.classification)}
               </TableCell>
               <TableCell role="gridcell" className="py-2.5">
-                {humanizeEnum(account.instrumentType)}
+                {account.accountType ? humanizeEnum(account.accountType) : ""}
               </TableCell>
               <TableCell role="gridcell" className="py-2.5 text-right">
                 <span className="whitespace-nowrap font-mono tabular-nums">
@@ -185,7 +185,10 @@ export function AccountTable({
                       currencyCode,
                       name: account.name,
                       classification: account.classification,
-                      instrumentType: account.instrumentType,
+                      // Post-backfill, every real Account has a non-null
+                      // accountType — DB nullability is only a Migration 1
+                      // "add" artifact (see schema.ts), never actually null.
+                      accountType: account.accountType ?? "BANK",
                       instrumentId: account.instrumentId,
                       instrumentLabel: account.instrumentLabel,
                       tags: account.tags,

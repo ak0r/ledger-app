@@ -106,6 +106,48 @@
       "when": 1788700485050,
       "tag": "0014_careful_shinko_yamashiro",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1788763260040,
+      "tag": "0015_add_posting_rational_pricing_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1788764618782,
+      "tag": "0016_add_account_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1788780309532,
+      "tag": "0017_add_currency_rates",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1788800626986,
+      "tag": "0018_backfill_posting_pricing",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1788800660293,
+      "tag": "0019_enforce_account_type_and_posting_pricing",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1788801169845,
+      "tag": "0020_remove_legacy_posting_and_instrument_type_columns",
+      "breakpoints": true
     }
   ]
 }

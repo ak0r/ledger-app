@@ -61,7 +61,9 @@ Accepted. Tags filter transactions/accounts without changing accounting classifi
 
 ## ADR-015 — Account classification vs instrument type
 
-Accepted.
+Accepted. Core claim still holds; the field itself was renamed
+`account_type` and its vocabulary widened by ADR-047 (2026-09-06/08) — see
+that entry.
 
 `classification` determines accounting meaning. `instrument_type` describes the nature of the account/instrument.
 
@@ -138,7 +140,8 @@ Accepted. Drafts exist only in transient UI/application state. A persisted trans
 
 ## ADR-024 — MVP instrument taxonomy
 
-Accepted.
+Accepted. Superseded by ADR-047: the frozen 7-value taxonomy below is
+replaced by a mandatory-on-every-Classification Account Type vocabulary.
 
 MVP instrument types:
 
@@ -503,7 +506,10 @@ outer container. Caught during Phase D implementation, not shipped.
 
 Accepted (2026-09-03, "Revised Investment Model" delta — supersedes §4 of
 `docs/completed/2026-08-21-Instrument-Model-Pricing-Foundations.md`, which
-put quantity on the Account).
+put quantity on the Account). Superseded in turn by ADR-047
+(2026-09-06/08): `postings.quantity`/`price` (float-based, ADR-038's own
+reconciliation-value mechanism) are dropped outright, replaced by the
+exact-rational `units`/`priceNum`/`priceDenom`/`baseAmount` fields.
 
 **Quantity and price are posting-level fields** (`postings.quantity`,
 `postings.price`, `src/domain/posting.ts`), not Account-level. Reasoning:
@@ -916,3 +922,152 @@ The `nav_history` row's own `source` field records which feed actually
 answered (`"NSE"` or `"YAHOO"`) for later debugging, with no UI surface for
 it yet. No retry/backoff on either feed — added only if real-world 429s
 prove it necessary.
+
+## ADR-047 — Exact-rational Posting pricing, mandatory Account Type vocabulary, dated FX rates, Liability details
+
+Accepted and implemented (2026-09-06/08, "Account Types, Money
+Representation, Rational Pricing, FX & Liability Details" delta —
+supersedes ADR-024's frozen instrument taxonomy and ADR-038's `quantity`/
+`price` mechanism; ADR-015's classification-vs-type split and ADR-016's
+optional-identifier posture both still hold, only the vocabulary/field
+name changed).
+
+**Posting money is now an exact rational, not a float.** `postings.units`
+(signed integer minor units, `debit - credit` under the old model),
+`priceNum`/`priceDenom` (positive integers — the valuation ratio into the
+Profile's Base Currency), and `baseAmount` (signed integer Base Currency
+minor units) replace `debit`/`credit`/`quantity`/`price` outright — not
+alongside them. `core/shared/rational.ts` is new infrastructure this
+delta introduces: `makeRational` GCD-reduces via BigInt; `units × price`
+multiplies via checked BigInt arithmetic (`multiplyRationalByInt`, no
+silent overflow before reduction) and rounds half-to-even
+(`roundHalfEvenToInt`) into `baseAmount`. `computeBaseAmounts`'
+**residual-ownership rounding rule** — every non-primary leg's
+`baseAmount` is independently rounded, the one credit-side ("From")
+primary leg's `baseAmount` is `-(sum of every other leg)`, guaranteeing
+`SUM(base_amount) == 0` by construction — is real, tested, and wired into
+`derivePostings`, but **tolerance-bounded**: it only activates when
+genuine FX is present (some leg's price ≠ 1/1) *and* the residual it
+would land on the primary leg is small (bounded by leg count — at most
+~0.5 minor unit of legitimate rounding noise per other leg). A residual
+past that bound means the entered amounts/rates genuinely don't
+reconcile, and `derivePostings` falls back to independent per-leg
+rounding so `validateTransaction`'s `SUM == 0` check honestly rejects it
+as `UNBALANCED` — a naive unconditional residual-absorption would instead
+have silently rewritten the primary leg's own amount to force a fake
+balance, an explicitly considered and rejected design.
+
+**Any number of Postings may independently be priced away from the
+Profile's Base Currency now** — `MIXED_CURRENCY_UNSUPPORTED` and the old
+one-shape-only Currency Conversion (ADR-038's 2-posting exception) are
+both retired; genuine N-leg cross-currency (e.g. one From leg, several To
+legs each in a different foreign currency) is domain-valid. Each such
+leg's price is either an explicit, user-confirmed one-unit quotation
+entered on the Transaction Form ("1 JPY = 0.5800 INR" — never a
+100/1000-unit or currency-specific quote convention) or falls back to a
+dated **CurrencyRate** lookup for the Transaction's own date (exact date →
+latest before → 1/1 parity; never a future-dated row). `CurrencyRate`
+(`currency_id`, `date`, `rate_num`/`rate_denom`, `UNIQUE(currency_id,
+date)`, cascades on Currency delete) has no `profileId` column — ownership
+is checked at the service layer by verifying the Currency itself belongs
+to the caller's Profile, the same guarantee a child-of-Currency table
+would need regardless. Maintained inline on Settings → Currencies
+(Show/Hide Rates toggle per non-Primary currency, expanding to a
+newest-first rate history table with Add/Edit/Delete) — deliberately no
+separate FX Rates page, no calculator/converter behaviour. A resolved rate
+is copied into a Posting's `priceNum`/`priceDenom` at Transaction creation
+time; later editing or deleting a CurrencyRate never reaches back to
+change an already-committed Transaction — proven by a dedicated
+historical-immutability test (commit, then mutate the rate, then re-read).
+A UI-entered major-unit decimal rate and the minor-unit-to-minor-unit
+rational Postings actually need are related by
+`decimalRateToMinorRational`/`minorRationalToDecimalRate`
+(`core/shared/rational.ts`), which account for the two currencies'
+possibly-different minor-unit scales — catching a real latent bug an
+earlier, un-scale-aware version of this exact feature would have shipped
+(e.g. JPY, scale 0, against INR, scale 2).
+
+**Account Type is now mandatory on every Classification**, not just
+Asset/Liability (reverses ADR-024's frozen 7-value taxonomy and rule
+#21's original scope): `ASSET` → `CASH`/`BANK`/`INVESTMENTS`/`WALLET`/
+`RECEIVABLES`; `LIABILITY` → `CREDIT_CARD`/`LOAN`/`PAYABLES`; `INCOME` →
+`EARNED`/`PASSIVE`/`WINDFALL`; `EXPENSE` → `FIXED`/`VARIABLE`/
+`DISCRETIONARY`/`FINANCIAL`; `BALANCING` → `INITIAL` (system-managed only,
+never offered in the Account form — rule #22 unchanged). Existing
+`EXPENSE`/`INCOME` Accounts backfilled to `VARIABLE`/`EARNED` respectively
+(individually re-classifiable afterward), confirmed with the user ahead of
+writing the backfill. Enforced by a real `UNIQUE(profile_id,
+classification, account_type, name)` index — the first uniqueness
+constraint `accounts` has ever had.
+
+**Liability Details** — `credit_card_details`/`loan_details`, 1:1 with an
+Account via `accountId` (`UNIQUE` + `onDelete: "cascade"`), hold
+supporting fields only (credit limit, statement/due day, network/last4;
+original/disbursed amount, interest rate in basis points, tenure, EMI
+amount/day) — no derived balance column on either, outstanding balance
+still always comes from `getAccountBalances`. `interestRatePercent` stores
+as integer basis points rather than a second rational-pair type: it never
+participates in Posting balancing, so exact-rational storage buys nothing
+there. The Account Form gains a conditional step (Credit Card fields when
+`accountType === CREDIT_CARD`, Loan fields when `accountType === LOAN`,
+nothing for `PAYABLES` — no specialised form needed); on create, the
+Account itself is saved first, then the details as a second call — two
+writes, one form, never a competing source of truth.
+
+**Migration sequencing — add → backfill → validate → enforce → remove
+legacy — surfaced two real, non-obvious SQLite/drizzle bugs, both now
+documented at the point they bite (migration file headers, not just
+here):**
+- Table-recreate on `accounts` (referenced by 9 other tables) cannot go
+  through `drizzle-kit generate`'s own default output as-is. This
+  project's better-sqlite3 build defaults `foreign_keys=ON` even on a
+  brand-new connection, and `PRAGMA foreign_keys=OFF` — drizzle-kit's own
+  generated statement — is a documented no-op once a transaction is
+  already open; drizzle-orm's `migrate()` always wraps every pending
+  migration file in one shared transaction. Swapping in
+  `PRAGMA defer_foreign_keys=ON` (which unlike `foreign_keys` *can*
+  toggle mid-transaction) gets past the immediate `DROP TABLE` failure,
+  but silently poisons SQLite's own deferred-FK violation counter for
+  every *other* table's rows referencing `accounts` the moment it's
+  dropped — nothing re-verifies them once the table is renamed back into
+  place, so `COMMIT` itself then fails instead. The only real fix:
+  `foreign_keys` must already be OFF on the connection *before*
+  `migrate()`'s own `BEGIN` — unreachable from a migration-file statement
+  by construction. Real deploys of this specific migration (0019) need a
+  small one-off runner (open the DB, `pragma("foreign_keys = OFF")`, call
+  `migrate()`, restore `pragma("foreign_keys = ON")` after) — plain
+  `pnpm db:migrate` will not work for it.
+- That restoring `foreign_keys = ON` afterward matters for a second,
+  independent reason: this codebase's own test harness
+  (`server/testing/createTestDb.ts`) applies migration files individually
+  via raw `.exec()` calls, where the pragma toggle is genuinely *not* a
+  no-op — leaving it off would silently disable every `ON DELETE CASCADE`
+  on that connection for the rest of its life, caught by
+  `deleteTransaction`'s own cascade test failing outright.
+- Rehearsal against a scratch copy of the real `data/ledger.db` surfaced
+  one pre-existing, delta-unrelated orphaned `dashboards` row (+ its 6
+  `dashboard_panels`) pointing at a Profile no longer present in the real
+  data — no delete-Profile code path exists anywhere in the app (only
+  whole-instance Reset and per-Profile Clean Up Content, neither of which
+  produces this), so it predates this session, from manual/out-of-band
+  deletion. `defer_foreign_keys`/`foreign_keys=OFF` both do a full-database
+  FK sweep, so a stray orphan anywhere blocks the whole migration
+  regardless of which tables it actually touches — removed as an explicit,
+  user-confirmed prerequisite step in the same one-off runner, not folded
+  silently into the delta's own migration SQL.
+
+**What's deliberately unchanged, despite this plan's own earlier
+assumptions to the contrary at planning time:** `accounts.instrumentId`/
+`instrumentLabel` stay exactly as ADR-040 left them — inert, kept in
+schema, no picker anywhere in the Account form (`services/accounts.ts`
+still threads them through from `CreateAccountInput`/`UpdateAccountInput`
+as a technicality, but nothing ever populates a non-null value) — not
+touched by this delta, and not actually the "live Revised Investment
+Model linkage" an earlier grep-only pass through the codebase mistakenly
+concluded before checking whether any UI still wrote to them.
+`core/shared/quantity.ts` (`toQuantityMinorUnits`/`fromQuantityMinorUnits`)
+is the Portfolio domain's own primitive (`holdings`, `investmentTransactions`,
+valuations, CAS/eCAS/tradebook import all depend on it) — this delta's own
+prior use of it (computing the now-dropped legacy `postings.quantity`/
+`price` display values) was incidental, not ownership, and it was not
+deleted.

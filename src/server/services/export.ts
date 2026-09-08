@@ -31,9 +31,9 @@ export function exportTransactionsCsv(db: Db, profileId: string): string {
     transaction.postings.map((posting) => {
       const account = accountById.get(posting.accountId);
       const currency = account ? currencyById.get(account.currencyId) : undefined;
-      const isDebit = posting.debit > 0;
+      const isDebit = posting.units > 0;
       const scale = currency?.minorUnitScale ?? 2;
-      const amount = fromMinorUnits(isDebit ? posting.debit : posting.credit, scale).toFixed(scale);
+      const amount = fromMinorUnits(Math.abs(posting.units), scale).toFixed(scale);
       return [
         transaction.date,
         transaction.description,

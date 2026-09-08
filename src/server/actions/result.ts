@@ -6,12 +6,14 @@ import {
   BudgetValidationError,
   CurrencyAlreadyAddedError,
   DashboardPanelValidationError,
+  DuplicateCurrencyRateError,
   EmailAlreadyRegisteredError,
   IncorrectCurrentPasswordError,
   InvalidCredentialsError,
   InvestmentTransactionValidationError,
   MergeIneligibleError,
   MultiPanStatementError,
+  NoBaseCurrencyError,
   NotFoundError,
   PanelConfigValidationError,
   PanMismatchError,
@@ -67,6 +69,7 @@ export function fromThrown(error: unknown): ActionResult<never> {
     error instanceof NotFoundError ||
     error instanceof UnsupportedCurrencyError ||
     error instanceof CurrencyAlreadyAddedError ||
+    error instanceof DuplicateCurrencyRateError ||
     error instanceof MergeIneligibleError ||
     error instanceof InvalidCredentialsError ||
     error instanceof IncorrectCurrentPasswordError ||
@@ -75,7 +78,8 @@ export function fromThrown(error: unknown): ActionResult<never> {
     error instanceof AmbiguousImportFormatError ||
     error instanceof PanMismatchError ||
     error instanceof MultiPanStatementError ||
-    error instanceof WrongStatementTypeError
+    error instanceof WrongStatementTypeError ||
+    error instanceof NoBaseCurrencyError
   ) {
     return { success: false, error: error.message };
   }

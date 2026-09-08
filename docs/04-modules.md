@@ -187,19 +187,53 @@ currency definitions (code/name/symbol/minor-unit scale) — never a DB
 table; `currencies` stays a per-Profile instantiation record of a code
 drawn from it (`/settings/currencies`' "Add Currency" picker).
 
-- A Profile has a **Primary Currency** — the default for a newly created
-  Account, changeable at any time, never applied retroactively to existing
-  Accounts.
+- A Profile has a **Primary Currency** — also its **Base Currency**, the
+  fixed target every Transaction's Postings reconcile into (default for a
+  newly created Account, changeable at any time, never applied
+  retroactively to existing Accounts).
 - An Account has its own **Currency** — authoritative for every Transaction
   posted against it, changeable at any time, and (since Transactions never
   store a currency of their own) that change immediately reinterprets every
   existing and future Transaction on that Account, not just future ones.
-- No FX, conversion, or cross-currency aggregation of any kind. A
-  Transaction whose postings resolve to more than one currency is rejected
-  outright (`MIXED_CURRENCY_UNSUPPORTED`) — the sole exception is the
-  2-posting Currency Conversion shape (`postings.quantity`/`price`,
-  ADR-038), which persists an explicit exchange rate for that one
-  transaction rather than aggregating across currencies.
+- **Genuine N-leg cross-currency Transactions** (2026-09-06/08 Account
+  Types, Money Representation, Rational Pricing, FX & Liability Details
+  delta, ADR-047 — supersedes the earlier one-shape-only Currency
+  Conversion and retires `MIXED_CURRENCY_UNSUPPORTED`): any Posting whose
+  Account currency differs from the Base Currency carries its own
+  exact-rational price (`priceNum`/`priceDenom`) into it — not just one
+  fixed 2-posting Conversion shape. The price is either an explicit,
+  user-confirmed one-unit quotation entered on the Transaction Form or a
+  dated **CurrencyRate** lookup for that Transaction's own date (exact
+  date → latest before → 1/1 parity, never a future-dated row).
+  CurrencyRates are maintained inline on Settings → Currencies (a
+  Show/Hide Rates toggle per non-Primary currency, expanding to a
+  newest-first history table with Add/Edit/Delete) — no separate FX page,
+  no calculator/converter. A resolved rate is copied into a Posting at
+  Transaction creation time; editing or deleting a CurrencyRate afterward
+  never reaches back to change an already-committed Transaction. Still no
+  FX aggregation beyond this — an entry that doesn't reconcile is
+  rejected (`UNBALANCED`).
+
+## Liability Details
+
+Shipped alongside the FX work above (same delta, ADR-047). Two 1:1
+supporting-data tables, keyed by `accountId` (`UNIQUE`, cascades on
+Account delete) — never a derived-balance column; outstanding balance
+always comes from `getAccountBalances`, same as any other Account:
+
+- **`credit_card_details`** (`accountType === CREDIT_CARD`): credit limit,
+  statement/due day, network, last 4 digits, expiration date.
+- **`loan_details`** (`accountType === LOAN`): original/disbursed amount,
+  interest rate (integer basis points — it never participates in Posting
+  balancing, so exact-rational storage buys nothing here), tenure, EMI
+  amount/day, start/maturity date.
+
+The Account Form gains a conditional step for these two types (nothing
+extra for `PAYABLES` — no specialised form needed). On create, the
+Account itself is saved first, then the details as a second call — two
+writes, one form, never a competing source of truth. Not wired into the
+Accounts list's inline edit sheet, to avoid an N+1 query fetching every
+row's details — a scoped, intentional cut.
 
 ## Settings, Backup & Data Management
 

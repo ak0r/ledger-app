@@ -4,6 +4,7 @@ import { requireActiveProfile } from "@/server/authz";
 import { getAccount } from "@/server/services/accounts";
 import { listCurrencies } from "@/server/services/currencies";
 import { listDistinctTags } from "@/server/services/tags";
+import { getCreditCardDetails, getLoanDetails } from "@/server/services/liabilityDetails";
 import { AccountForm } from "@/components/account-form";
 import { ArchiveAccountButton } from "@/components/archive-account-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +28,10 @@ export default async function AccountSettingsPage(props: PageProps<"/accounts/[a
   const currency = listCurrencies(db, profile.id).find((c) => c.id === account.currencyId);
   if (!currency) notFound();
 
+  const creditCardDetails =
+    account.accountType === "CREDIT_CARD" ? (getCreditCardDetails(db, account.id, profile.id) ?? null) : null;
+  const loanDetails = account.accountType === "LOAN" ? (getLoanDetails(db, account.id, profile.id) ?? null) : null;
+
   return (
     <div className="flex max-w-2xl flex-col gap-4">
       <Card>
@@ -44,10 +49,12 @@ export default async function AccountSettingsPage(props: PageProps<"/accounts/[a
               currencyCode: currency.code,
               name: account.name,
               classification: account.classification,
-              instrumentType: account.instrumentType,
+              accountType: account.accountType ?? "BANK",
               tags: account.tags,
               icon: account.icon,
             }}
+            creditCardDetails={creditCardDetails}
+            loanDetails={loanDetails}
           />
         </CardContent>
       </Card>

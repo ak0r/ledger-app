@@ -248,9 +248,9 @@ export function getExpenseTotalsByPeriod(db: Db, profileId: string, period: Rece
   const totals = new Map<string, number>();
   for (const transaction of transactions) {
     for (const posting of transaction.postings) {
-      if (posting.debit <= 0) continue;
+      if (posting.units <= 0) continue;
       if (accountsById.get(posting.accountId)?.classification !== "EXPENSE") continue;
-      totals.set(posting.accountId, (totals.get(posting.accountId) ?? 0) + posting.debit);
+      totals.set(posting.accountId, (totals.get(posting.accountId) ?? 0) + posting.units);
     }
   }
 

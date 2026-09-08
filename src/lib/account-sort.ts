@@ -16,12 +16,12 @@ import {
 // this list, so there's no separate "sort before slicing" concern the way
 // Transactions has). "Default" (`sortState === null`) is
 // `findAccountsByMember`'s own DB order (creation order), untouched.
-export type AccountSortField = "name" | "classification" | "instrumentType" | "balance" | "tags";
+export type AccountSortField = "name" | "classification" | "accountType" | "balance" | "tags";
 
 const ACCOUNT_SORT_FIELDS: readonly AccountSortField[] = [
   "name",
   "classification",
-  "instrumentType",
+  "accountType",
   "balance",
   "tags",
 ];
@@ -76,8 +76,8 @@ function compareAccounts(
       return compareStrings(a.name, b.name, direction);
     case "classification":
       return compareStrings(a.classification, b.classification, direction);
-    case "instrumentType":
-      return compareStrings(a.instrumentType, b.instrumentType, direction);
+    case "accountType":
+      return compareStrings(a.accountType ?? "", b.accountType ?? "", direction);
     case "balance":
       return compareNumbers(a.balance, b.balance, direction);
     case "tags":

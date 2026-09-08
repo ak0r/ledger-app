@@ -38,7 +38,7 @@ describe("createAccount", () => {
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
 
     expect(account.profileId).toBe(profile.id);
@@ -57,7 +57,7 @@ describe("createAccount", () => {
         currencyId: currency.id,
         name: "Should fail",
         classification: "ASSET",
-        instrumentType: "BANK",
+        accountType: "BANK",
       }),
     ).toThrow(NotFoundError);
   });
@@ -72,7 +72,7 @@ describe("archiveAccount", () => {
       currencyId: currency.id,
       name: "Old Card",
       classification: "LIABILITY",
-      instrumentType: "CREDIT_CARD",
+      accountType: "CREDIT_CARD",
     });
 
     const archived = archiveAccount(db, { accountId: account.id, profileId: profile.id });
@@ -87,7 +87,7 @@ describe("archiveAccount", () => {
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
     const otherProfile = createProfile(db, { name: "Partner" });
 
@@ -107,7 +107,7 @@ describe("listAccounts and getAccount", () => {
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
 
     expect(listAccounts(db, profile.id)).toHaveLength(1);
@@ -123,7 +123,7 @@ describe("listAccounts and getAccount", () => {
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
 
     expect(getAccount(db, account.id, profile.id)).toEqual(account);
@@ -140,7 +140,7 @@ describe("editAccount", () => {
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
 
     const edited = editAccount(db, {
@@ -149,7 +149,7 @@ describe("editAccount", () => {
       currencyId: currency.id,
       name: "HDFC Bank — Salary",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
       instrumentLabel: "Primary",
     });
 
@@ -166,7 +166,7 @@ describe("editAccount", () => {
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
       tags: ["primary"],
     });
     expect(account.tags).toEqual(["primary"]);
@@ -177,7 +177,7 @@ describe("editAccount", () => {
       currencyId: currency.id,
       name: account.name,
       classification: account.classification,
-      instrumentType: account.instrumentType,
+      accountType: account.accountType ?? "BANK",
       tags: ["primary", "salary"],
     });
 
@@ -194,7 +194,7 @@ describe("editAccount", () => {
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
 
     expect(() =>
@@ -204,7 +204,7 @@ describe("editAccount", () => {
         currencyId: currency.id,
         name: "Hijacked",
         classification: "ASSET",
-        instrumentType: "BANK",
+        accountType: "BANK",
       }),
     ).toThrow(NotFoundError);
   });
@@ -219,21 +219,21 @@ describe("getAccountBalances", () => {
       currencyId: currency.id,
       name: "HDFC Bank",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
     const food = createAccount(db, {
       profileId: profile.id,
       currencyId: currency.id,
       name: "Food",
       classification: "EXPENSE",
-      instrumentType: "EXPENSE",
+      accountType: "VARIABLE",
     });
     const salary = createAccount(db, {
       profileId: profile.id,
       currencyId: currency.id,
       name: "Salary",
       classification: "INCOME",
-      instrumentType: "INCOME",
+      accountType: "EARNED",
     });
 
     createTransaction(db, {
@@ -272,7 +272,7 @@ describe("getAccountBalances", () => {
       currencyId: currency.id,
       name: "New Account",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
 
     const balances = getAccountBalances(db, profile.id);
@@ -289,14 +289,14 @@ describe("bulkArchiveAccounts", () => {
       currencyId: currency.id,
       name: "A1",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
     const a2 = createAccount(db, {
       profileId: profile.id,
       currencyId: currency.id,
       name: "A2",
       classification: "EXPENSE",
-      instrumentType: "EXPENSE",
+      accountType: "VARIABLE",
     });
 
     bulkArchiveAccounts(db, { profileId: profile.id, accountIds: [a1.id, a2.id] });
@@ -314,7 +314,7 @@ describe("bulkArchiveAccounts", () => {
       currencyId: currency.id,
       name: "A1",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
     const otherCurrency = createCurrency(db, {
       profileId: otherProfile.id,
@@ -328,7 +328,7 @@ describe("bulkArchiveAccounts", () => {
       currencyId: otherCurrency.id,
       name: "Not this profile's",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
     });
 
     expect(() =>
@@ -348,7 +348,7 @@ describe("bulkUpdateAccountTags", () => {
       currencyId: currency.id,
       name: "A1",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
       tags: ["old", "keep"],
     });
     const a2 = createAccount(db, {
@@ -356,7 +356,7 @@ describe("bulkUpdateAccountTags", () => {
       currencyId: currency.id,
       name: "A2",
       classification: "EXPENSE",
-      instrumentType: "EXPENSE",
+      accountType: "VARIABLE",
     });
 
     bulkUpdateAccountTags(db, {
@@ -382,7 +382,7 @@ describe("bulkUpdateAccountTags", () => {
       currencyId: currency.id,
       name: "A1",
       classification: "ASSET",
-      instrumentType: "BANK",
+      accountType: "BANK",
       tags: ["keep"],
     });
 

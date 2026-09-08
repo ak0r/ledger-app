@@ -5,8 +5,10 @@ export { accountBalance, isDebitNormal } from "./accounts/balance";
 export type { PostingInput, PostingViolation, PostingViolationCode } from "./transactions/posting";
 export { validatePosting } from "./transactions/posting";
 
-export type { AccountRef, TransactionInput, TransactionViolation } from "./transactions/transaction";
+export type { AccountRef, BaseCurrency, TransactionInput, TransactionViolation } from "./transactions/transaction";
 export { validateTransaction, isBalancedTransaction } from "./transactions/transaction";
+
+export { computeBaseAmounts } from "./transactions/baseAmount";
 
 export { RECURRING_FREQUENCIES, validateRecurringRule, nextOccurrence, occurrencesInRange } from "./transactions/recurring";
 export type {

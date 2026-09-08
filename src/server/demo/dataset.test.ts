@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLASSIFICATIONS, INSTRUMENT_TYPES } from "@/core";
+import { ACCOUNT_TYPES, CLASSIFICATIONS } from "@/core";
 import { buildDemoDataset, validateDataset } from "./dataset";
 
 const PROFILE_ID = "profile-1";
@@ -35,11 +35,11 @@ describe("buildDemoDataset", () => {
     expect(dataset.currencies[0].profileId).toBe(PROFILE_ID);
   });
 
-  it("stays entirely within the frozen classification/instrument-type set (rule #11)", () => {
+  it("stays entirely within the real classification/account-type vocabulary", () => {
     const dataset = buildDemoDataset(PROFILE_ID);
     for (const account of dataset.accounts) {
       expect(CLASSIFICATIONS).toContain(account.classification);
-      expect(INSTRUMENT_TYPES).toContain(account.instrumentType);
+      expect(ACCOUNT_TYPES).toContain(account.accountType);
     }
     // Explicitly no investment-type instruments (a Ledger Account can never
     // be Instrument-backed, ADR-040) — guards against reintroducing them.

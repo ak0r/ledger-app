@@ -29,8 +29,16 @@ release is tagged. Until then, all work accumulates under `[Unreleased]`.
 ### Accounts
 
 - Create, edit, archive. Classification (Asset/Liability/Income/Expense/
-  Balancing) and a frozen MVP instrument type per account, INR currency,
-  inline tags, computed balance.
+  Balancing) plus a mandatory Account Type on every Classification (Asset:
+  Cash/Bank/Investments/Wallet/Receivables; Liability: Credit Card/Loan/
+  Payables; Income: Earned/Passive/Windfall; Expense: Fixed/Variable/
+  Discretionary/Financial), each Account's own Currency, inline tags,
+  computed balance.
+- Credit Card and Loan accounts get a dedicated supporting-details step in
+  the Account form (credit limit/statement/due day/network/last 4 for a
+  Credit Card; original/disbursed amount/interest rate/tenure/EMI for a
+  Loan) — informational only, never a second source of truth for the
+  Account's own balance.
 - Account Detail page: Transactions/History/Settings tabs, a monthly
   cashflow chart and a balance-trend chart, filtering and pagination.
 - Bulk actions (archive, tag) and a filter drawer/quick search on the
@@ -41,6 +49,11 @@ release is tagged. Until then, all work accumulates under `[Unreleased]`.
 - Simple mode (one From, one To) and Split mode (one From, many To) with a
   live balance indicator — progressive disclosure over one generic
   N-posting model, no debit/credit terminology shown to the user.
+- Any leg posted against a foreign-currency Account gets its own inline
+  rate entry (defaulted from the Currency's own rate history, or 1:1 if
+  none exists) with an explicit user confirmation before it's accepted —
+  simple and split transactions alike, any number of differently-priced
+  foreign legs in one transaction.
 - Full edit (atomic replace) and hard delete; merge two eligible
   transactions into one.
 - Filters (date range, account, classification, tag) and bulk actions
@@ -52,14 +65,24 @@ release is tagged. Until then, all work accumulates under `[Unreleased]`.
 ### Currency & Multi-Currency
 
 - A system-maintained Currency Catalogue replaces the earlier INR-only
-  freeze — a Profile has a Primary Currency (default for new Accounts,
-  changeable, not retroactive) and each Account has its own independently
-  changeable Currency. `/settings/currencies` adds a Currency to a Profile
-  from the catalogue.
-- Still no FX, conversion, or cross-currency aggregation — a Transaction
-  whose postings resolve to more than one currency is rejected, except a
-  dedicated 2-posting Currency Conversion shape that persists an explicit
-  exchange rate for that one transaction.
+  freeze — a Profile has a Primary Currency, also the fixed Base Currency
+  every Transaction reconciles into (default for new Accounts, changeable,
+  not retroactive), and each Account has its own independently changeable
+  Currency. `/settings/currencies` adds a Currency to a Profile from the
+  catalogue.
+- Dated exchange rates per non-Primary Currency, maintained inline on the
+  Currencies page (Show/Hide Rates, Add/Edit/Delete a rate for a given
+  date) — no separate FX page or converter. A rate is resolved for a
+  Transaction's own date (exact date, else the latest one before it, else
+  1:1) and copied in permanently at that Transaction's creation time;
+  editing or deleting a rate afterward never changes an already-recorded
+  Transaction.
+- Any number of a Transaction's postings can independently sit in a
+  currency other than the Profile's Base Currency now — genuine
+  multi-currency transactions, not just one fixed 2-leg Conversion. Money
+  is still stored as an exact fraction internally (never a rounded
+  decimal), and an entry that doesn't actually reconcile against its own
+  rate is rejected rather than silently forced to balance.
 
 ### Settings & Backup
 

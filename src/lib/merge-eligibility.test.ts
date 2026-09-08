@@ -14,7 +14,14 @@ function transaction(
   date: string,
   postings: { accountId: string; debit: number; credit: number }[],
 ): MergeCandidateTransaction {
-  return { id, date, postings };
+  return {
+    id,
+    date,
+    postings: postings.map((posting) => ({
+      accountId: posting.accountId,
+      units: posting.debit - posting.credit,
+    })),
+  };
 }
 
 const inr = "currency-inr";

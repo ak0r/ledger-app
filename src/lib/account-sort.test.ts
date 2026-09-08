@@ -12,7 +12,7 @@ function account(
   id: string,
   name: string,
   classification: string,
-  instrumentType: string,
+  accountType: string,
   balance: number,
   tags: string[] | null = null,
 ): AccountWithBalance {
@@ -22,7 +22,7 @@ function account(
     currencyId: "currency-1",
     name,
     classification: classification as never,
-    instrumentType: instrumentType as never,
+    accountType: accountType as never,
     instrumentId: null,
     instrumentLabel: null,
     tags,
@@ -81,7 +81,7 @@ describe("buildAccountSortHref", () => {
 
 describe("applyAccountSort", () => {
   const bank = account("a1", "HDFC Bank", "ASSET", "BANK", 500000);
-  const food = account("a2", "Food", "EXPENSE", "EXPENSE", 39794);
+  const food = account("a2", "Food", "EXPENSE", "VARIABLE", 39794);
   const creditCard = account("a3", "Credit Card", "LIABILITY", "CREDIT_CARD", 24205);
 
   it("returns a new array, untouched order, for Default", () => {
@@ -116,14 +116,14 @@ describe("applyAccountSort", () => {
     ]);
   });
 
-  it("sorts by classification and instrumentType", () => {
+  it("sorts by classification and accountType", () => {
     const accounts = [bank, food, creditCard];
     expect(
       applyAccountSort(accounts, { field: "classification", direction: "asc" }).map((a) => a.classification),
     ).toEqual(["ASSET", "EXPENSE", "LIABILITY"]);
     expect(
-      applyAccountSort(accounts, { field: "instrumentType", direction: "asc" }).map((a) => a.instrumentType),
-    ).toEqual(["BANK", "CREDIT_CARD", "EXPENSE"]);
+      applyAccountSort(accounts, { field: "accountType", direction: "asc" }).map((a) => a.accountType),
+    ).toEqual(["BANK", "CREDIT_CARD", "VARIABLE"]);
   });
 
   it("sorts tags by the alphabetically-first tag, untagged accounts always last", () => {

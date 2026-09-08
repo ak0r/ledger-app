@@ -21,14 +21,14 @@ function seedProfileData(db: ReturnType<typeof createTestDb>) {
     currencyId: currency.id,
     name: "Bank",
     classification: "ASSET",
-    instrumentType: "BANK",
+    accountType: "BANK",
   });
   const income = createAccount(db, {
     profileId: profile.id,
     currencyId: currency.id,
     name: "Salary",
     classification: "INCOME",
-    instrumentType: "INCOME",
+    accountType: "EARNED",
   });
   createTransaction(db, {
     profileId: profile.id,

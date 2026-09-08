@@ -24,10 +24,10 @@ import { monthWindow } from "@/core";
 function setUp(db: Db) {
   const profile = createProfile(db, { name: "Amit" });
   const currency = createCurrency(db, { profileId: profile.id, code: "INR", name: "Indian Rupee", symbol: "₹", minorUnitScale: 2 });
-  const bank = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank", classification: "ASSET", instrumentType: "BANK" });
-  const food = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Food", classification: "EXPENSE", instrumentType: "EXPENSE" });
-  const salary = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Salary", classification: "INCOME", instrumentType: "INCOME" });
-  const card = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Credit Card", classification: "LIABILITY", instrumentType: "CREDIT_CARD" });
+  const bank = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank", classification: "ASSET", accountType: "BANK" });
+  const food = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Food", classification: "EXPENSE", accountType: "VARIABLE" });
+  const salary = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Salary", classification: "INCOME", accountType: "EARNED" });
+  const card = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "Credit Card", classification: "LIABILITY", accountType: "CREDIT_CARD" });
   return { profile, bank, food, salary, card };
 }
 

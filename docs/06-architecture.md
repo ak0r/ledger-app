@@ -122,9 +122,10 @@ Account references Currency.
 Posting references Account, so Posting currency is derived from Account.
 
 Multiple currencies exist per Profile (Currency Catalogue,
-`docs/04-modules.md`) — a Transaction whose postings resolve to more than
-one currency is still rejected (`MIXED_CURRENCY_UNSUPPORTED`), except the
-one Currency Conversion shape.
+`docs/04-modules.md`) — any Posting may independently be priced in a
+currency other than the Profile's Base Currency (ADR-047); genuine N-leg
+cross-currency Transactions are supported, not just one fixed 2-posting
+Conversion shape. `MIXED_CURRENCY_UNSUPPORTED` is retired.
 
 ## Transaction persistence invariant
 
@@ -161,7 +162,7 @@ Examples:
 ```text
 profile_id
 transaction_id
-instrument_type
+account_type
 created_at
 ```
 
@@ -176,7 +177,7 @@ Examples:
 ```text
 profileId
 transactionId
-instrumentType
+accountType
 createdAt
 ```
 
@@ -252,8 +253,9 @@ Enforce in domain/application code and test them:
 
 ```text
 postings >= 2
-exactly one of debit/credit > 0 per posting
-sum(debit) == sum(credit)
+posting.units != 0; posting.price_num > 0; posting.price_denom > 0
+posting.base_amount == round_half_even(units * price_num / price_denom)
+sum(base_amount) == 0
 posting.account.profile_id == transaction.profile_id
-a transaction's postings resolve to exactly one currency (except Currency Conversion)
+a posting may independently price into the profile's Base Currency (N-leg FX, ADR-047)
 ```

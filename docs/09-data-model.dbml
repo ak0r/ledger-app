@@ -18,7 +18,13 @@
 // Portfolio Adoption Plan (`profiles.pan_encrypted`/`pan_hash`, every
 // Portfolio table), and Stock Tradebook/eCAS/Yahoo work (2026-09-06,
 // `instruments.nse_code`/`bse_code`/`amfi_code`, `holdings.source`'s
-// `ECAS_PDF` value).
+// `ECAS_PDF` value). Further extended by the 2026-09-06/08 Account Types,
+// Money Representation, Rational Pricing, FX & Liability Details delta
+// (ADR-047): `accounts.instrument_type` dropped outright, replaced by
+// mandatory `account_type`; `postings.debit`/`credit`/`quantity`/`price`
+// dropped outright, replaced by exact-rational `units`/`price_num`/
+// `price_denom`/`base_amount`; new `currency_rates`, `credit_card_details`,
+// `loan_details` tables.
 
 Table app_users {
   id text [pk]
@@ -58,6 +64,27 @@ Table currencies {
   updated_at datetime [not null]
 }
 
+// Dated FX reference rates (ADR-047) — no profile_id column; ownership is
+// checked at the service layer via currency_id -> currencies.profile_id
+// instead (rule #6's guarantee without a redundant column). Lookup rule:
+// exact date -> latest before -> 1/1 parity, never a future-dated row.
+// Editing/deleting a rate never changes an already-committed Transaction
+// (its resolved rate was already copied into the Posting at creation
+// time).
+Table currency_rates {
+  id text [pk]
+  currency_id text [not null]
+  date datetime [not null]
+  rate_num integer [not null, note: 'rate_num > 0']
+  rate_denom integer [not null, note: 'rate_denom > 0']
+  created_at datetime [not null]
+  updated_at datetime [not null]
+
+  Indexes {
+    (currency_id, date) [unique]
+  }
+}
+
 // Shared reference data — NOT Profile-scoped, unlike every other table
 // here (except nav_history below). An Instrument ("HDFC Bank the stock")
 // is the same catalogue row regardless of which PortfolioAccount
@@ -84,13 +111,48 @@ Table accounts {
   currency_id text [not null]
   name text [not null]
   classification text [not null, note: 'ASSET | LIABILITY | INCOME | EXPENSE | BALANCING']
-  instrument_type text [not null, note: 'BANK | CASH | CREDIT_CARD | LOAN | EXPENSE | INCOME | BALANCING (frozen, rule #11) — never MUTUAL_FUND/STOCK/COMMODITY (Ledger/Portfolio delink, ADR-040)']
-  instrument_id text [note: 'Inert since ADR-040 — no longer written. Free-text (ADR-016), unrelated to the `instruments` catalogue or `account_identifiers`.']
+  account_type text [not null, note: 'Mandatory per Classification (ADR-047): ASSET=CASH|BANK|INVESTMENTS|WALLET|RECEIVABLES, LIABILITY=CREDIT_CARD|LOAN|PAYABLES, INCOME=EARNED|PASSIVE|WINDFALL, EXPENSE=FIXED|VARIABLE|DISCRETIONARY|FINANCIAL, BALANCING=INITIAL. Never MUTUAL_FUND/STOCK/COMMODITY (Ledger/Portfolio delink, ADR-040).']
+  instrument_id text [note: 'Inert since ADR-040 — no longer written by any UI. Free-text (ADR-016), unrelated to the `instruments` catalogue or `account_identifiers`.']
   instrument_label text [note: 'Inert since ADR-040 — no longer written.']
   tags text [note: 'JSON array: string[] (flat opaque strings, not key/value)']
   icon text
   is_archived boolean [not null, default: false]
   metadata text
+  created_at datetime [not null]
+  updated_at datetime [not null]
+
+  Indexes {
+    (profile_id, classification, account_type, name) [unique]
+  }
+}
+
+// Liability Details (ADR-047) — 1:1 with an Account, no derived-balance
+// column on either. Outstanding balance always comes from
+// getAccountBalances, same as any other Account.
+Table credit_card_details {
+  id text [pk]
+  account_id text [not null, unique]
+  credit_limit_minor integer
+  statement_end_day integer [note: '1-31']
+  due_day integer [note: '1-31']
+  network text
+  last4 text
+  expiration_date datetime
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+Table loan_details {
+  id text [pk]
+  account_id text [not null, unique]
+  original_amount_minor integer
+  disbursed_amount_minor integer
+  interest_rate_bps integer [note: 'Integer basis points — never participates in Posting balancing, so no rational-pair storage needed.']
+  tenure_months integer
+  emi_amount_minor integer
+  emi_day integer [note: '1-31']
+  start_date datetime
+  maturity_date datetime
   created_at datetime [not null]
   updated_at datetime [not null]
 }
@@ -159,12 +221,20 @@ Table recurring_rules {
   updated_at datetime [not null]
 }
 
+// Exact-rational money (ADR-047) — replaces the earlier debit/credit-only
+// shape outright. `units` is signed (an Asset Account receiving money is
+// positive); `price_num`/`price_denom` is the valuation ratio into the
+// Profile's Base Currency (always 1/1 when the Account already uses it);
+// `base_amount = round_half_even(units * price_num / price_denom)`,
+// computed via checked BigInt arithmetic, never a float.
 Table postings {
   id text [pk]
   transaction_id text [not null]
   account_id text [not null]
-  debit integer [not null, default: 0]
-  credit integer [not null, default: 0]
+  units integer [not null, note: 'Signed. units != 0.']
+  price_num integer [not null, note: 'price_num > 0']
+  price_denom integer [not null, note: 'price_denom > 0']
+  base_amount integer [not null, note: 'Signed, Base Currency minor units. SUM(base_amount) == 0 per transaction (the double-entry invariant).']
   created_at datetime [not null]
   updated_at datetime [not null]
 }
@@ -322,6 +392,9 @@ Ref: profiles.primary_currency_id > currencies.id
 Ref: currencies.profile_id > profiles.id
 Ref: accounts.profile_id > profiles.id
 Ref: accounts.currency_id > currencies.id
+Ref: currency_rates.currency_id > currencies.id [delete: cascade]
+Ref: credit_card_details.account_id > accounts.id [delete: cascade]
+Ref: loan_details.account_id > accounts.id [delete: cascade]
 Ref: account_identifiers.account_id > accounts.id
 Ref: import_files.profile_id > profiles.id
 Ref: import_files.account_id > accounts.id
@@ -350,13 +423,17 @@ Ref: portfolio_imports.profile_id > profiles.id
 // Domain constraints not fully expressible in this conceptual DBML:
 //
 // 1. Transaction must have >= 2 postings.
-// 2. Posting must have exactly one positive side.
-// 3. debit and credit must be non-negative.
-// 4. SUM(debit) == SUM(credit) per transaction.
+// 2. posting.units != 0; posting.price_num > 0; posting.price_denom > 0.
+// 3. posting.base_amount == round_half_even(units * price_num /
+//    price_denom) — never independently entered (ADR-047).
+// 4. SUM(base_amount) == 0 per transaction (the double-entry invariant;
+//    replaces the old SUM(debit) == SUM(credit), ADR-047).
 // 5. posting.account.profile_id == transaction.profile_id.
-// 6. A transaction's postings must resolve to exactly one currency
-//    (MIXED_CURRENCY_UNSUPPORTED), except the one Currency Conversion
-//    shape — no FX/conversion/cross-currency aggregation otherwise.
+// 6. Any posting whose account currency differs from the profile's Base
+//    Currency (profiles.primary_currency_id) prices into it via
+//    price_num/price_denom — genuine N-leg cross-currency is valid,
+//    MIXED_CURRENCY_UNSUPPORTED is retired (ADR-047). Still no FX
+//    aggregation beyond that; a non-reconciling entry is UNBALANCED.
 // 7. Hard delete transaction aggregate atomically.
 // 8. An AppUser links to at most one Profile (unique); a Profile links to
 //    at most one AppUser (nullable) but can exist unlinked.

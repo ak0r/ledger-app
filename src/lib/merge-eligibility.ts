@@ -12,7 +12,7 @@
 export interface MergeCandidateTransaction {
   id: string;
   date: string;
-  postings: readonly { accountId: string; debit: number; credit: number }[];
+  postings: readonly { accountId: string; units: number }[];
 }
 
 export interface MergeCandidateAccount {
@@ -25,12 +25,12 @@ export interface MergeEligibilityResult {
 }
 
 function getFromAccountId(transaction: MergeCandidateTransaction): string | undefined {
-  return transaction.postings.find((posting) => posting.credit > 0)?.accountId;
+  return transaction.postings.find((posting) => posting.units < 0)?.accountId;
 }
 
 function getToAccountIds(transaction: MergeCandidateTransaction): Set<string> {
   return new Set(
-    transaction.postings.filter((posting) => posting.debit > 0).map((posting) => posting.accountId),
+    transaction.postings.filter((posting) => posting.units > 0).map((posting) => posting.accountId),
   );
 }
 

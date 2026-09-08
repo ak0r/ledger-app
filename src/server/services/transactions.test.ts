@@ -26,21 +26,21 @@ function setUpLedger(db: Db) {
     symbol: "₹",
     minorUnitScale: 2,
   });
-  const account = (name: string, classification: string, instrumentType: string) =>
+  const account = (name: string, classification: string, accountType: string) =>
     createAccount(db, {
       profileId: profile.id,
       currencyId: currency.id,
       name,
       classification: classification as never,
-      instrumentType: instrumentType as never,
+      accountType: accountType as never,
     });
 
   return {
     profile,
     bank: account("HDFC Bank", "ASSET", "BANK"),
-    food: account("Food Expense", "EXPENSE", "EXPENSE"),
+    food: account("Food Expense", "EXPENSE", "VARIABLE"),
     creditCard: account("HDFC Credit Card", "LIABILITY", "CREDIT_CARD"),
-    salary: account("Salary Income", "INCOME", "INCOME"),
+    salary: account("Salary Income", "INCOME", "EARNED"),
   };
 }
 
@@ -102,7 +102,7 @@ describe("createTransaction", () => {
       currencyId: jpy.id,
       name: "JPY in Hand",
       classification: "ASSET",
-      instrumentType: "CASH",
+      accountType: "CASH",
     });
 
     const transaction = createTransaction(db, {
@@ -111,14 +111,14 @@ describe("createTransaction", () => {
       description: "Convert Cash",
       postings: [
         { accountId: bank.id, debit: 0, credit: 1000000 }, // ₹10,000 out
-        { accountId: jpyCash.id, debit: 15000, credit: 0 }, // ¥15,000 in
+        { accountId: jpyCash.id, debit: 15000, credit: 0, rateDecimal: 10000 / 15000 }, // ¥15,000 in @ ~₹0.6667/¥
       ],
     });
 
     const persistedPostings = findPostingsByTransaction(db, transaction.id);
     expect(persistedPostings).toHaveLength(2);
-    expect(persistedPostings.find((p) => p.accountId === bank.id)?.credit).toBe(1000000);
-    expect(persistedPostings.find((p) => p.accountId === jpyCash.id)?.debit).toBe(15000);
+    expect(persistedPostings.find((p) => p.accountId === bank.id)?.units).toBe(-1000000);
+    expect(persistedPostings.find((p) => p.accountId === jpyCash.id)?.units).toBe(15000);
   });
 
   it("rejects a posting against another Profile's account (ownership invariant)", () => {
@@ -140,6 +140,82 @@ describe("createTransaction", () => {
   });
 });
 
+describe("createTransaction — genuine N-leg multi-currency (Transaction Form FX UX delta)", () => {
+  it("accepts a 1-From/N-To split with two independently-priced foreign legs (no currency-count restriction anymore)", () => {
+    const db = createTestDb();
+    const { profile, bank } = setUpLedger(db);
+    const jpy = createCurrency(db, { profileId: profile.id, code: "JPY", name: "Japanese Yen", symbol: "¥", minorUnitScale: 0 });
+    const jpyCash = createAccount(db, { profileId: profile.id, currencyId: jpy.id, name: "JPY Cash", classification: "ASSET", accountType: "CASH" });
+    const usd = createCurrency(db, { profileId: profile.id, code: "USD", name: "US Dollar", symbol: "$", minorUnitScale: 2 });
+    const usdCash = createAccount(db, { profileId: profile.id, currencyId: usd.id, name: "USD Cash", classification: "ASSET", accountType: "CASH" });
+
+    const transaction = createTransaction(db, {
+      profileId: profile.id,
+      date: "2026-09-03",
+      description: "Trip expenses",
+      postings: [
+        { accountId: bank.id, debit: 0, credit: 1000000 }, // ₹10,000 out
+        { accountId: jpyCash.id, debit: 9000, credit: 0, rateDecimal: 0.65 }, // ¥9,000 @ ₹0.65 = ₹5,850
+        { accountId: usdCash.id, debit: 5000, credit: 0, rateDecimal: 83 }, // $50.00 @ ₹83 = ₹4,150
+      ],
+    });
+
+    const persisted = findPostingsByTransaction(db, transaction.id);
+    expect(persisted).toHaveLength(3);
+    expect(persisted.find((p) => p.accountId === bank.id)?.baseAmount).toBe(-1000000);
+    expect(persisted.find((p) => p.accountId === jpyCash.id)?.baseAmount).toBe(585000);
+    expect(persisted.find((p) => p.accountId === usdCash.id)?.baseAmount).toBe(415000);
+    expect(
+      persisted.reduce((sum, p) => sum + p.baseAmount!, 0),
+    ).toBe(0);
+  });
+
+  it("rejects a foreign leg whose amount/rate genuinely doesn't reconcile — never silently absorbs an arbitrary mismatch", () => {
+    const db = createTestDb();
+    const { profile, bank } = setUpLedger(db);
+    const jpy = createCurrency(db, { profileId: profile.id, code: "JPY", name: "Japanese Yen", symbol: "¥", minorUnitScale: 0 });
+    const jpyCash = createAccount(db, { profileId: profile.id, currencyId: jpy.id, name: "JPY Cash", classification: "ASSET", accountType: "CASH" });
+
+    // ¥9,000 @ ₹0.65 implies ₹5,850, nowhere near the ₹10,000 credited —
+    // a real typo/mismatch, not rounding noise. Must be rejected honestly,
+    // not silently forced to "balance" by rewriting the bank leg's own
+    // entered amount.
+    expect(() =>
+      createTransaction(db, {
+        profileId: profile.id,
+        date: "2026-09-03",
+        description: "Broken conversion",
+        postings: [
+          { accountId: bank.id, debit: 0, credit: 1000000 },
+          { accountId: jpyCash.id, debit: 9000, credit: 0, rateDecimal: 0.65 },
+        ],
+      }),
+    ).toThrow(TransactionValidationError);
+  });
+
+  it("falls back to the CurrencyRate default (or 1/1 parity) when a foreign leg's rateDecimal is omitted", () => {
+    const db = createTestDb();
+    const { profile, bank } = setUpLedger(db);
+    const jpy = createCurrency(db, { profileId: profile.id, code: "JPY", name: "Japanese Yen", symbol: "¥", minorUnitScale: 0 });
+    const jpyCash = createAccount(db, { profileId: profile.id, currencyId: jpy.id, name: "JPY Cash", classification: "ASSET", accountType: "CASH" });
+
+    // No CurrencyRate history exists for JPY -> parity fallback (delta's
+    // own rule, minor-unit-to-minor-unit: 1 paisa per ¥1) -> ¥9,000 prices
+    // at just ₹90.00 (9000 paise), nowhere near the ₹10,000 credited ->
+    // honestly rejected, not silently forced to balance.
+    expect(() =>
+      createTransaction(db, {
+        profileId: profile.id,
+        date: "2026-09-03",
+        description: "No rate on file",
+        postings: [
+          { accountId: bank.id, debit: 0, credit: 1000000 },
+          { accountId: jpyCash.id, debit: 9000, credit: 0 },
+        ],
+      }),
+    ).toThrow(TransactionValidationError);
+  });
+});
 
 describe("editTransaction (full replace)", () => {
   it("atomically swaps postings under the same transaction id", () => {
@@ -205,7 +281,7 @@ describe("editTransaction (full replace)", () => {
 
     const postings = findPostingsByTransaction(db, original.id);
     expect(postings).toHaveLength(2);
-    expect(postings.find((p) => p.accountId === food.id)?.debit).toBe(2000);
+    expect(postings.find((p) => p.accountId === food.id)?.units).toBe(2000);
   });
 
   it("rejects editing another Profile's transaction (rule #6)", () => {
@@ -479,8 +555,8 @@ describe("mergeTransactions", () => {
 
     expect(merged.description).toBe("Groceries + Snacks");
     expect(merged.postings).toHaveLength(4);
-    const totalDebit = merged.postings.reduce((sum, p) => sum + p.debit, 0);
-    const totalCredit = merged.postings.reduce((sum, p) => sum + p.credit, 0);
+    const totalDebit = merged.postings.reduce((sum, p) => sum + Math.max(p.units, 0), 0);
+    const totalCredit = merged.postings.reduce((sum, p) => sum + Math.max(-p.units, 0), 0);
     expect(totalDebit).toBe(totalCredit);
 
     // Originals are gone (hard-replaced), only the merged transaction remains.

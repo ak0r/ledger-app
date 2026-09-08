@@ -1,15 +1,22 @@
 import {
   validateTransaction,
-  fromMinorUnits,
-  toQuantityMinorUnits,
-  fromQuantityMinorUnits,
+  computeBaseAmounts,
+  decimalRateToMinorRational,
+  makeRational,
+  multiplyRationalByInt,
+  roundHalfEvenToInt,
   type AccountRef,
+  type BaseCurrency,
+  type Rational,
   type PostingInput as DomainPostingInput,
 } from "@/core";
 import { matchesFilter, type TransactionFilterState } from "@/lib/transaction-filter";
 import { checkMergeEligibility } from "@/lib/merge-eligibility";
-import type { Db } from "../persistence/client";
+import type { Db, DbOrTx } from "../persistence/client";
 import { findAccountRefs, findAccountsByProfile, type AccountRow } from "../repositories/accounts";
+import { findCurrencyById } from "../repositories/currencies";
+import { findProfileById } from "../repositories/profiles";
+import { resolveCurrencyRate } from "./currencyRates";
 import {
   deletePostingsByTransaction,
   deleteTransactionRow,
@@ -23,73 +30,144 @@ import {
   type PostingRow,
   type TransactionRow,
 } from "../repositories/transactions";
-import { MergeIneligibleError, NotFoundError, TransactionValidationError } from "./errors";
+import { MergeIneligibleError, NoBaseCurrencyError, NotFoundError, TransactionValidationError } from "./errors";
 
 export interface PostingInput {
   accountId: string;
   debit: number;
   credit: number;
+  // Transaction Form FX UX delta — the standard one-unit quotation ("1 JPY
+  // = 0.5800 INR"), confirmed by the user, for a posting whose Account
+  // currency differs from the Base Currency. Omitted for a same-currency
+  // posting, or to let the server fall back to the CurrencyRate default
+  // for this Transaction's own date (`resolveCurrencyRate`).
+  rateDecimal?: number;
 }
 
 export interface TransactionWithPostings extends TransactionRow {
   postings: PostingRow[];
 }
 
+type DerivedPosting = DomainPostingInput;
+
 function buildPostingRows(
   transactionId: string,
-  postingInputs: readonly DomainPostingInput[],
+  postingInputs: readonly DerivedPosting[],
   now: string,
 ): PostingRow[] {
   return postingInputs.map((posting) => ({
     id: crypto.randomUUID(),
     transactionId,
     accountId: posting.accountId,
-    debit: posting.debit,
-    credit: posting.credit,
-    quantity: posting.quantity,
-    price: posting.price,
+    units: posting.units,
+    priceNum: posting.priceNum,
+    priceDenom: posting.priceDenom,
+    baseAmount: posting.baseAmount,
     createdAt: now,
     updatedAt: now,
   }));
 }
 
-// Derives the domain layer's quantity/price for every posting (Revised
-// Investment Model delta, 2026-09-03). The use-case layer's own
-// PostingInput ({accountId, debit, credit}) stays the source of truth:
-// `quantity` mirrors the posting's own amount and `price` is forced to 1
-// in the reconciliation currency (core/ledger/transactions/transaction.ts).
-// The one differing-currency leg a Currency Conversion can have (domain's
-// 2-posting shape) gets a price derived so its reconciliation value
-// exactly equals the credit side's own amount — the two legs'
-// independently-chosen amounts already implicitly encode the exchange
-// rate; this makes that rate an explicit, persisted fact.
+// Resolves the Profile's Base Currency (`primaryCurrencyId`) — every
+// Transaction's `base_amount` reconciles against this fixed target (Account
+// Types, Money Representation, Rational Pricing, FX & Liability Details
+// delta), replacing the old "whichever leg is credit side" dynamic rule.
+export function resolveBaseCurrency(db: DbOrTx, profileId: string): BaseCurrency {
+  const profile = findProfileById(db, profileId);
+  const currency = profile?.primaryCurrencyId
+    ? findCurrencyById(db, profile.primaryCurrencyId, profileId)
+    : undefined;
+  if (!currency) {
+    throw new NoBaseCurrencyError();
+  }
+  return { id: currency.id, code: currency.code, scale: currency.minorUnitScale };
+}
+
+function naiveBaseAmount(units: number, price: Rational): number {
+  const exact = multiplyRationalByInt(units, price);
+  return roundHalfEvenToInt(exact.num, exact.denom);
+}
+
+// Derives the domain layer's exact-rational fields for every posting,
+// alongside the legacy quantity/price ones (kept byte-for-byte identical
+// to before — see DerivedPosting). The use-case layer's own PostingInput
+// ({accountId, debit, credit, rateDecimal?}) stays the source of truth for
+// direction/amount; `rateDecimal` (Transaction Form FX UX delta) is the
+// user-confirmed one-unit quotation for a posting whose Account currency
+// differs from the Base Currency, falling back to `resolveCurrencyRate`'s
+// own default (for this Transaction's own `date`) when omitted. No
+// currency-count restriction — any number of independently-priced
+// non-Base-Currency legs is domain-valid now.
+//
+// Rounding + residual ownership: every leg's `baseAmount` is first computed
+// *independently* (its own units × its own price, half-even rounded) —
+// including the one credit-side ("From") primary leg, using its own price
+// the exact same way. If every leg turns out to be exactly the Base
+// Currency (no real FX in play at all), that's the final answer, unchanged
+// from before this step — the same protection that already caught a real
+// same-currency data-entry mismatch (debit 2000 / credit 1900) stays
+// intact. Only when at least one leg is genuinely priced against a
+// non-1/1 rate does `computeBaseAmounts`' residual-ownership rule
+// (core/ledger/transactions/baseAmount.ts) get a chance to run — and even
+// then, only if the residual it would land on the primary leg is small
+// (bounded by the number of other legs — half-even rounding can never be
+// off by more than 0.5 minor unit per leg). A larger residual means the
+// entered amounts and rates simply don't reconcile — falls back to the
+// independent computation instead, so `validateTransaction`'s SUM === 0
+// check honestly rejects it as UNBALANCED rather than silently absorbing
+// an arbitrary mismatch into whatever the primary leg's own amount was
+// (a real gap: a naive "always use CurrencyRate parity when unset" fallback
+// can be wildly wrong for an account with no rate history at all, and must
+// never be trusted blindly).
 export function derivePostings(
+  db: DbOrTx,
   postingInputs: readonly PostingInput[],
   accounts: ReadonlyMap<string, AccountRef>,
-): DomainPostingInput[] {
-  const creditPosting = postingInputs.find((posting) => posting.credit > 0);
-  const creditAccount = creditPosting ? accounts.get(creditPosting.accountId) : undefined;
+  baseCurrency: BaseCurrency,
+  date: string,
+): DerivedPosting[] {
+  const primaryIndex = postingInputs.findIndex((posting) => posting.credit > 0);
 
-  return postingInputs.map((posting) => {
+  const legs = postingInputs.map((posting) => {
     const account = accounts.get(posting.accountId);
-    if (!account) {
-      // Unresolvable account — domain validation reports ACCOUNT_NOT_FOUND
-      // right after; these values are never read on that path.
-      return { ...posting, quantity: 0, price: 1 };
-    }
+    const units = posting.debit - posting.credit;
 
-    const quantity = toQuantityMinorUnits(
-      fromMinorUnits(posting.debit || posting.credit, account.currencyScale),
-    );
+    const price: Rational =
+      !account || account.currencyCode === baseCurrency.code
+        ? makeRational(1, 1)
+        : posting.rateDecimal !== undefined
+          ? decimalRateToMinorRational(posting.rateDecimal, account.currencyScale, baseCurrency.scale)
+          : resolveCurrencyRate(db, account.currencyId, baseCurrency.id, date);
 
-    if (!creditAccount || !creditPosting || account.currencyCode === creditAccount.currencyCode) {
-      return { ...posting, quantity, price: 1 };
-    }
-
-    const reconciliationValue = fromMinorUnits(creditPosting.credit, creditAccount.currencyScale);
-    const price = reconciliationValue / fromQuantityMinorUnits(quantity);
-    return { ...posting, quantity, price };
+    return { accountId: posting.accountId, units, price };
   });
+
+  const naiveBaseAmounts = legs.map((leg) => naiveBaseAmount(leg.units, leg.price));
+  const hasGenuineFx = legs.some((leg) => leg.price.num !== leg.price.denom);
+
+  let baseAmounts = naiveBaseAmounts;
+  if (hasGenuineFx && primaryIndex !== -1) {
+    const residualBaseAmounts = computeBaseAmounts(
+      legs.map((leg) => ({ units: leg.units, price: leg.price })),
+      primaryIndex,
+    );
+    // Bounded trust: at most one minor unit of legitimate rounding noise
+    // per non-primary leg — anything beyond that means the entered
+    // amounts/rates don't actually reconcile, not that there's rounding to
+    // absorb.
+    const tolerance = legs.length - 1;
+    if (Math.abs(residualBaseAmounts[primaryIndex]! - naiveBaseAmounts[primaryIndex]!) <= tolerance) {
+      baseAmounts = residualBaseAmounts;
+    }
+  }
+
+  return legs.map((leg, index) => ({
+    accountId: leg.accountId,
+    units: leg.units,
+    priceNum: leg.price.num,
+    priceDenom: leg.price.denom,
+    baseAmount: baseAmounts[index]!,
+  }));
 }
 
 // Validates against the Phase 3 domain layer before touching the DB (rule
@@ -99,11 +177,13 @@ function assertBalanced(
   db: Db,
   profileId: string,
   postingInputs: readonly PostingInput[],
-): DomainPostingInput[] {
+  date: string,
+): DerivedPosting[] {
   const accountIds = postingInputs.map((posting) => posting.accountId);
   const accounts = findAccountRefs(db, accountIds);
-  const derivedPostings = derivePostings(postingInputs, accounts);
-  const violations = validateTransaction({ profileId, postings: derivedPostings }, accounts);
+  const baseCurrency = resolveBaseCurrency(db, profileId);
+  const derivedPostings = derivePostings(db, postingInputs, accounts, baseCurrency, date);
+  const violations = validateTransaction({ profileId, postings: derivedPostings }, accounts, baseCurrency);
   if (violations.length > 0) {
     throw new TransactionValidationError(violations);
   }
@@ -122,7 +202,7 @@ export function createTransaction(
   db: Db,
   input: CreateTransactionInput,
 ): TransactionWithPostings {
-  const derivedPostings = assertBalanced(db, input.profileId, input.postings);
+  const derivedPostings = assertBalanced(db, input.profileId, input.postings, input.date);
 
   const now = new Date().toISOString();
   const transaction: TransactionRow = {
@@ -174,7 +254,7 @@ export function editTransaction(
     );
   }
 
-  const derivedPostings = assertBalanced(db, input.profileId, input.postings);
+  const derivedPostings = assertBalanced(db, input.profileId, input.postings, input.date);
 
   const now = new Date().toISOString();
   const postingRows = buildPostingRows(input.transactionId, derivedPostings, now);
@@ -238,11 +318,11 @@ export function mergeTransactions(
   const mergedPostingInputs: PostingInput[] = targets.flatMap((transaction) =>
     transaction.postings.map((posting) => ({
       accountId: posting.accountId,
-      debit: posting.debit,
-      credit: posting.credit,
+      debit: posting.units > 0 ? posting.units : 0,
+      credit: posting.units < 0 ? -posting.units : 0,
     })),
   );
-  const derivedPostings = assertBalanced(db, input.profileId, mergedPostingInputs);
+  const derivedPostings = assertBalanced(db, input.profileId, mergedPostingInputs, targets[0].date);
 
   const now = new Date().toISOString();
   const descriptions = [...new Set(targets.map((transaction) => transaction.description))];
