@@ -147,15 +147,26 @@ release is tagged. Until then, all work accumulates under `[Unreleased]`.
 ### Imports
 
 - Upload a bank/card statement (generic CSV, HDFC/Axis/IDFC FIRST Bank
-  Account XLS, Federal Bank Account PDF with password support) — adapter
-  auto-detected, all parsing local/offline.
+  Account XLS, Federal Bank Account PDF with password support, Google Pay
+  Transactions PDF) — adapter auto-detected, all parsing local/offline.
 - Account resolution (exact match, possible masked-suffix match,
   ambiguous-requires-user-resolution, or propose a new account) for both
-  the source account and every counterparty.
+  the source account and every counterparty. Google Pay statements have no
+  owning account of their own — each row instead tags the real bank/card it
+  moved through, resolved (or proposed as a new, correctly-typed
+  Asset/Liability account) per row instead of once per file.
 - Fully editable preview before commit; nothing is written to the Ledger
   until explicit approval, then commit is atomic. Committed transactions
   carry permanent import provenance, and import history shows resolved
   account, new-account count, and inflow/outflow per file.
+- Possible-duplicate detection (advisory only): rows are flagged against
+  both the rest of the current upload and already-committed Ledger history
+  — an exact UPI/reference match ("Likely duplicate"), or a same date +
+  amount + account + direction match with a 30-minute time tolerance and a
+  counterparty-token check when both sides have one ("Possible duplicate").
+  A flag is a badge with an explanation on hover; nothing is auto-excluded
+  or blocked — the user still decides row by row. See Open Decisions for
+  the still-missing resolution workflow.
 
 ### Portfolio (investment tracking)
 

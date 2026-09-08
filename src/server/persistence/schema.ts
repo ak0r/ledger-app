@@ -402,6 +402,21 @@ export const transactions = sqliteTable("transactions", {
   // commit, even though the ImportFile itself only ever reaches
   // `committed`.
   importFileId: text("import_file_id").references(() => importFiles.id),
+  // Import-provenance enrichment (GPay importer delta) — echoed verbatim
+  // from `NormalizedImportRow.reference`/`counterparty` at commit time,
+  // null for a manually-created Transaction or one from an adapter/import
+  // path that never populated them. Exists so cross-source reconciliation
+  // (`lib/duplicate-detection.ts`) can check a *new* import against
+  // already-committed history, not just candidates in the same session —
+  // without this, a UPI transaction id or counterparty name observed at
+  // parse time would otherwise be thrown away the moment it's committed,
+  // leaving nothing to check a later import against. Deliberately no
+  // `time` column alongside these two: `date` has always been date-only
+  // across this whole domain, and time-of-day is used purely as an
+  // if-available refinement (never a requirement) — not worth turning
+  // that into a permanent Transaction-level concept for it.
+  reference: text("reference"),
+  counterparty: text("counterparty"),
   ...timestamps,
 });
 

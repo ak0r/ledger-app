@@ -2,6 +2,7 @@ import { hdfcAccountXlsAdapter } from "./hdfcAccountXls";
 import { axisAccountXlsAdapter } from "./axisAccountXls";
 import { idfcFirstAccountXlsAdapter } from "./idfcFirstAccountXls";
 import { federalAccountPdfAdapter } from "./federalAccountPdf";
+import { gpayPdfAdapter } from "./gpayPdf";
 import { genericCsvAdapter } from "./genericCsv";
 import { AmbiguousImportFormatError, UnrecognizedImportFormatError } from "../services/errors";
 import type { ImportAdapter, ParsedFile } from "./types";
@@ -26,6 +27,7 @@ const IMPORT_ADAPTERS: ImportAdapter[] = [
   axisAccountXlsAdapter,
   idfcFirstAccountXlsAdapter,
   federalAccountPdfAdapter,
+  gpayPdfAdapter,
   genericCsvAdapter,
 ];
 const IMPORT_ADAPTERS_BY_ID = new Map(IMPORT_ADAPTERS.map((adapter) => [adapter.id, adapter]));

@@ -110,8 +110,11 @@ function nearestAnchorIndex(x: number, anchors: number[]): number {
 
 // Groups same-page items into physical visual lines (y-clustering, not
 // exact equality — see LINE_MERGE_TOLERANCE), then buckets each line's
-// items into columns by nearest anchor.
-function buildLines(items: TextItem[], anchors: number[]): { page: number; y: number; columns: string[] }[] {
+// items into columns by nearest anchor. Exported — GPay's own PDF adapter
+// (gpayPdf.ts) reuses this directly rather than growing a third private
+// copy alongside this file's own and federalAccountPdf.ts's (pre-existing
+// duplication, not introduced here).
+export function buildLines(items: TextItem[], anchors: number[]): { page: number; y: number; columns: string[] }[] {
   const byPage = new Map<number, TextItem[]>();
   for (const item of items) {
     if (!byPage.has(item.page)) byPage.set(item.page, []);

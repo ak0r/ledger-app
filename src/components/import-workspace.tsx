@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ACCOUNT_TYPES_BY_CLASSIFICATION, type AccountType, type Classification, type ImportDirection } from "@/core";
-import type { AccountChoice, AccountResolution, ImportPreview } from "@/server/services/imports";
+import type { AccountChoice, AccountResolution, ImportPreview, NewSourceAccountDescriptor } from "@/server/services/imports";
 import {
   previewImportAction,
   commitImportAction,
@@ -22,6 +22,7 @@ import {
   filterTransactions,
   type TransactionFilterState,
 } from "@/lib/transaction-filter";
+import { findPossibleDuplicates, type DuplicateMatch } from "@/lib/duplicate-detection";
 import type { TransactionWithPostings } from "@/server/services/transactions";
 import { AccountIcon } from "@/components/account-icon";
 import { TransactionFilterDrawer } from "@/components/transaction-filter-drawer";
@@ -66,11 +67,37 @@ interface WorkspaceCandidate {
   direction: ImportDirection;
   // Account Resolution delta §3 — null defers to the file's own resolved/
   // created account (finalized at commit); non-null is either that file's
-  // resolution already confirmed, or a per-row override. The source/known
+  // resolution already confirmed, or a per-row override (GPay importer
+  // delta's own per-row source-account resolution — a row whose own
+  // identifier exact-matched a known Account, independent of whatever
+  // this file's own single resolution came out to). The source/known
   // account is no longer a visible or editable per-row concept in the
   // review table (it lives in the Identified Accounts cards above) — this
   // field still carries the actual value forward to commit.
   knownAccountId: string | null;
+  // The adapter-detected reference/UTR, time-of-day, and counterparty for
+  // this row, if any (echoed straight from `PreviewCandidate`) — none of
+  // these three are shown anywhere in this table, only used by
+  // `findPossibleDuplicates` (cross-source reconciliation, GPay importer
+  // delta) to spot the same real-world payment appearing in two different
+  // uploaded statements.
+  reference?: string;
+  time?: string;
+  counterparty?: string;
+  // Server-computed at preview time, against already-*committed* history
+  // only (`services/imports.ts`'s own `flagPossibleDuplicatesAgainstHistory`)
+  // — the within-*session* cross-file check (`possibleDuplicatesById`
+  // below) is a separate, client-computed signal; a row can be flagged by
+  // either, both, or neither.
+  possibleDuplicateOfCommitted: DuplicateMatch["reason"] | null;
+  // GPay importer delta — a row whose own identifier didn't exact-match
+  // an existing Account (`knownAccountId` stays null for it). Carries the
+  // *full* proposal inline, same posture `counterpart`'s own "new" case
+  // already has, rather than a bare key needing a separate lookup map —
+  // this is what used to silently fall back to the file's single default
+  // account instead of ever becoming its own "new Account" card (the
+  // actual bug reported against the running app).
+  proposedSourceAccount: NewSourceAccountDescriptor | null;
   counterpart: Counterpart;
 }
 
@@ -184,6 +211,12 @@ function resolutionChoiceToAccountChoice(choice: ResolutionChoice): AccountChoic
   return { type: "new", name: choice.name ?? "", classification, accountType: choice.accountType ?? "BANK" };
 }
 
+// GPay importer delta — same shape as `accountChoiceToResolutionChoice`,
+// for a per-row new-Account proposal instead of a whole file's default.
+function proposalToResolutionChoice(proposal: NewSourceAccountDescriptor): ResolutionChoice {
+  return { type: "new", name: proposal.name, classification: proposal.classification, accountType: proposal.accountType };
+}
+
 // Counterpart accounts (Expense/Income catch-alls) carry no Account Type
 // of their own — the picker is hidden for these cards (`showAccountType`
 // below), same default-bucket mapping as the server's own
@@ -280,6 +313,8 @@ function toFilterableTransaction(
     description: candidate.description,
     tags: [],
     importFileId: null,
+    reference: candidate.reference ?? null,
+    counterparty: candidate.counterparty ?? null,
     createdAt: "",
     updatedAt: "",
     postings: [
@@ -326,6 +361,44 @@ function AccountLabel({
   );
 }
 
+// Cross-source reconciliation (GPay importer delta) — informational only,
+// never pre-selects or excludes the row itself (this codebase's own
+// "never auto-merge" posture, same as an AccountIdentifier possible
+// match). Two independent signals feed this: `sessionMatch` (client-
+// computed, against other candidates in *this* import workspace) and
+// `committedReason` (server-computed at preview time, against Postings
+// already in the Ledger) — a row can be flagged by either, both, or
+// neither. The committed one wins the label when both apply: "already in
+// your ledger" is a stronger, more specific claim than "also appears in
+// another file you haven't committed yet."
+function PossibleDuplicateBadge({
+  sessionMatch,
+  committedReason,
+}: {
+  sessionMatch: DuplicateMatch | undefined;
+  committedReason: DuplicateMatch["reason"] | null | undefined;
+}) {
+  const reason = committedReason ?? sessionMatch?.reason;
+  if (!reason) return null;
+
+  const isCommitted = Boolean(committedReason);
+  const label = reason === "reference" ? "Likely duplicate" : "Possible duplicate";
+  const title = isCommitted
+    ? reason === "reference"
+      ? "Same UPI transaction ID as a Transaction already in your Ledger."
+      : "Same date, amount, and account as a Transaction already in your Ledger."
+    : reason === "reference"
+      ? "Same UPI transaction ID as another uploaded row — almost certainly already recorded elsewhere in this import."
+      : "Same date, amount, and account as another uploaded row — may already be recorded elsewhere in this import.";
+
+  return (
+    <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[10px] text-muted-foreground" title={title}>
+      {label}
+      {isCommitted ? " (in ledger)" : ""}
+    </Badge>
+  );
+}
+
 // No persisted staging (Import Workflow delta §15) — everything below is
 // local component state for the length of one review session. Reloading
 // the page loses it, same as Phase 1's original single-file flow.
@@ -369,7 +442,10 @@ export function ImportWorkspace({
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
   const [candidates, setCandidates] = useState<WorkspaceCandidate[]>([]);
   const [resolutionDialog, setResolutionDialog] = useState<
-    { kind: "source"; groupKey: string } | { kind: "counterpart"; groupKey: string } | null
+    | { kind: "source"; groupKey: string }
+    | { kind: "sourceProposal"; groupKey: string }
+    | { kind: "counterpart"; groupKey: string }
+    | null
   >(null);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -387,36 +463,103 @@ export function ImportWorkspace({
   // One card per distinct *resolved* source account, not one per uploaded
   // file — two files resolving to the same account (e.g. two months of one
   // HDFC statement) combine into a single card with summed totals.
-  const sourceGroups = useMemo(() => {
-    const byKey = new Map<
+  // Three kinds of card now, not one (GPay importer delta — the real bug
+  // this fixes: every candidate used to be attributed to its *file's* own
+  // single default account, even a row that had actually resolved (or
+  // proposed a brand new Account) per-row and had nothing to do with that
+  // default at all):
+  //   - "file": today's original behavior, unchanged — a file's own
+  //     single default, but now only over whichever of its candidates
+  //     *didn't* get their own per-row resolution or proposal.
+  //   - "resolved": a real Account a candidate resolved to per-row (Stone
+  //     1) that differs from every uploaded file's own default — e.g. a
+  //     GPay row landing on an already-tracked Axis account with no Axis
+  //     statement uploaded this session at all.
+  //   - "proposal": a per-row identifier that matched nothing existing —
+  //     its own new-Account card, correctly typed (Asset/BANK vs.
+  //     Liability/CREDIT_CARD, whatever the adapter determined), instead
+  //     of silently vanishing into a "file" card's totals.
+  type SourceGroup =
+    | { kind: "file"; groupKey: string; fileKeys: string[]; filenames: string[]; accountChoice: AccountChoice; resolution: AccountResolution; identifier: string | null; transactionCount: number; inflowMinor: number; outflowMinor: number }
+    | { kind: "resolved"; groupKey: string; accountId: string; transactionCount: number; inflowMinor: number; outflowMinor: number }
+    | { kind: "proposal"; groupKey: string; proposal: NewSourceAccountDescriptor; transactionCount: number; inflowMinor: number; outflowMinor: number };
+
+  const sourceGroups = useMemo<SourceGroup[]>(() => {
+    const fileDefaultByFileKey = new Map<string, string | null>();
+    for (const file of files) {
+      if (isSuccessFile(file)) fileDefaultByFileKey.set(file.fileKey, accountChoiceKnownAccountId(file.accountChoice));
+    }
+
+    const resolvedById = new Map<string, WorkspaceCandidate[]>();
+    const proposalsByKey = new Map<string, { proposal: NewSourceAccountDescriptor; rows: WorkspaceCandidate[] }>();
+    const remainderByFileKey = new Map<string, WorkspaceCandidate[]>();
+
+    for (const candidate of candidates) {
+      if (candidate.proposedSourceAccount) {
+        const key = candidate.proposedSourceAccount.key;
+        const entry = proposalsByKey.get(key);
+        if (entry) entry.rows.push(candidate);
+        else proposalsByKey.set(key, { proposal: candidate.proposedSourceAccount, rows: [candidate] });
+        continue;
+      }
+      const fileDefault = fileDefaultByFileKey.get(candidate.fileKey) ?? null;
+      if (candidate.knownAccountId && candidate.knownAccountId !== fileDefault) {
+        const list = resolvedById.get(candidate.knownAccountId) ?? [];
+        list.push(candidate);
+        resolvedById.set(candidate.knownAccountId, list);
+        continue;
+      }
+      const list = remainderByFileKey.get(candidate.fileKey) ?? [];
+      list.push(candidate);
+      remainderByFileKey.set(candidate.fileKey, list);
+    }
+
+    const totals = (rows: WorkspaceCandidate[]) => ({
+      transactionCount: rows.length,
+      inflowMinor: rows.filter((c) => c.direction === "credit").reduce((s, c) => s + c.amountMinor, 0),
+      outflowMinor: rows.filter((c) => c.direction === "debit").reduce((s, c) => s + c.amountMinor, 0),
+    });
+
+    const groups: SourceGroup[] = [];
+    for (const [accountId, rows] of resolvedById) {
+      groups.push({ kind: "resolved", groupKey: `resolved:${accountId}`, accountId, ...totals(rows) });
+    }
+    for (const [key, entry] of proposalsByKey) {
+      groups.push({ kind: "proposal", groupKey: `proposal:${key}`, proposal: entry.proposal, ...totals(entry.rows) });
+    }
+
+    const byFileGroupKey = new Map<
       string,
-      { groupKey: string; fileKeys: string[]; filenames: string[]; accountChoice: AccountChoice; resolution: AccountResolution; identifier: string | null }
+      { groupKey: string; fileKeys: string[]; filenames: string[]; accountChoice: AccountChoice; resolution: AccountResolution; identifier: string | null; rows: WorkspaceCandidate[] }
     >();
     for (const file of files) {
       if (!isSuccessFile(file)) continue;
+      const remainder = remainderByFileKey.get(file.fileKey) ?? [];
+      if (remainder.length === 0) continue;
       const groupKey = sourceGroupKey(file);
-      const entry = byKey.get(groupKey);
+      const entry = byFileGroupKey.get(groupKey);
       if (entry) {
         entry.fileKeys.push(file.fileKey);
         entry.filenames.push(file.filename);
+        entry.rows.push(...remainder);
         if (!entry.identifier && file.identifier) entry.identifier = file.identifier;
       } else {
-        byKey.set(groupKey, {
+        byFileGroupKey.set(groupKey, {
           groupKey,
           fileKeys: [file.fileKey],
           filenames: [file.filename],
           accountChoice: file.accountChoice,
           resolution: file.resolution,
           identifier: file.identifier,
+          rows: [...remainder],
         });
       }
     }
-    return [...byKey.values()].map((group) => {
-      const groupCandidates = candidates.filter((c) => group.fileKeys.includes(c.fileKey));
-      const inflowMinor = groupCandidates.filter((c) => c.direction === "credit").reduce((s, c) => s + c.amountMinor, 0);
-      const outflowMinor = groupCandidates.filter((c) => c.direction === "debit").reduce((s, c) => s + c.amountMinor, 0);
-      return { ...group, transactionCount: groupCandidates.length, inflowMinor, outflowMinor };
-    });
+    for (const entry of byFileGroupKey.values()) {
+      groups.push({ kind: "file", groupKey: entry.groupKey, fileKeys: entry.fileKeys, filenames: entry.filenames, accountChoice: entry.accountChoice, resolution: entry.resolution, identifier: entry.identifier, ...totals(entry.rows) });
+    }
+
+    return groups;
   }, [files, candidates]);
 
   // One entry per distinct counterpart account actually referenced by any
@@ -462,6 +605,18 @@ export function ImportWorkspace({
     [counterpartGroups],
   );
 
+  // GPay importer delta — mirrors `pendingNewAccounts` above, but for
+  // per-row source-Account proposals still present on any candidate
+  // (`proposedSourceAccount` is null once a candidate is redirected to an
+  // existing Account instead — see `setSourceProposalChoice`).
+  const pendingNewSourceAccounts = useMemo(() => {
+    const byKey = new Map<string, NewSourceAccountDescriptor>();
+    for (const candidate of candidates) {
+      if (candidate.proposedSourceAccount) byKey.set(candidate.proposedSourceAccount.key, candidate.proposedSourceAccount);
+    }
+    return [...byKey.values()];
+  }, [candidates]);
+
   // Per-file stats for the file cards — date range/count/inflow/outflow are
   // never computed server-side beyond the file-level transactionCount at
   // preview time (see imports.ts's own comment), so this derives them from
@@ -477,6 +632,29 @@ export function ImportWorkspace({
     }
     return map;
   }, [files, candidates]);
+
+  // Cross-source reconciliation (GPay importer delta) — recomputed live
+  // from `candidates`, same posture as every other derived-from-candidates
+  // value above. A `Map` keyed by clientRowId so a table row's lookup
+  // stays O(1). Purely informational (never removes or auto-excludes a
+  // row) — `findPossibleDuplicates` itself is pure/DB-independent, so this
+  // is the whole integration, no server round trip.
+  const possibleDuplicatesById = useMemo(() => {
+    const matches = findPossibleDuplicates(
+      candidates.map((c) => ({
+        id: c.clientRowId,
+        sourceKey: c.fileKey,
+        date: c.date,
+        amountMinor: c.amountMinor,
+        direction: c.direction,
+        accountId: c.knownAccountId,
+        reference: c.reference,
+        time: c.time,
+        counterparty: c.counterparty,
+      })),
+    );
+    return new Map<string, DuplicateMatch>(matches.map((m) => [m.id, m]));
+  }, [candidates]);
 
   const summary = useMemo(() => {
     const inflowMinor = candidates.filter((c) => c.direction === "credit").reduce((s, c) => s + c.amountMinor, 0);
@@ -547,8 +725,49 @@ export function ImportWorkspace({
     const knownAccountId = accountChoiceKnownAccountId(choice);
     // Reflected immediately in the transaction preview below, not just on
     // commit — every candidate for these files re-reads its Account cell
-    // from this same state.
-    setCandidates((prev) => prev.map((c) => (fileKeySet.has(c.fileKey) ? { ...c, knownAccountId } : c)));
+    // from this same state. Never touches a candidate that already has
+    // its own pending new-Account proposal (GPay importer delta) — that
+    // row's resolution is independent of this file's own default and
+    // waits on its own approval, not this one's.
+    //
+    // Known gap, still not fixed here: a row that already resolved
+    // per-row to a *different real Account* (Stone 1's own exact
+    // identifier match, no proposal involved) is indistinguishable at
+    // this point from one that's merely using the file's own default —
+    // both just have `knownAccountId` set, and the server already merges
+    // "per-row match" and "file default" into that one field before this
+    // component ever sees it. Changing the file's fallback here will
+    // still reassign that row too. Needs the per-row value tracked
+    // separately from the file-level default rather than merged into one
+    // mutable field to fix properly.
+    setCandidates((prev) => prev.map((c) => (fileKeySet.has(c.fileKey) && !c.proposedSourceAccount ? { ...c, knownAccountId } : c)));
+  }
+
+  // GPay importer delta — applies a resolved choice to every candidate
+  // sharing one per-row new-Account proposal. "existing" redirects them
+  // to a real Account instead (dropping the proposal — nothing gets
+  // created for a key nothing points at anymore); "new" just updates the
+  // proposal's own name/classification/Account Type in place.
+  function setSourceProposalChoice(key: string, choice: ResolutionChoice) {
+    setCandidates((prev) =>
+      prev.map((c) => {
+        if (c.proposedSourceAccount?.key !== key) return c;
+        if (choice.type === "existing") {
+          return { ...c, knownAccountId: choice.accountId ?? null, proposedSourceAccount: null };
+        }
+        const classification = choice.classification === "LIABILITY" ? "LIABILITY" : "ASSET";
+        return {
+          ...c,
+          knownAccountId: null,
+          proposedSourceAccount: {
+            ...c.proposedSourceAccount,
+            name: choice.name ?? c.proposedSourceAccount.name,
+            classification,
+            accountType: choice.accountType ?? c.proposedSourceAccount.accountType,
+          },
+        };
+      }),
+    );
   }
 
   // Retargets every candidate currently in this counterpart group at once —
@@ -573,6 +792,7 @@ export function ImportWorkspace({
     const knownAccountId = accountChoiceKnownAccountId(accountChoice);
 
     const newAccountsByKey = new Map(data.newAccounts.map((a) => [a.key, a]));
+    const newSourceAccountsByKey = new Map(data.newSourceAccounts.map((a) => [a.key, a]));
     const newCandidates: WorkspaceCandidate[] = data.candidates.map((candidate) => ({
       clientRowId: crypto.randomUUID(),
       fileKey: candidate.fileKey,
@@ -580,7 +800,23 @@ export function ImportWorkspace({
       description: candidate.description,
       amountMinor: candidate.amountMinor,
       direction: candidate.direction,
-      knownAccountId,
+      // A per-row resolution (GPay importer delta) always wins over this
+      // file's own single default — `commitImport` already applies this
+      // exact same precedence server-side (`candidate.knownAccountId ??
+      // resolvedAccountId`); this was silently discarding it before,
+      // always using the file-level default for every row regardless. A
+      // pending new-Account proposal (below) also wins over the file
+      // default — the real bug this fixes: a row proposing a *new*
+      // Account must never quietly get attributed to the file's existing
+      // default while its own proposal sits unapproved.
+      knownAccountId: candidate.knownAccountId ?? (candidate.proposedSourceAccountKey ? null : knownAccountId),
+      proposedSourceAccount: candidate.proposedSourceAccountKey
+        ? (newSourceAccountsByKey.get(candidate.proposedSourceAccountKey) ?? null)
+        : null,
+      reference: candidate.reference,
+      time: candidate.time,
+      counterparty: candidate.counterparty,
+      possibleDuplicateOfCommitted: candidate.possibleDuplicate,
       counterpart: candidate.counterAccountId
         ? { type: "existing", accountId: candidate.counterAccountId }
         : {
@@ -682,6 +918,11 @@ export function ImportWorkspace({
       setServerError(`Name the new account for "${unnamed.filename}" before importing.`);
       return;
     }
+    const unnamedProposal = pendingNewSourceAccounts.find((a) => !a.name.trim());
+    if (unnamedProposal) {
+      setServerError(`Name the new account for identifier "${unnamedProposal.identifier}" before importing.`);
+      return;
+    }
 
     setServerError(null);
     setIsPending(true);
@@ -701,10 +942,12 @@ export function ImportWorkspace({
         amountMinor: c.amountMinor,
         direction: c.direction,
         knownAccountId: c.knownAccountId,
+        proposedSourceAccountKey: c.proposedSourceAccount?.key ?? null,
         counterAccountId: c.counterpart.type === "existing" ? c.counterpart.accountId : null,
         counterAccountKey: c.counterpart.type === "existing" ? `existing:${c.counterpart.accountId}` : c.counterpart.key,
       })),
       approvedNewAccounts: pendingNewAccounts,
+      approvedNewSourceAccounts: pendingNewSourceAccounts,
     });
 
     setIsPending(false);
@@ -775,6 +1018,42 @@ export function ImportWorkspace({
       {(sourceGroups.length > 0 || counterpartGroups.length > 0 || candidates.length > 0) && (
         <div className="flex flex-wrap gap-3">
           {sourceGroups.map((group) => {
+            if (group.kind === "resolved") {
+              // Already a real Account, resolved per-row (Stone 1) —
+              // read-only for now, no file of its own to redirect (see
+              // `setSourceGroupChoice`'s own doc comment for why this
+              // isn't wired up to "Change Account" yet).
+              const account = accountsById.get(group.accountId);
+              const view = { name: account?.name ?? group.accountId, classification: account?.classification ?? "ASSET", icon: account?.icon, isNew: false };
+              return (
+                <IdentifiedAccountCard
+                  key={group.groupKey}
+                  view={view}
+                  identifier={null}
+                  transactionCount={group.transactionCount}
+                  inflowMinor={group.inflowMinor}
+                  outflowMinor={group.outflowMinor}
+                  currencySymbol={currencySymbol}
+                  currencyScale={currencyScale}
+                />
+              );
+            }
+            if (group.kind === "proposal") {
+              const view = { name: group.proposal.name, classification: group.proposal.classification as Classification, isNew: true };
+              return (
+                <IdentifiedAccountCard
+                  key={group.groupKey}
+                  view={view}
+                  identifier={group.proposal.identifier}
+                  transactionCount={group.transactionCount}
+                  inflowMinor={group.inflowMinor}
+                  outflowMinor={group.outflowMinor}
+                  currencySymbol={currencySymbol}
+                  currencyScale={currencyScale}
+                  onChange={() => setResolutionDialog({ kind: "sourceProposal", groupKey: group.groupKey })}
+                />
+              );
+            }
             const view = sourceAccountView(group.accountChoice, accountsById);
             return (
               <IdentifiedAccountCard
@@ -931,7 +1210,15 @@ export function ImportWorkspace({
                       </TableCell>
                       <TableCell className="whitespace-nowrap">{formatDate(candidate.date)}</TableCell>
                       <TableCell className={directionColor(candidate.direction)}>{directionLabel(candidate.direction)}</TableCell>
-                      <TableCell>{candidate.description}</TableCell>
+                      <TableCell>
+                        <span className="inline-flex items-center gap-1.5">
+                          {candidate.description}
+                          <PossibleDuplicateBadge
+                            sessionMatch={possibleDuplicatesById.get(candidate.clientRowId)}
+                            committedReason={candidate.possibleDuplicateOfCommitted}
+                          />
+                        </span>
+                      </TableCell>
                       <TableCell>
                         {(() => {
                           const view = counterpartAccountView(candidate.counterpart, accountsById);
@@ -974,6 +1261,7 @@ export function ImportWorkspace({
                   accountsById={accountsById}
                   currencySymbol={currencySymbol}
                   currencyScale={currencyScale}
+                  sessionDuplicateMatch={possibleDuplicatesById.get(candidate.clientRowId)}
                   selected={selected.has(candidate.clientRowId)}
                   onToggleSelect={() =>
                     setSelected((prev) => {
@@ -1081,7 +1369,7 @@ export function ImportWorkspace({
       {resolutionDialog?.kind === "source" &&
         (() => {
           const group = sourceGroups.find((g) => g.groupKey === resolutionDialog.groupKey);
-          if (!group) return null;
+          if (!group || group.kind !== "file") return null;
           const label = group.filenames.length === 1 ? group.filenames[0] : `these ${group.filenames.length} files`;
           return (
             <AccountResolutionDialog
@@ -1093,6 +1381,26 @@ export function ImportWorkspace({
               onClose={() => setResolutionDialog(null)}
               onApply={(choice, identifier) => {
                 setSourceGroupChoice(group.fileKeys, resolutionChoiceToAccountChoice(choice), identifier);
+                setResolutionDialog(null);
+              }}
+            />
+          );
+        })()}
+
+      {resolutionDialog?.kind === "sourceProposal" &&
+        (() => {
+          const group = sourceGroups.find((g) => g.groupKey === resolutionDialog.groupKey);
+          if (!group || group.kind !== "proposal") return null;
+          return (
+            <AccountResolutionDialog
+              description={`Which account should "${group.proposal.name}" transactions post against?`}
+              scope="source"
+              accounts={accounts}
+              initialChoice={proposalToResolutionChoice(group.proposal)}
+              identifier={group.proposal.identifier}
+              onClose={() => setResolutionDialog(null)}
+              onApply={(choice) => {
+                setSourceProposalChoice(group.proposal.key, choice);
                 setResolutionDialog(null);
               }}
             />
@@ -1142,20 +1450,22 @@ function IdentifiedAccountCard({
   outflowMinor: number;
   currencySymbol: string;
   currencyScale: number;
-  onChange: () => void;
+  onChange?: () => void;
 }) {
   return (
     <div className="flex w-full flex-col gap-1.5 rounded-lg border border-border p-3 text-sm sm:w-64">
       <div className="flex items-start justify-between gap-2">
         <AccountLabel {...view} />
-        <Menu>
-          <MenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" aria-label="Account options" />}>
-            <MoreVertical />
-          </MenuTrigger>
-          <MenuContent>
-            <MenuItem onClick={onChange}>Change Account</MenuItem>
-          </MenuContent>
-        </Menu>
+        {onChange && (
+          <Menu>
+            <MenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" aria-label="Account options" />}>
+              <MoreVertical />
+            </MenuTrigger>
+            <MenuContent>
+              <MenuItem onClick={onChange}>Change Account</MenuItem>
+            </MenuContent>
+          </Menu>
+        )}
       </div>
       {identifier && <p className="text-muted-foreground">Identifier: {maskIdentifier(identifier)}</p>}
       <p className="text-muted-foreground">
@@ -2291,6 +2601,7 @@ function MobileCandidateCard({
   selected,
   onToggleSelect,
   onEdit,
+  sessionDuplicateMatch,
 }: {
   candidate: WorkspaceCandidate;
   accountsById: Map<string, AccountOption>;
@@ -2299,6 +2610,7 @@ function MobileCandidateCard({
   selected: boolean;
   onToggleSelect: () => void;
   onEdit: () => void;
+  sessionDuplicateMatch?: DuplicateMatch;
 }) {
   const view = counterpartAccountView(candidate.counterpart, accountsById);
   return (
@@ -2310,7 +2622,10 @@ function MobileCandidateCard({
           </div>
           <div className="flex flex-col">
             <span className="text-xs text-muted-foreground">{formatDate(candidate.date)}</span>
-            <span className="font-medium">{candidate.description}</span>
+            <span className="inline-flex items-center gap-1.5 font-medium">
+              {candidate.description}
+              <PossibleDuplicateBadge sessionMatch={sessionDuplicateMatch} committedReason={candidate.possibleDuplicateOfCommitted} />
+            </span>
           </div>
         </div>
         <Button type="button" variant="ghost" size="sm" onClick={onEdit}>

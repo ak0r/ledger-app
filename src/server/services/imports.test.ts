@@ -10,6 +10,7 @@ import { createCurrency } from "./currencies";
 import { createAccount } from "./accounts";
 import * as XLSX from "xlsx";
 import {
+  buildPreviewFromRows,
   commitImport,
   listImports,
   previewCustomPdfImport,
@@ -259,6 +260,76 @@ describe("previewImport — account resolution", () => {
   });
 });
 
+// Per-row source-account resolution (GPay importer delta) — a source with
+// no single owning account of its own (`accountIdentifier: null` at the
+// file level, same as generic CSV's "unidentified") but each row tags the
+// real bank/card it moved money through.
+describe("buildPreviewFromRows — per-row account resolution", () => {
+  function row(accountIdentifier?: string | null) {
+    return {
+      date: "2026-09-10",
+      description: "UPI payment",
+      amountMinor: 50000,
+      direction: "debit" as const,
+      accountIdentifier,
+    };
+  }
+
+  it("resolves a row to its own account on an exact identifier match, independent of the file's own (unidentified) resolution", () => {
+    const db = createTestDb();
+    const { profile, currency } = setUpLedger(db);
+    const bank = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank", classification: "ASSET", accountType: "BANK" });
+    insertAccountIdentifier(db, { id: crypto.randomUUID(), accountId: bank.id, identifier: "0077", createdAt: "now", updatedAt: "now" });
+
+    const preview = buildPreviewFromRows(db, profile.id, "file-1", "gpay.transactions.csv", [row("0077")], null, "GPay");
+
+    expect(preview.accountResolution.status).toBe("unidentified");
+    expect(preview.candidates[0]!.knownAccountId).toBe(bank.id);
+  });
+
+  it("falls back to the file's own resolution for a row with no identifier, or one that doesn't exactly match", () => {
+    const db = createTestDb();
+    const { profile, currency } = setUpLedger(db);
+    createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank", classification: "ASSET", accountType: "BANK" });
+
+    const preview = buildPreviewFromRows(
+      db,
+      profile.id,
+      "file-1",
+      "gpay.transactions.csv",
+      [row(undefined), row("no-such-identifier")],
+      null,
+      "GPay",
+    );
+
+    expect(preview.candidates.every((c) => c.knownAccountId === null)).toBe(true);
+  });
+
+  it("never auto-resolves a row on a masked-suffix possible match — that still needs explicit confirmation", () => {
+    const db = createTestDb();
+    const { profile, currency } = setUpLedger(db);
+    const bank = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank", classification: "ASSET", accountType: "BANK" });
+    insertAccountIdentifier(db, { id: crypto.randomUUID(), accountId: bank.id, identifier: "XX0077", createdAt: "now", updatedAt: "now" });
+
+    const preview = buildPreviewFromRows(db, profile.id, "file-1", "gpay.transactions.csv", [row("0077")], null, "GPay");
+
+    expect(preview.candidates[0]!.knownAccountId).toBeNull();
+  });
+
+  it("lets different rows in the same file resolve to different accounts", () => {
+    const db = createTestDb();
+    const { profile, currency } = setUpLedger(db);
+    const bank1 = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "HDFC Bank", classification: "ASSET", accountType: "BANK" });
+    const bank2 = createAccount(db, { profileId: profile.id, currencyId: currency.id, name: "ICICI Bank", classification: "ASSET", accountType: "BANK" });
+    insertAccountIdentifier(db, { id: crypto.randomUUID(), accountId: bank1.id, identifier: "0077", createdAt: "now", updatedAt: "now" });
+    insertAccountIdentifier(db, { id: crypto.randomUUID(), accountId: bank2.id, identifier: "1234", createdAt: "now", updatedAt: "now" });
+
+    const preview = buildPreviewFromRows(db, profile.id, "file-1", "gpay.transactions.csv", [row("0077"), row("1234")], null, "GPay");
+
+    expect(preview.candidates.map((c) => c.knownAccountId)).toEqual([bank1.id, bank2.id]);
+  });
+});
+
 describe("commitImport", () => {
   function existingAccountFile(fileKey: string, accountId: string, filename = "statement.csv"): CommitImportFile {
     return { fileKey, filename, source: "generic.any.csv", identifier: null, accountChoice: { type: "existing", accountId } };
@@ -288,6 +359,7 @@ describe("commitImport", () => {
       files: [existingAccountFile("file-1", bank.id)],
       candidates,
       approvedNewAccounts: preview.newAccounts,
+      approvedNewSourceAccounts: [],
     });
 
     expect(imported).toHaveLength(1);
@@ -325,6 +397,7 @@ describe("commitImport", () => {
         ...preview2.candidates.map((c) => ({ ...c, knownAccountId: bank.id })),
       ],
       approvedNewAccounts: [...preview1.newAccounts, ...preview2.newAccounts],
+      approvedNewSourceAccounts: [],
     });
 
     expect(imported).toHaveLength(2);
@@ -357,6 +430,7 @@ describe("commitImport", () => {
       ],
       candidates: preview.candidates,
       approvedNewAccounts: preview.newAccounts,
+      approvedNewSourceAccounts: [],
     });
 
     expect(imported[0].newAccountCount).toBe(1);
@@ -387,6 +461,7 @@ describe("commitImport", () => {
       files: [{ fileKey: "file-1", filename: "statement.csv", source: "generic.any.csv", identifier: "XX3210", accountChoice: { type: "existing", accountId: bank.id } }],
       candidates: preview.candidates.map((c) => ({ ...c, knownAccountId: bank.id })),
       approvedNewAccounts: preview.newAccounts,
+      approvedNewSourceAccounts: [],
     });
 
     const identifiers = findAccountIdentifiersByProfile(db, profile.id).map((row) => row.identifier);
@@ -412,9 +487,205 @@ describe("commitImport", () => {
         files: [existingAccountFile("file-1", bank.id)],
         candidates: preview.candidates.map((c) => ({ ...c, knownAccountId: bank.id })),
         approvedNewAccounts: [],
+        approvedNewSourceAccounts: [],
       }),
     ).toThrow(NotFoundError);
 
     expect(listImports(db, profile.id)).toHaveLength(0);
+  });
+});
+
+// Cross-source reconciliation against already-committed history (GPay
+// importer delta) — the within-session cross-file check lives client-side
+// (`import-workspace.tsx`); this is the other half, run server-side in
+// `buildPreviewFromRows` against real committed Postings. Both rows carry
+// a real, resolving `accountIdentifier` (same as gpayPdf.ts's own Stone 1
+// per-row resolution) so `knownAccountId` is already set by the time
+// `buildPreviewFromRows`'s own internal reconciliation check runs —
+// setting it after the fact wouldn't retroactively trigger that check.
+describe("buildPreviewFromRows — reconciliation against committed history", () => {
+  function setUpAxisAccount(db: Db, profileId: string, currencyId: string) {
+    const axis = createAccount(db, { profileId, currencyId, name: "Axis Bank", classification: "ASSET", accountType: "BANK" });
+    insertAccountIdentifier(db, { id: crypto.randomUUID(), accountId: axis.id, identifier: "5245", createdAt: "now", updatedAt: "now" });
+    return axis;
+  }
+
+  function commitOneRow(db: Db, profileId: string, axisId: string, row: { date: string; description: string; amountMinor: number; direction: "debit" | "credit"; reference?: string; counterparty?: string }) {
+    const preview = buildPreviewFromRows(db, profileId, "file-axis", "axis.account.xls", [{ ...row, accountIdentifier: "5245" }], null, "Axis Bank");
+    commitImport(db, {
+      profileId,
+      files: [{ fileKey: "file-axis", filename: "axis.xls", source: "axis.account.xls", identifier: null, accountChoice: { type: "existing", accountId: axisId } }],
+      candidates: preview.candidates,
+      approvedNewAccounts: preview.newAccounts,
+      approvedNewSourceAccounts: [],
+    });
+  }
+
+  it("flags a new import row as a possible duplicate of an already-committed Transaction, by exact reference (UTR)", () => {
+    const db = createTestDb();
+    const { profile, currency } = setUpLedger(db);
+    const axis = setUpAxisAccount(db, profile.id, currency.id);
+    commitOneRow(db, profile.id, axis.id, { date: "2026-08-01", description: "Axis's own narration", amountMinor: 2000000, direction: "debit", reference: "621330415831" });
+
+    const gpayPreview = buildPreviewFromRows(
+      db,
+      profile.id,
+      "file-gpay",
+      "gpay.transactions.pdf",
+      [{ date: "2026-08-01", description: "Self transfer to Federal Bank 1220", amountMinor: 2000000, direction: "debit", reference: "621330415831", accountIdentifier: "5245" }],
+      null,
+      "Google Pay",
+    );
+
+    expect(gpayPreview.candidates[0]!.knownAccountId).toBe(axis.id);
+    expect(gpayPreview.candidates[0]!.possibleDuplicate).toBe("reference");
+  });
+
+  it("flags a heuristic match (date + amount + direction + account, no reference) against committed history", () => {
+    const db = createTestDb();
+    const { profile, currency } = setUpLedger(db);
+    const axis = setUpAxisAccount(db, profile.id, currency.id);
+    commitOneRow(db, profile.id, axis.id, { date: "2026-08-05", description: "Axis's own narration", amountMinor: 172500, direction: "debit", counterparty: "DHAIRYASHIL B BODAKE" });
+
+    const gpayPreview = buildPreviewFromRows(
+      db,
+      profile.id,
+      "file-gpay",
+      "gpay.transactions.pdf",
+      [{ date: "2026-08-05", description: "Paid to D B", amountMinor: 172500, direction: "debit", accountIdentifier: "5245" }],
+      null,
+      "Google Pay",
+    );
+
+    expect(gpayPreview.candidates[0]!.possibleDuplicate).toBe("heuristic");
+  });
+
+  it("does not flag a new import row when nothing in history matches (different amount)", () => {
+    const db = createTestDb();
+    const { profile, currency } = setUpLedger(db);
+    const axis = setUpAxisAccount(db, profile.id, currency.id);
+    commitOneRow(db, profile.id, axis.id, { date: "2026-08-01", description: "Axis's own narration", amountMinor: 2000000, direction: "debit", reference: "621330415831" });
+
+    const gpayPreview = buildPreviewFromRows(
+      db,
+      profile.id,
+      "file-gpay",
+      "gpay.transactions.pdf",
+      [{ date: "2026-08-01", description: "A genuinely different payment", amountMinor: 500, direction: "debit", reference: "000000000000", accountIdentifier: "5245" }],
+      null,
+      "Google Pay",
+    );
+
+    expect(gpayPreview.candidates[0]!.possibleDuplicate).toBeNull();
+  });
+
+  it("does not flag a row that never resolved to a real Account", () => {
+    const db = createTestDb();
+    const { profile, currency } = setUpLedger(db);
+    const axis = setUpAxisAccount(db, profile.id, currency.id);
+    commitOneRow(db, profile.id, axis.id, { date: "2026-08-01", description: "Axis's own narration", amountMinor: 2000000, direction: "debit", reference: "621330415831" });
+
+    // No accountIdentifier at all this time — stays unresolved.
+    const gpayPreview = buildPreviewFromRows(
+      db,
+      profile.id,
+      "file-gpay",
+      "gpay.transactions.pdf",
+      [{ date: "2026-08-01", description: "Self transfer to Federal Bank 1220", amountMinor: 2000000, direction: "debit", reference: "621330415831" }],
+      null,
+      "Google Pay",
+    );
+
+    expect(gpayPreview.candidates[0]!.knownAccountId).toBeNull();
+    expect(gpayPreview.candidates[0]!.possibleDuplicate).toBeNull();
+  });
+});
+
+// Real bug, reported against the running app: a GPay row routed through a
+// credit card the user hadn't added yet ("Federal Bank XX97 | RuPay
+// credit card") silently landed on whichever account the rest of the
+// file resolved to, instead of surfacing as its own new-Account proposal.
+describe("buildPreviewFromRows — per-row new source Account proposals (GPay importer delta)", () => {
+  function creditCardRow() {
+    return {
+      date: "2026-08-01",
+      description: "Paid to WASTELAND ENTERTAINMENT PRIVATE LIMITED DISTRICT EVENT UPI",
+      amountMinor: 150000,
+      direction: "debit" as const,
+      reference: "621319236710",
+      accountIdentifier: "97",
+      proposedAccountName: "Federal Bank ••97",
+      proposedAccountType: "CREDIT_CARD" as const,
+      proposedAccountClassification: "LIABILITY" as const,
+    };
+  }
+
+  it("proposes a new Liability/CREDIT_CARD Account for an identifier that matches nothing existing, instead of deferring to the file default", () => {
+    const db = createTestDb();
+    const { profile } = setUpLedger(db);
+
+    const preview = buildPreviewFromRows(db, profile.id, "file-gpay", "gpay.transactions.pdf", [creditCardRow()], null, "Google Pay");
+
+    expect(preview.newSourceAccounts).toEqual([
+      { key: "source:97", identifier: "97", name: "Federal Bank ••97", classification: "LIABILITY", accountType: "CREDIT_CARD" },
+    ]);
+    expect(preview.candidates[0]).toMatchObject({ knownAccountId: null, proposedSourceAccountKey: "source:97" });
+  });
+
+  it("collapses multiple rows sharing the same unresolved identifier into one proposal", () => {
+    const db = createTestDb();
+    const { profile } = setUpLedger(db);
+
+    const preview = buildPreviewFromRows(
+      db,
+      profile.id,
+      "file-gpay",
+      "gpay.transactions.pdf",
+      [creditCardRow(), { ...creditCardRow(), date: "2026-08-05", reference: "621780459927" }],
+      null,
+      "Google Pay",
+    );
+
+    expect(preview.newSourceAccounts).toHaveLength(1);
+    expect(preview.candidates.every((c) => c.proposedSourceAccountKey === "source:97")).toBe(true);
+  });
+
+  it("creates the proposed Account (with the identifier + its masked variants) and posts against it once approved", () => {
+    const db = createTestDb();
+    const { profile } = setUpLedger(db);
+
+    const preview = buildPreviewFromRows(db, profile.id, "file-gpay", "gpay.transactions.pdf", [creditCardRow()], null, "Google Pay");
+
+    const imported = commitImport(db, {
+      profileId: profile.id,
+      files: [{ fileKey: "file-gpay", filename: "gpay.pdf", source: "gpay.transactions.pdf", identifier: null, accountChoice: { type: "new", name: "GPay fallback", classification: "ASSET", accountType: "BANK" } }],
+      candidates: preview.candidates,
+      approvedNewAccounts: preview.newAccounts,
+      approvedNewSourceAccounts: preview.newSourceAccounts,
+    });
+
+    expect(imported).toHaveLength(1);
+    const created = findAccountsByProfile(db, profile.id).find((a) => a.name === "Federal Bank ••97");
+    expect(created).toMatchObject({ classification: "LIABILITY", accountType: "CREDIT_CARD" });
+    const identifiers = findAccountIdentifiersByProfile(db, profile.id)
+      .filter((row) => row.accountId === created!.id)
+      .map((row) => row.identifier);
+    expect(identifiers).toContain("97");
+  });
+
+  it("throws NotFoundError when a proposed source Account was never approved", () => {
+    const db = createTestDb();
+    const { profile } = setUpLedger(db);
+    const preview = buildPreviewFromRows(db, profile.id, "file-gpay", "gpay.transactions.pdf", [creditCardRow()], null, "Google Pay");
+
+    expect(() =>
+      commitImport(db, {
+        profileId: profile.id,
+        files: [{ fileKey: "file-gpay", filename: "gpay.pdf", source: "gpay.transactions.pdf", identifier: null, accountChoice: { type: "new", name: "GPay fallback", classification: "ASSET", accountType: "BANK" } }],
+        candidates: preview.candidates,
+        approvedNewAccounts: preview.newAccounts,
+        approvedNewSourceAccounts: [],
+      }),
+    ).toThrow(NotFoundError);
   });
 });

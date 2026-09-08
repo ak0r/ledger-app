@@ -215,6 +215,8 @@ export function createTransaction(
     // import-committed transactions are built directly in
     // use-cases/imports.ts, not through this function.
     importFileId: null,
+    reference: null,
+    counterparty: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -337,6 +339,10 @@ export function mergeTransactions(
     // to attribute to even if some inputs did (delta §4 doesn't define this
     // case, and merge already isn't offered from the Import flow).
     importFileId: null,
+    // Same reasoning — a merge of N inputs has no single reference/
+    // counterparty to carry forward either, even if one input had one.
+    reference: null,
+    counterparty: null,
     createdAt: now,
     updatedAt: now,
   };

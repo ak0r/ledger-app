@@ -48,16 +48,22 @@ describe("axisAccountXlsAdapter.parse", () => {
     expect(totalCredit).toBe(3435000); // 1200+25000+8000+150 = 34350.00 in paise
   });
 
-  it("parses a representative UPI debit", async () => {
+  it("parses a representative UPI debit, extracting the UPI transaction ID (UTR) as reference", async () => {
     const result = await resultPromise;
     const row = result.rows.find((r) => r.description.includes("SAMPLE PERSON/UTIB"));
-    expect(row).toMatchObject({ date: "2026-04-05", direction: "debit", amountMinor: 50000 });
+    expect(row).toMatchObject({ date: "2026-04-05", direction: "debit", amountMinor: 50000, reference: "000000000001" });
   });
 
-  it("parses a representative UPI credit", async () => {
+  it("parses a representative UPI credit, extracting the UPI transaction ID (UTR) as reference", async () => {
     const result = await resultPromise;
     const row = result.rows.find((r) => r.description.includes("SAMPLE PERSON TWO"));
-    expect(row).toMatchObject({ date: "2026-04-06", direction: "credit", amountMinor: 120000 });
+    expect(row).toMatchObject({ date: "2026-04-06", direction: "credit", amountMinor: 120000, reference: "000000000002" });
+  });
+
+  it("extracts the UTR from a UPI merchant payment (P2M) the same way as a person-to-person one (P2A)", async () => {
+    const result = await resultPromise;
+    const row = result.rows.find((r) => r.description.includes("SAMPLE MERCHANT"));
+    expect(row).toMatchObject({ date: "2026-04-25", direction: "debit", amountMinor: 120000, reference: "000000000006" });
   });
 
   it("parses a representative NEFT credit", async () => {

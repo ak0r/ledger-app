@@ -440,6 +440,18 @@ const newAccountDescriptorSchema = z.object({
   name: z.string().trim().min(1),
 });
 
+// GPay importer delta — mirrors `newAccountDescriptorSchema`, but for a
+// per-row *source* Account proposal (never Expense/Income; always a real
+// Account Type, since a credit-card-routed row must propose Liability/
+// CREDIT_CARD, not just "Asset").
+const newSourceAccountDescriptorSchema = z.object({
+  key: z.string().min(1),
+  identifier: z.string().min(1),
+  name: z.string().trim().min(1),
+  classification: z.enum(["ASSET", "LIABILITY"]),
+  accountType: z.enum(ACCOUNT_TYPES),
+});
+
 const previewCandidateSchema = z.object({
   fileKey: z.string().min(1),
   date: z.string().min(1),
@@ -448,8 +460,19 @@ const previewCandidateSchema = z.object({
   direction: z.enum(["debit", "credit"]),
   reference: z.string().optional(),
   knownAccountId: z.string().min(1).nullable(),
+  // GPay importer delta — which `approvedNewSourceAccounts` entry (if any)
+  // this row is waiting on; `commitImport` throws if it's set but wasn't
+  // approved, same posture `counterAccountKey` already has for
+  // counterparts.
+  proposedSourceAccountKey: z.string().min(1).nullable().default(null),
   counterAccountId: z.string().min(1).nullable(),
   counterAccountKey: z.string().min(1),
+  // Round-tripped from the preview response along with everything else
+  // above (the client sends back the same candidates it was shown) —
+  // purely informational, never read by `commitImport` itself, so a
+  // missing/stale value here can never affect what actually gets
+  // committed.
+  possibleDuplicate: z.enum(["reference", "heuristic"]).nullable().default(null),
 });
 
 // The source-account resolution the user confirmed for one file (delta
@@ -478,6 +501,7 @@ export const commitImportSchema = z.object({
   files: z.array(commitImportFileSchema).min(1, "No files to commit"),
   candidates: z.array(previewCandidateSchema).min(1, "No candidates to commit"),
   approvedNewAccounts: z.array(newAccountDescriptorSchema).default([]),
+  approvedNewSourceAccounts: z.array(newSourceAccountDescriptorSchema).default([]),
 });
 
 // Budget Framework delta (docs/completed/2026-09-01-Budget-Framework.md) —

@@ -160,6 +160,8 @@ class DatasetBuilder {
       description,
       tags,
       importFileId: null,
+      reference: null,
+      counterparty: null,
       createdAt: this.now,
       updatedAt: this.now,
     });

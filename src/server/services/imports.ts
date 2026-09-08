@@ -24,7 +24,7 @@ import {
   type AccountIdentifierRow,
 } from "../repositories/accountIdentifiers";
 import { insertImportFile, findImportFilesByProfile, type ImportFileRow } from "../repositories/importFiles";
-import { insertPostings, insertTransaction } from "../repositories/transactions";
+import { insertPostings, insertTransaction, findPostingsForReconciliation } from "../repositories/transactions";
 import type { PostingRow, TransactionRow } from "../repositories/transactions";
 import {
   resolveImport,
@@ -36,6 +36,7 @@ import {
 } from "../importers";
 import { NotFoundError, TransactionValidationError, UnsupportedImportFormatError } from "./errors";
 import { derivePostings, resolveBaseCurrency, type PostingInput } from "./transactions";
+import { findPossibleDuplicates, type DuplicateMatch } from "@/lib/duplicate-detection";
 
 // A catch-all counter-account is identified by classification+name, not id,
 // until Account Resolution finds (or Commit creates) the real row — same
@@ -69,6 +70,11 @@ export interface PreviewCandidate {
   amountMinor: number;
   direction: ImportDirection;
   reference?: string;
+  // Echoed straight from `NormalizedImportRow` — cross-source
+  // reconciliation (`lib/duplicate-detection.ts`, GPay importer delta)
+  // uses both as "if available" refinements, never a hard requirement.
+  time?: string;
+  counterparty?: string;
   // Account Resolution delta §3 — no upfront account selection, so this is
   // provisional: null defers to the file's own resolved/created account
   // (finalized at commit); non-null means an existing account is already
@@ -79,12 +85,45 @@ export interface PreviewCandidate {
   // pending one of `newAccounts` being approved and created at commit.
   counterAccountId: string | null;
   counterAccountKey: string;
+  // Cross-source reconciliation against already-committed history (GPay
+  // importer delta) — `lib/duplicate-detection.ts` run server-side
+  // against `findPostingsForReconciliation`'s own query, for whichever
+  // rows already resolved to a real Account (rule #6: date has always
+  // meant this Profile's own data only, via that Account's ownership).
+  // The *within-session* cross-file check (uploading a GPay export and a
+  // Bank statement together) stays client-side — the server only ever
+  // sees one file's own rows per `previewImport` call, no visibility
+  // across others in the same workspace.
+  possibleDuplicate: DuplicateMatch["reason"] | null;
+  // GPay importer delta — a row whose own `accountIdentifier` (Stone 1)
+  // didn't exact-match an existing Account gets proposed as a *new*
+  // source Account instead of silently deferring to whatever the file's
+  // own single default happens to be (the original gap: "Federal Bank
+  // XX97 | RuPay credit card" never got its own new-Account card, its
+  // rows just got folded into whichever account the file itself
+  // resolved to). Null for every row that either resolved directly
+  // (`knownAccountId` non-null) or carries no identifier at all (defers
+  // to the file's own resolution, unchanged).
+  proposedSourceAccountKey: string | null;
 }
 
 export interface NewAccountDescriptor {
   key: string;
   classification: "EXPENSE" | "INCOME";
   name: string;
+}
+
+// GPay importer delta — mirrors `NewAccountDescriptor`'s shape for the
+// counterpart side, but for a per-row *source* Account proposal: never
+// Expense/Income, always Asset/Liability with a real Account Type (a
+// credit-card-routed row must become a Liability/CREDIT_CARD Account, not
+// an Asset/BANK one — `gpayPdf.ts`'s own text already says which).
+export interface NewSourceAccountDescriptor {
+  key: string;
+  identifier: string;
+  name: string;
+  classification: "ASSET" | "LIABILITY";
+  accountType: AccountType;
 }
 
 export type AccountResolutionStatus = "resolved" | "possibleMatch" | "ambiguous" | "new" | "unidentified";
@@ -159,6 +198,7 @@ export interface ImportPreview {
   accountResolution: AccountResolution;
   candidates: PreviewCandidate[];
   newAccounts: NewAccountDescriptor[];
+  newSourceAccounts: NewSourceAccountDescriptor[];
   dateRangeStart: string | null;
   dateRangeEnd: string | null;
   transactionCount: number;
@@ -216,7 +256,7 @@ export async function previewImport(db: Db, input: PreviewImportInput): Promise<
 // adapter (`previewImport` above) or a user's own column mapping
 // (`previewCustomXlsImport`/`previewCustomPdfImport` below). Kept as one
 // function so this logic is never duplicated per source.
-function buildPreviewFromRows(
+export function buildPreviewFromRows(
   db: Db,
   profileId: string,
   fileKey: string,
@@ -228,6 +268,7 @@ function buildPreviewFromRows(
   const accountResolution = resolveAccountForFile(db, profileId, accountIdentifier, institutionLabel);
   const existingAccounts = findAccountsByProfile(db, profileId);
   const newAccountsByKey = new Map<string, NewAccountDescriptor>();
+  const newSourceAccountsByKey = new Map<string, NewSourceAccountDescriptor>();
 
   const candidates: PreviewCandidate[] = rows.map((row) => {
     const descriptor = resolveUnknownCounterAccount(row.direction);
@@ -237,6 +278,44 @@ function buildPreviewFromRows(
       newAccountsByKey.set(key, { key, classification: descriptor.classification, name: descriptor.name });
     }
 
+    // A row carrying its own source-account identity (e.g. GPay, which has
+    // no account of its own — every row instead tags the real bank/card it
+    // moved money through) resolves independently of the file-level
+    // identifier above. Exact match only, never the file-level resolution's
+    // masked-suffix "possible match" heuristic — that still requires a
+    // person to confirm which account it means (Account Resolution delta
+    // §11's "never auto-merged"), and there's no per-row UI for that
+    // confirmation yet. An unresolved row (no identifier, or one that
+    // doesn't exactly match a known account) falls back to the file's own
+    // resolution exactly as before — unchanged behavior for every existing
+    // adapter, none of which ever set `row.accountIdentifier`.
+    const rowAccountId = row.accountIdentifier
+      ? findAccountIdByIdentifier(db, profileId, row.accountIdentifier)
+      : undefined;
+
+    // An identifier that didn't exact-match becomes its own new-Account
+    // proposal (GPay importer delta) instead of quietly deferring to
+    // whatever the file's own single default resolved to — the real bug
+    // this fixes: a credit-card-routed row landed on the file's default
+    // Bank account, its own Liability/CREDIT_CARD identity never surfaced
+    // anywhere. Keyed by the raw identifier so every row sharing it (the
+    // same real card/account, seen across several GPay rows) collapses
+    // into one proposal, same posture `newAccountsByKey` above already
+    // has for counterpart accounts.
+    let proposedSourceAccountKey: string | null = null;
+    if (!rowAccountId && row.accountIdentifier && row.proposedAccountName && row.proposedAccountType && row.proposedAccountClassification) {
+      proposedSourceAccountKey = `source:${row.accountIdentifier}`;
+      if (!newSourceAccountsByKey.has(proposedSourceAccountKey)) {
+        newSourceAccountsByKey.set(proposedSourceAccountKey, {
+          key: proposedSourceAccountKey,
+          identifier: row.accountIdentifier,
+          name: row.proposedAccountName,
+          classification: row.proposedAccountClassification,
+          accountType: row.proposedAccountType,
+        });
+      }
+    }
+
     return {
       fileKey,
       date: row.date,
@@ -244,23 +323,94 @@ function buildPreviewFromRows(
       amountMinor: row.amountMinor,
       direction: row.direction,
       reference: row.reference,
-      knownAccountId: accountResolution.status === "resolved" ? accountResolution.resolvedAccountId : null,
+      time: row.time,
+      counterparty: row.counterparty,
+      // A pending new-Account proposal wins over the file's own default —
+      // never silently attribute this row to the wrong account while its
+      // own proposal is still waiting for approval.
+      knownAccountId:
+        rowAccountId ??
+        (proposedSourceAccountKey ? null : accountResolution.status === "resolved" ? accountResolution.resolvedAccountId : null),
+      proposedSourceAccountKey,
       counterAccountId: existingId ?? null,
       counterAccountKey: key,
+      possibleDuplicate: null,
     };
   });
 
   const dates = rows.map((row) => row.date).sort();
+  flagPossibleDuplicatesAgainstHistory(db, profileId, candidates, dates[0], dates[dates.length - 1]);
 
   return {
     source,
     accountResolution,
     candidates,
     newAccounts: [...newAccountsByKey.values()],
+    newSourceAccounts: [...newSourceAccountsByKey.values()],
     dateRangeStart: dates[0] ?? null,
     dateRangeEnd: dates[dates.length - 1] ?? null,
     transactionCount: candidates.length,
   };
+}
+
+// Cross-source reconciliation against already-committed history (GPay
+// importer delta) — mutates `candidates` in place, setting
+// `possibleDuplicate` on whichever ones match. Scoped to the accounts
+// this batch's own rows actually resolved to and the date range those
+// rows span — a fresh import's own candidates are the "import" source,
+// committed Postings for the same Accounts/dates are the "committed"
+// source, and `findPossibleDuplicates` (shared with the client's own
+// within-session check) runs the same way against both. No `time` on the
+// committed side (Transactions have never stored one) — degrades exactly
+// the way it's designed to whenever one side lacks it.
+function flagPossibleDuplicatesAgainstHistory(
+  db: Db,
+  profileId: string,
+  candidates: PreviewCandidate[],
+  dateStart: string | undefined,
+  dateEnd: string | undefined,
+): void {
+  if (!dateStart || !dateEnd) return;
+  const accountIds = [...new Set(candidates.map((c) => c.knownAccountId).filter((id): id is string => id !== null))];
+  if (accountIds.length === 0) return;
+
+  const committed = findPostingsForReconciliation(db, profileId, accountIds, dateStart, dateEnd);
+
+  const importRows = candidates.map((candidate, index) => ({
+    id: `import-${index}`,
+    sourceKey: "import",
+    date: candidate.date,
+    amountMinor: candidate.amountMinor,
+    direction: candidate.direction,
+    accountId: candidate.knownAccountId,
+    reference: candidate.reference,
+    time: candidate.time,
+    counterparty: candidate.counterparty,
+  }));
+  const committedRows = committed.map((posting, index) => ({
+    id: `committed-${index}`,
+    sourceKey: "committed",
+    date: posting.date,
+    amountMinor: Math.abs(posting.units),
+    // `ImportDirection` is the *statement's* own vocabulary (§ ImportDirection's
+    // own doc comment) — a "debit" row means money left the known account,
+    // which `buildPostingAmounts` persists as a *negative* `units` on that
+    // account's own Posting (`known: { debit: 0, credit: amountMinor }`).
+    // Positive units is the credit-direction case, inverted from what the
+    // sign might suggest at a glance.
+    direction: (posting.units < 0 ? "debit" : "credit") as ImportDirection,
+    accountId: posting.accountId,
+    reference: posting.reference ?? undefined,
+    counterparty: posting.counterparty ?? undefined,
+  }));
+
+  const matches = findPossibleDuplicates([...importRows, ...committedRows]);
+  const matchByImportId = new Map(matches.filter((m) => m.id.startsWith("import-")).map((m) => [m.id, m.reason]));
+
+  importRows.forEach((row, index) => {
+    const reason = matchByImportId.get(row.id);
+    if (reason) candidates[index]!.possibleDuplicate = reason;
+  });
 }
 
 export interface PreviewCustomXlsImportInput {
@@ -392,6 +542,9 @@ export interface CommitImportInput {
   files: CommitImportFile[];
   candidates: PreviewCandidate[];
   approvedNewAccounts: NewAccountDescriptor[];
+  // GPay importer delta — mirrors `approvedNewAccounts`, but for per-row
+  // source-Account proposals (`PreviewCandidate.proposedSourceAccountKey`).
+  approvedNewSourceAccounts: NewSourceAccountDescriptor[];
 }
 
 function buildIdentifierRow(accountId: string, identifier: string, now: string): AccountIdentifierRow {
@@ -451,6 +604,52 @@ export function commitImport(db: Db, input: CommitImportInput): ImportFileRow[] 
         );
       }
       return resolved;
+    }
+
+    // GPay importer delta — a per-row source-Account proposal, approved
+    // the same way an approved counterpart is: created once per distinct
+    // key, every row sharing that key resolves to the one created Account.
+    // Also learns the identifier that produced the proposal in the first
+    // place (+ its masked variants), same as a file-level "new" choice
+    // does below — the next statement showing this same card/account
+    // resolves directly instead of proposing it all over again.
+    const createdSourceAccountIds = new Map<string, string>();
+    if (input.approvedNewSourceAccounts.length > 0) {
+      const currency = findCurrenciesByProfile(tx, input.profileId)[0];
+      if (!currency) {
+        throw new NotFoundError(`No currency configured for profile ${input.profileId}`);
+      }
+
+      for (const descriptor of input.approvedNewSourceAccounts) {
+        if (createdSourceAccountIds.has(descriptor.key)) continue;
+
+        const created = createAccount(tx, {
+          profileId: input.profileId,
+          currencyId: currency.id,
+          name: descriptor.name,
+          classification: descriptor.classification,
+          accountType: descriptor.accountType,
+        });
+        createdSourceAccountIds.set(descriptor.key, created.id);
+        insertAccountIdentifier(tx, buildIdentifierRow(created.id, descriptor.identifier, now));
+        for (const variant of deriveIdentifierVariants(descriptor.identifier)) {
+          insertAccountIdentifier(tx, buildIdentifierRow(created.id, variant, now));
+        }
+      }
+    }
+
+    function resolveSourceAccountId(candidate: PreviewCandidate, fileDefaultAccountId: string): string {
+      if (candidate.knownAccountId) return candidate.knownAccountId;
+      if (candidate.proposedSourceAccountKey) {
+        const resolved = createdSourceAccountIds.get(candidate.proposedSourceAccountKey);
+        if (!resolved) {
+          throw new NotFoundError(
+            `Source account "${candidate.proposedSourceAccountKey}" was not found and was not approved for creation`,
+          );
+        }
+        return resolved;
+      }
+      return fileDefaultAccountId;
     }
 
     const candidatesByFileKey = new Map<string, PreviewCandidate[]>();
@@ -515,7 +714,7 @@ export function commitImport(db: Db, input: CommitImportInput): ImportFileRow[] 
       let outflowMinor = 0;
 
       for (const candidate of fileCandidates) {
-        const knownAccountId = candidate.knownAccountId ?? resolvedAccountId;
+        const knownAccountId = resolveSourceAccountId(candidate, resolvedAccountId);
         const counterAccountId = resolveCounterAccountId(candidate);
         const amounts = buildPostingAmounts(candidate.direction, candidate.amountMinor);
         const transactionId = crypto.randomUUID();
@@ -530,6 +729,12 @@ export function commitImport(db: Db, input: CommitImportInput): ImportFileRow[] 
           description: candidate.description,
           tags: null,
           importFileId,
+          // GPay importer delta — kept for a *future* import to check
+          // against this Transaction once it's committed history
+          // (`findTransactionsForReconciliation`); never read back for
+          // anything Ledger-facing itself.
+          reference: candidate.reference ?? null,
+          counterparty: candidate.counterparty ?? null,
           createdAt: now,
           updatedAt: now,
         });

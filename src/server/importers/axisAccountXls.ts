@@ -7,6 +7,24 @@ const PARTICULARS_HEADER = "particulars";
 const TRAN_DATE_HEADER = "tran date";
 const DATE_ROW_PATTERN = /^\d{2}-\d{2}-\d{4}$/;
 const ACCOUNT_NO_PATTERN = /Axis Account No\s*-\s*(\d+)/i;
+// "UPI/P2A/645701741525/POONAM AM/INDB/UPI/" -> "645701741525" — the UPI
+// transaction ID (UTR), verified against a real statement to appear on
+// every UPI-routed row in exactly this position (the 3rd "/"-separated
+// PARTICULARS segment, right after "UPI/P2A" or "UPI/P2M"). Cross-source
+// reconciliation (GPay importer delta) depends on this: it's the same ID
+// a UPI app's own transaction history shows for the same payment, so an
+// exact match is a near-certain duplicate signal — CHQNO (this adapter's
+// only prior `reference` source) is always blank for a UPI row.
+const UPI_UTR_PATTERN = /^UPI\/P2[AM]\/(\d+)\//;
+// "UPI/P2A/645701741525/POONAM AM/INDB/UPI/" -> "POONAM AM" — the 4th
+// "/"-separated segment is the counterparty/merchant name on every
+// UPI-shaped row (verified against a real statement across both P2A
+// person-to-person and P2M merchant payments). Only meaningful for that
+// shape; non-UPI PARTICULARS (NEFT/IMPS/MOB SELFFT/interest/charges) get
+// no `counterparty` at all rather than a guess — cross-source
+// reconciliation (`lib/duplicate-detection.ts`) only ever compares this
+// field when both sides have one.
+const UPI_COUNTERPARTY_PATTERN = /^UPI\/P2[AM]\/\d+\/([^/]+)\//;
 // Deliberately more specific than a bare "AXIS BANK" scan (row-level
 // PARTICULARS text can legitimately mention "AXIS BANK" for a transfer
 // to/from an Axis account on a *different* institution's statement) — this
@@ -84,12 +102,16 @@ export const axisAccountXlsAdapter: ImportAdapter = {
       }
       if (!direction) continue;
 
+      const utr = UPI_UTR_PATTERN.exec(description)?.[1];
+      const counterparty = UPI_COUNTERPARTY_PATTERN.exec(description)?.[1]?.trim();
+
       normalized.push({
         date: toIsoDate(dateCell),
         description,
         amountMinor: toMinorUnits(amount, minorUnitScale),
         direction,
-        reference: chequeNo || undefined,
+        reference: utr ?? (chequeNo || undefined),
+        counterparty: counterparty || undefined,
       });
     }
 

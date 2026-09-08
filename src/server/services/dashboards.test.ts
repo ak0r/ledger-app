@@ -131,6 +131,33 @@ describe("getDashboardForContext", () => {
 
     expect(first.dashboard.id).toBe(second.dashboard.id);
   });
+
+  // Real bug, reproduced against the real data/ledger.db: every Profile
+  // that predates the Dashboard System Phase 1 delta only ever got a
+  // single Dashboard row backfilled onto it (now `context = 'FINANCIAL'`),
+  // never the other two — `createStarterDashboard`'s old unconditional
+  // "insert all 3" loop hit `UNIQUE(profile_id, context)` on the one that
+  // already existed the first time such a Profile opened a non-Financial
+  // tab. `db.delete` below reproduces that exact partial state directly,
+  // rather than depending on some other test's setup to have left it that
+  // way by accident.
+  it("does not throw when a Profile already has a Financial Dashboard but no Spending/Income row yet (a Profile predating this delta)", async () => {
+    const db = createTestDb();
+    const { profile } = setUp(db);
+    const { dashboards } = await import("../persistence/schema");
+    const { eq, and, ne } = await import("drizzle-orm");
+
+    const financial = getDashboardForContext(db, profile.id, "FINANCIAL");
+    db.delete(dashboards).where(and(eq(dashboards.profileId, profile.id), ne(dashboards.context, "FINANCIAL"))).run();
+
+    expect(() => getDashboardForContext(db, profile.id, "SPENDING")).not.toThrow();
+    const spending = getDashboardForContext(db, profile.id, "SPENDING");
+    const stillFinancial = getDashboardForContext(db, profile.id, "FINANCIAL");
+    expect(spending.dashboard.context).toBe("SPENDING");
+    // The pre-existing Financial row is reused, not recreated as a
+    // duplicate under a new id.
+    expect(stillFinancial.dashboard.id).toBe(financial.dashboard.id);
+  });
 });
 
 describe("getDefaultDashboardWithPanels", () => {

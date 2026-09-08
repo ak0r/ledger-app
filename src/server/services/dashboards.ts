@@ -90,11 +90,25 @@ function buildDashboardRow(profileId: string, context: DashboardContext, now: st
 // future starter set) adds panels; returns the Financial one specifically
 // so existing callers/tests that only cared about "the" Starter Dashboard
 // keep working unchanged.
+//
+// Skips a context that already has a row instead of blindly inserting all
+// 3 (`UNIQUE(profile_id, context)` otherwise throws) — a real gap, not a
+// hypothetical: every Profile that predates the Dashboard System Phase 1
+// delta only ever got a single (now `context = 'FINANCIAL'`) row backfilled
+// onto it, never the other two, so `getDashboardForContext`'s own lazy-
+// create-all-3 call below collided on the one that already existed the
+// first time such a Profile ever opened a non-Financial tab.
 export function createStarterDashboard(tx: DbOrTx, profileId: string): DashboardWithPanels {
   const now = new Date().toISOString();
   let financial: DashboardWithPanels | undefined;
 
   for (const context of DASHBOARD_CONTEXTS) {
+    const existing = findDashboardByProfileAndContext(tx, profileId, context);
+    if (existing) {
+      if (context === "FINANCIAL") financial = { dashboard: existing, panels: findPanelsByDashboard(tx, existing.id) };
+      continue;
+    }
+
     const dashboard = buildDashboardRow(profileId, context, now);
     const panels =
       context === "FINANCIAL" ? STARTER_PANEL_LAYOUT.map(({ key, x, y }) => buildPanelRow(dashboard.id, key, x, y, now)) : [];

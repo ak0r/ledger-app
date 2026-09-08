@@ -27,7 +27,10 @@ current scope, not a launch checklist. Full detail per module lives in
 ### Imports (Ledger)
 
 - Statement upload: generic CSV, HDFC/Axis/IDFC FIRST Bank Account XLS,
-  Federal Bank Account PDF (password-protected)
+  Federal Bank Account PDF (password-protected), Google Pay Transactions PDF
+  (per-row source account resolution, no owning account of its own)
+- Possible-duplicate detection (reference/heuristic match, advisory only —
+  no auto-exclude, no resolution workflow yet)
 - Adapter auto-detection, account resolution (exact / possible-match /
   ambiguous / propose new), for both the source account and every
   counterparty

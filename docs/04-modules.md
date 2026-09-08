@@ -99,7 +99,29 @@ Commit to Ledger (atomic)
   the resulting Transactions/Postings — normal double-entry rows,
   permanently tagged with `import_file_id`.
 - Sources supported today: generic CSV, HDFC Bank Account XLS, Axis Bank
-  Account XLS, IDFC FIRST Bank Account XLS, Federal Bank Account PDF.
+  Account XLS, IDFC FIRST Bank Account XLS, Federal Bank Account PDF,
+  Google Pay Transactions PDF.
+- **Google Pay is not itself an Account** — it's a pass-through statement;
+  every row instead names the real bank/card the payment moved through
+  ("Paid by Federal Bank XX97 | RuPay credit card", "Paid to Axis Bank
+  5245"). Account Resolution runs per row instead of once per file: an
+  identifier that exact-matches an existing Account resolves to it, one
+  that doesn't gets its own correctly-typed new-Account proposal (e.g. a
+  "credit card" mention in the account line proposes Liability/Credit
+  Card, not Asset/Bank) — never silently folded into whichever account the
+  rest of the file happens to resolve to.
+- **Possible-duplicate detection** (advisory only, not a blocking gate):
+  every preview row is checked against both the other rows in the current
+  upload and Transactions already committed to the Ledger. An exact
+  reference match (e.g. shared UPI transaction ID) always wins as "Likely
+  duplicate"; otherwise a heuristic pass flags "Possible duplicate" when
+  date, amount, account, and direction all match, times (if both rows have
+  one) are within 30 minutes, and counterparties (if both rows have one)
+  share a name token. A present-but-different reference on both sides is
+  treated as negative evidence and blocks the heuristic match outright. The
+  flag is purely informational (a badge with an explanation on hover) —
+  nothing is auto-excluded from commit; there is no resolution workflow yet
+  (see `docs/10-open-decisions.md`).
 - Password-protected files (Federal Bank's PDF statements, ADR-034): the UI
   prompts for a password only when the adapter reports one is needed (or
   wrong), sends it once to the server for that single parse call, and never
@@ -108,9 +130,10 @@ Commit to Ledger (atomic)
   needs to flow past preview.
 
 **Still deferred** (explicit future plugin extension points, not built):
-Rules (auto-categorization), Duplicate Detection, any adapter beyond the
-five above, email/SMS statement sources, PDF statements from any
-institution other than Federal Bank.
+Rules (auto-categorization), a Reconciliation Centre / duplicate-resolution
+workflow (today's detection is advisory-only, see Open Decisions), any
+adapter beyond the six above, email/SMS statement sources, PDF statements
+from any institution other than Federal Bank and Google Pay.
 
 ## Recurring Transactions
 

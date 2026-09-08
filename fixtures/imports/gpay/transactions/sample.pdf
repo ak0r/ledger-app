@@ -1,0 +1,195 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 6 0 R >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 7 0 R >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Length 1536 >>
+stream
+BT
+/F1 14 Tf
+1 0 0 1 24 760 Tm
+(Transaction statement) Tj
+/F1 10 Tf
+1 0 0 1 24 744 Tm
+(9999999999, sample.user@example.com) Tj
+/F1 10 Tf
+1 0 0 1 24 700 Tm
+(Transaction statement period) Tj
+/F1 10 Tf
+1 0 0 1 24 685 Tm
+(01 September 2026 - 30 September 2026) Tj
+/F1 10 Tf
+1 0 0 1 24 650 Tm
+(Date & time) Tj
+/F1 10 Tf
+1 0 0 1 121 650 Tm
+(Transaction details) Tj
+/F1 10 Tf
+1 0 0 1 500 650 Tm
+(Amount) Tj
+/F1 10 Tf
+1 0 0 1 24 600 Tm
+(01 Sep, 2026) Tj
+/F1 10 Tf
+1 0 0 1 121 600 Tm
+(Paid to Fresh Mart Groceries) Tj
+/F1 10 Tf
+1 0 0 1 500 600 Tm
+(1,200) Tj
+/F1 10 Tf
+1 0 0 1 24 585 Tm
+(09:15 AM) Tj
+/F1 10 Tf
+1 0 0 1 121 585 Tm
+(UPI Transaction ID: 100000000001) Tj
+/F1 10 Tf
+1 0 0 1 138 569 Tm
+(Paid by Sample Bank 1111) Tj
+/F1 10 Tf
+1 0 0 1 24 538 Tm
+(03 Sep, 2026) Tj
+/F1 10 Tf
+1 0 0 1 121 538 Tm
+(Received from Jordan Lee) Tj
+/F1 10 Tf
+1 0 0 1 500 538 Tm
+(800) Tj
+/F1 10 Tf
+1 0 0 1 24 523 Tm
+(10:00 AM) Tj
+/F1 10 Tf
+1 0 0 1 121 523 Tm
+(UPI Transaction ID: 100000000002) Tj
+/F1 10 Tf
+1 0 0 1 138 507 Tm
+(Paid to Sample Bank 1111) Tj
+/F1 10 Tf
+1 0 0 1 24 476 Tm
+(05 Sep, 2026) Tj
+/F1 10 Tf
+1 0 0 1 121 476 Tm
+(Self transfer to Other Bank 2222) Tj
+/F1 10 Tf
+1 0 0 1 500 476 Tm
+(5,000) Tj
+/F1 10 Tf
+1 0 0 1 24 461 Tm
+(11:20 AM) Tj
+/F1 10 Tf
+1 0 0 1 121 461 Tm
+(UPI Transaction ID: 100000000003) Tj
+/F1 10 Tf
+1 0 0 1 138 445 Tm
+(Paid by Sample Bank 1111) Tj
+/F1 10 Tf
+1 0 0 1 24 40 Tm
+(Note: This statement reflects payments made by you on the Google Pay app. Self transfer payments are not included in the total money paid and received.) Tj
+ET
+endstream
+endobj
+7 0 obj
+<< /Length 1410 >>
+stream
+BT
+/F1 14 Tf
+1 0 0 1 24 760 Tm
+(Transaction statement) Tj
+/F1 10 Tf
+1 0 0 1 24 744 Tm
+(9999999999, sample.user@example.com) Tj
+/F1 10 Tf
+1 0 0 1 24 650 Tm
+(Date & time) Tj
+/F1 10 Tf
+1 0 0 1 121 650 Tm
+(Transaction details) Tj
+/F1 10 Tf
+1 0 0 1 500 650 Tm
+(Amount) Tj
+/F1 10 Tf
+1 0 0 1 24 600 Tm
+(07 Sep, 2026) Tj
+/F1 10 Tf
+1 0 0 1 121 600 Tm
+(Paid to Toll Plaza FASTag) Tj
+/F1 10 Tf
+1 0 0 1 500 600 Tm
+(150) Tj
+/F1 10 Tf
+1 0 0 1 24 585 Tm
+(02:45 PM) Tj
+/F1 10 Tf
+1 0 0 1 121 585 Tm
+(UPI Transaction ID: 100000000004) Tj
+/F1 10 Tf
+1 0 0 1 138 569 Tm
+(Paid by Sample Bank XX99 | RuPay credit card) Tj
+/F1 10 Tf
+1 0 0 1 24 538 Tm
+(09 Sep, 2026) Tj
+/F1 10 Tf
+1 0 0 1 121 538 Tm
+(Paid to Coffee Shop) Tj
+/F1 10 Tf
+1 0 0 1 500 538 Tm
+(220) Tj
+/F1 10 Tf
+1 0 0 1 24 523 Tm
+(06:30 PM) Tj
+/F1 10 Tf
+1 0 0 1 121 523 Tm
+(UPI Transaction ID: 100000000005) Tj
+/F1 10 Tf
+1 0 0 1 138 507 Tm
+(Paid by UPI Lite | Sample Bank 1111) Tj
+/F1 10 Tf
+1 0 0 1 24 476 Tm
+(11 Sep, 2026) Tj
+/F1 10 Tf
+1 0 0 1 121 476 Tm
+(Top-up to UPI Lite) Tj
+/F1 10 Tf
+1 0 0 1 500 476 Tm
+(2,000) Tj
+/F1 10 Tf
+1 0 0 1 24 461 Tm
+(08:00 AM) Tj
+/F1 10 Tf
+1 0 0 1 121 461 Tm
+(UPI Transaction ID: 100000000006) Tj
+/F1 10 Tf
+1 0 0 1 138 445 Tm
+(Paid by Sample Bank 1111) Tj
+/F1 10 Tf
+1 0 0 1 24 40 Tm
+(Note: This statement reflects payments made by you on the Google Pay app. Self transfer payments are not included in the total money paid and received.) Tj
+ET
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000121 00000 n 
+0000000247 00000 n 
+0000000373 00000 n 
+0000000470 00000 n 
+0000002057 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+3518
+%%EOF

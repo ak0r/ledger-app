@@ -1,9 +1,57 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import type { DbOrTx } from "../persistence/client";
-import { postings, transactions } from "../persistence/schema";
+import { accounts, postings, transactions } from "../persistence/schema";
 
 export type TransactionRow = typeof transactions.$inferSelect;
 export type PostingRow = typeof postings.$inferSelect;
+
+export interface ReconciliationPostingRow {
+  accountId: string;
+  date: string;
+  units: number;
+  reference: string | null;
+  counterparty: string | null;
+}
+
+// Cross-source reconciliation (GPay importer delta) — every already-
+// committed Posting against one of these Accounts, in this date range,
+// with its own Transaction's `reference`/`counterparty` (import-
+// provenance enrichment, added alongside this) — the raw material
+// `lib/duplicate-detection.ts`'s `findPossibleDuplicates` needs to check
+// a fresh import against committed history, not just candidates in the
+// same session. Profile-scoped explicitly via the `accounts` join (rule
+// #6) even though every caller today already resolved `accountIds` from
+// that same Profile first — this repository function shouldn't have to
+// trust that.
+export function findPostingsForReconciliation(
+  db: DbOrTx,
+  profileId: string,
+  accountIds: readonly string[],
+  dateStart: string,
+  dateEnd: string,
+): ReconciliationPostingRow[] {
+  if (accountIds.length === 0) return [];
+  return db
+    .select({
+      accountId: postings.accountId,
+      date: transactions.date,
+      units: postings.units,
+      reference: transactions.reference,
+      counterparty: transactions.counterparty,
+    })
+    .from(postings)
+    .innerJoin(transactions, eq(postings.transactionId, transactions.id))
+    .innerJoin(accounts, eq(postings.accountId, accounts.id))
+    .where(
+      and(
+        eq(accounts.profileId, profileId),
+        inArray(postings.accountId, [...accountIds]),
+        gte(transactions.date, dateStart),
+        lte(transactions.date, dateEnd),
+      ),
+    )
+    .all();
+}
 
 export function insertTransaction(db: DbOrTx, row: TransactionRow): void {
   db.insert(transactions).values(row).run();

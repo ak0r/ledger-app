@@ -91,14 +91,30 @@ commit. Password-protected import files (ADR-034) — the password is
 prompted for in the UI, used once server-side to decrypt, and never
 persisted.
 
+Also decided and shipped (2026-09-06/08, Google Pay import + reconciliation
+delta): a Google Pay Transactions PDF adapter with per-row (not per-file)
+source Account Resolution, since Google Pay itself owns no Account; and
+possible-duplicate detection (reference-match + date/amount/account/
+direction/time-window/counterparty heuristic) against both the current
+upload and already-committed Ledger history.
+
+**Open**: duplicate detection today is advisory-only — a badge, nothing
+auto-excluded, nothing blocked, no bulk action to accept/dismiss flagged
+rows, no way to review a duplicate decision after commit. A real
+Reconciliation Centre (auto + manual matching against committed records,
+independent of any one import) is the likely home for that workflow, but
+its scope — auto-resolve vs. always-manual-confirm, whether it also
+matches transactions with no import provenance at all, bulk accept/reject,
+undo — hasn't been designed. Not started.
+
 Still future design required for:
 
 - email
 - SMS
 - PDF statements from any other institution
-- any adapter beyond the five shipped
+- any adapter beyond the six shipped
 - Rules (auto-categorization) plugin
-- Duplicate Detection plugin
+- Reconciliation Centre (see above)
 
 ## Recurring Transactions
 
